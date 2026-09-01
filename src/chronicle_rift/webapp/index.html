@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101425" />
+    <meta name="description" content="ChronicleRift tactical fantasy adventure for Telegram" />
+    <title>ChronicleRift</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js?61"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <main class="shell" aria-labelledby="page-title">
+      <section class="topbar">
+        <div class="brand-lockup">
+          <div class="sigil" aria-hidden="true"><span>✦</span></div>
+          <div>
+            <p class="eyebrow">THE LIVING CHRONICLE</p>
+            <h1 id="page-title">ChronicleRift</h1>
+          </div>
+        </div>
+        <span class="secure-pill" id="connection-status" role="status">Connecting…</span>
+      </section>
+
+      <section class="hero-panel panel" aria-label="Hero status">
+        <div class="hero-portrait" aria-hidden="true">
+          <span class="portrait-star">✦</span>
+          <span class="portrait-rune">◌</span>
+        </div>
+        <div class="hero-copy">
+          <p class="section-kicker">RIFTWALKER</p>
+          <h2 data-bind="hero-name">Awakening hero…</h2>
+          <div class="rank-row">
+            <span class="rank-chip">LEVEL <strong data-bind="hero-level">—</strong></span>
+            <span class="muted"><span data-bind="hero-xp">—</span> XP</span>
+            <span class="gold"><span aria-hidden="true">✦</span> <span data-bind="hero-gold">—</span></span>
+          </div>
+        </div>
+        <div class="rift-orb" aria-hidden="true"><i></i><i></i><i></i></div>
+      </section>
+
+      <section class="vitals-grid" aria-label="Hero vitals">
+        <article class="vital panel">
+          <div class="vital-label"><span class="vital-icon rose">♥</span><span>VITALITY</span><strong data-bind="hero-hp">— / —</strong></div>
+          <div class="meter hp-meter"><span id="hero-hp-bar"></span></div>
+        </article>
+        <article class="vital panel">
+          <div class="vital-label"><span class="vital-icon cyan">✧</span><span>RIFT ENERGY</span><strong data-bind="hero-energy">— / —</strong></div>
+          <div class="meter energy-meter"><span id="hero-energy-bar"></span></div>
+        </article>
+      </section>
+
+      <section class="encounter panel" aria-labelledby="encounter-title">
+        <div class="encounter-topline">
+          <p class="section-kicker">HOSTILE PRESENCE</p>
+          <span class="danger-chip">ENGAGED</span>
+        </div>
+        <div class="enemy-row">
+          <div class="enemy-mark" data-bind="enemy-art" aria-hidden="true">✹</div>
+          <div class="enemy-info">
+            <h2 id="encounter-title" data-bind="enemy-name">Reading the rift…</h2>
+            <div class="enemy-hp-row"><span>ESSENCE</span><strong data-bind="enemy-hp">— / —</strong></div>
+            <div class="meter enemy-meter"><span id="enemy-hp-bar"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="action-section" aria-labelledby="action-title">
+        <div class="section-heading">
+          <div>
+            <p class="section-kicker">CHOOSE YOUR MOVE</p>
+            <h2 id="action-title">Shape the next turn</h2>
+          </div>
+          <span class="turn-badge">TURN <b>01</b></span>
+        </div>
+        <div class="actions" id="action-controls">
+          <button class="action-card strike" type="button" data-action="strike">
+            <span class="action-symbol">⚔</span><span><strong>Strike</strong><small>Spend energy · Deal damage</small></span><span class="chevron">›</span>
+          </button>
+          <button class="action-card guard" type="button" data-action="guard">
+            <span class="action-symbol">◈</span><span><strong>Guard</strong><small>Charge ward · Resist harm</small></span><span class="chevron">›</span>
+          </button>
+          <button class="action-card scout" type="button" data-action="scout">
+            <span class="action-symbol">⌁</span><span><strong>Scout</strong><small>Gain insight · Restore energy</small></span><span class="chevron">›</span>
+          </button>
+          <button class="action-card rest" type="button" data-action="rest">
+            <span class="action-symbol">✦</span><span><strong>Rest</strong><small>Recover vitality · Regroup</small></span><span class="chevron">›</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="chronicle panel" aria-labelledby="chronicle-title">
+        <div class="scroll-mark" aria-hidden="true">✧</div>
+        <div>
+          <p class="section-kicker">LATEST CHRONICLE</p>
+          <h2 id="chronicle-title" data-bind="quest-title">The story is opening…</h2>
+          <p class="objective" data-bind="quest-objective">Your authenticated game state will appear here.</p>
+          <p class="narrative" data-bind="narrative" aria-live="polite">Preparing the rift…</p>
+        </div>
+      </section>
+
+      <section class="inventory panel" aria-labelledby="inventory-title">
+        <div class="inventory-heading">
+          <div><p class="section-kicker">RELIC SATCHEL</p><h2 id="inventory-title">Inventory</h2></div>
+          <span aria-hidden="true">⌘</span>
+        </div>
+        <ul id="inventory-list" aria-live="polite"><li>Loading relics…</li></ul>
+      </section>
+
+      <p class="security-note"><span aria-hidden="true">◈</span> Your turn is verified by Telegram and saved to the Chronicle.</p>
+    </main>
+    <div class="toast" id="toast" role="alert" aria-live="assertive" hidden></div>
+  </body>
+</html>

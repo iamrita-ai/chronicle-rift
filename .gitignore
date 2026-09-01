@@ -1,0 +1,32 @@
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Build and coverage artifacts
+build/
+dist/
+coverage/
+htmlcov/
+.coverage*
+
+# Runtime/editor noise
+*.log
+.DS_Store
+.idea/
+.vscode/

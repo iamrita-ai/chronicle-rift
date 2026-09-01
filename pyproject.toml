@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=78"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chronicle-rift"
+version = "0.1.0"
+description = "AI-powered tactical fantasy adventure for Telegram Rich Messages and Mini Apps"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "ChronicleRift contributors" }]
+keywords = ["telegram", "mini-app", "game", "fastapi", "groq", "mongodb"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "fastapi>=0.141.1,<1.0",
+  "groq>=1.7.0,<2.0",
+  "httpx>=0.28.1,<1.0",
+  "pymongo>=4.17.0,<5.0",
+  "python-dotenv>=1.1.0,<2.0",
+  "python-telegram-bot>=22.8,<23.0",
+  "uvicorn[standard]>=0.52.0,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1.1,<10.0",
+  "pytest-asyncio>=1.3.0,<2.0",
+  "ruff>=0.16.5,<1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/iamrita-ai/chronicle-rift"
+Repository = "https://github.com/iamrita-ai/chronicle-rift"
+Issues = "https://github.com/iamrita-ai/chronicle-rift/issues"
+
+[project.scripts]
+chronicle-rift = "chronicle_rift.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+chronicle_rift = ["webapp/*.html", "webapp/*.css", "webapp/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
