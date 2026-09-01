@@ -2318,3 +2318,66 @@ body.in-fight #app {
 .fight-overlay .play-btn {
   margin: 4px 0 0;
 }
+
+/* ================================================================== *
+ * v0.8 — landscape full-screen fight
+ * ================================================================== */
+.battle-screen.is-active.force-landscape {
+  width: 100vh;
+  height: 100vw;
+  transform-origin: top left;
+  transform: rotate(90deg) translate(0, -100%);
+}
+.battle-screen #arena-canvas {
+  width: 100%;
+  height: 100%;
+}
+.rotate-hint {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 74px);
+  transform: translateX(-50%);
+  z-index: 19;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(6, 8, 22, 0.82);
+  border: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  animation: rot-pulse 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.rotate-hint svg {
+  width: 17px;
+  height: 17px;
+  color: var(--element);
+  animation: rot-turn 2.6s ease-in-out infinite;
+}
+@keyframes rot-turn {
+  40% { transform: rotate(90deg); }
+  90% { transform: rotate(90deg); }
+}
+@keyframes rot-pulse {
+  50% { opacity: 0.55; }
+}
+/* landscape: shrink the overlay so the matchup + FIGHT button always fit */
+.force-landscape .fight-overlay {
+  padding: 10px 16px;
+  gap: 8px;
+}
+.force-landscape .mu-side img {
+  height: 104px;
+  max-width: 110px;
+}
+.force-landscape .mu-side b { font-size: 13px; }
+.force-landscape .heal-rail { padding: 6px 10px; }
+.force-landscape .rail-item { width: 64px; }
+.force-landscape .rail-item img { width: 30px; height: 30px; }
+.force-landscape .play-btn { padding: 11px; }
+.force-landscape .play-btn b { font-size: 15px; }
+.force-landscape .matchup { gap: 4px; }
+.force-landscape .mu-note { display: none; }

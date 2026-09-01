@@ -170,6 +170,28 @@ Outcomes stay server-authoritative: winning posts to `POST /api/arena/finish`, w
 through the same victory path as before (gold, coins, points, XP, loot chest, next chapter),
 and losing wakes you at camp fully healed. Reported health is clamped to your real maximum.
 
+### v0.8 — real fighters, landscape, faster, better sound
+
+- **The fighters are the artwork.** Each character and monster PNG is keyed to transparency once
+  at load (luminance to alpha, then auto-trimmed), split into a torso and a legs piece, and driven
+  as a two-part puppet: idle **breathing** (chest rise + drift), walk bounce with footstep dust
+  and sound, hip-driven lunges, recoil, tumble, collapse and a victory bounce. No stick figures.
+- **Landscape, full screen.** The arena fills the display; in portrait the whole fight surface is
+  rotated so the phone can simply be turned sideways, with a rotate hint the first time.
+- **Horizontal-only movement**, as a side-view fighter should be: the joystick drives left/right
+  and both fighters share one ground line.
+- **Performance pass.** Pixel-budget-aware DPR, no `shadowBlur` in the hot path (all glows are
+  pre-rendered tinted sprites drawn with `lighter`), cached gradients, particle caps, single-pass
+  effect loops and a backdrop drawn as one parallax `drawImage`.
+- **Scenario backdrops** picked from the monster's element: Ember Keep (fire), Frost Cathedral
+  (ice), Arcane Ruins (magic/wind) and the Void Colosseum for shadow and every boss.
+- **New audio bank** — a proper synth with envelopes, filters, a compressor and a short ambience
+  delay: distinct whoosh, metal clang tuned per element, deep thud, ice shatter, fire boom,
+  magic shimmer, ward chime, dash, footsteps, hurt grunt, K.O. and victory fanfare.
+- **The bot's Rich Messages were reorganised**: one tidy status card (hero line, XP bar, a single
+  value table, chapter block with the next foe and its ability) and a Marketplace grouped into
+  Consumables and Relics tables, instead of the old wall of text.
+
 ### Preview the Mini App without Telegram
 
 ```bash

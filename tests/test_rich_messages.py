@@ -24,7 +24,7 @@ def test_dashboard_has_rich_table_and_plain_fallback() -> None:
     rich, plain = dashboard_messages(new_player(user_id=1, first_name="Rita", username=None))
 
     assert "| Hero | Value |" in rich
-    assert "<details>" in rich
+    assert "Open ChronicleRift" in rich
     assert "Ash Warden" in plain
     assert "Inventory:" in plain
     assert "Coins" in plain

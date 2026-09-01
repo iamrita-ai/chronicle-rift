@@ -86,95 +86,92 @@ class RichMessageClient:
 
 
 def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
-    """Build rich markdown and universal plain-text fallback for a player dashboard."""
+    """A tidy status card. The fighting happens in the Mini App, so the bot
+    keeps to four short, clearly separated blocks: hero, purse, next foe, quest."""
     view = public_player_view(player)
     hero = view["hero"]
     quest = view["quest"]
     enemy = view["enemy"]
-    battle = view.get("battle", {})
-    intent = enemy.get("intent") or {}
-    inventory = (
-        ", ".join(f"{_safe_text(card['name'])} x{card['quantity']}" for card in view["inventory"])
-        or "empty"
-    )
-    narrative = _safe_text(view["narrative"])
-    progress_text = _progress_bar(hero["progress"])
-    inventory_bullets = inventory.replace(", ", "\n- ")
-    focus_text = _focus_pips(hero.get("focus", 0), hero.get("max_focus", 3))
-    intent_line = _intent_line(intent)
-    coach = _coach_tip(hero, enemy, battle, intent)
-    status_bits = []
-    if battle.get("exposed"):
-        status_bits.append("🎯 EXPOSED (next Strike +2)")
-    if battle.get("burn"):
-        status_bits.append(f"🔥 BURNING ({battle['burn']} turns)")
-    if battle.get("can_finish"):
-        status_bits.append("💀 FINISHER READY")
-    status_line = " · ".join(status_bits)
+    character = view["character"]
+    progress = _progress_bar(hero["progress"])
+    carried = sum(int(card["quantity"]) for card in view["inventory"])
+    boss = " · BOSS" if enemy.get("boss") else ""
 
     rich = (
-        f"# ⚔️ {_safe_text(hero['name'])}'s Chronicle\n\n"
-        f"> **Chapter {quest['chapter']} · {_safe_text(quest['title'])}**\n\n"
-        f"## 📈 Progression · Level {hero['level']}\n"
-        f"{progress_text} `{hero['xp']} / {hero['xp_to_next']} XP`\n\n"
+        f"# ⚔️ {_safe_text(hero['name'])}\n"
+        f"**{_safe_text(character['name'])}** · {_safe_text(character['element_name'])} · "
+        f"Level {hero['level']}\n\n"
+        f"`{progress}` {hero['xp']} XP · {hero['xp_to_next']} to next level\n\n"
         "| Hero | Value |\n| --- | ---: |\n"
-        f"| HP | {hero['hp']} / {hero['max_hp']} |\n"
-        f"| Energy | {hero['energy']} / {hero['max_energy']} |\n"
-        f"| XP | {hero['xp']} |\n"
-        f"| Gold | {hero['gold']} |\n"
+        f"| ❤️ Vitality | {hero['hp']} / {hero['max_hp']} |\n"
+        f"| ⚡ Energy | {hero['energy']} / {hero['max_energy']} |\n"
         f"| 🪙 Coins | {hero['coins']} |\n"
-        f"| ✨ Points | {hero['points']} |\n\n"
-        f"| 🎯 Focus | {focus_text} |\n\n"
-        f"## {enemy['art']} Enemy: {_safe_text(enemy['name'])}\n"
-        f"**HP:** {enemy['hp']} / {enemy['max_hp']} · **ATK:** {enemy.get('attack', '?')}\n\n"
-        f"> ⏭ **{_safe_text(intent_line)}**\n\n"
-        + (f"`{_safe_text(status_line)}`\n\n" if status_line else "")
-        + f"## Quest\n{_safe_text(quest['objective'])}\n\n"
-        f"**Your move:** {_safe_text(coach)}\n\n"
-        f"<details><summary>🎒 Inventory</summary>\n\n- {inventory_bullets}\n\n</details>\n\n"
-        f"> {narrative}"
+        f"| ✨ Points | {hero['points']} |\n"
+        f"| 🏅 Gold | {hero['gold']} |\n"
+        f"| 🎒 Satchel | {carried} items |\n\n"
+        f"## Chapter {quest['chapter']}\n"
+        f"**Next foe:** {_safe_text(enemy['name'])} (Lv {enemy.get('level', 1)}{boss}) · "
+        f"{_safe_text(enemy.get('ability', ''))}\n"
+        f"{_safe_text(quest['objective'])}\n\n"
+        "> ▶️ Tap **Open ChronicleRift** to fight in the arena."
     )
     plain = (
-        f"⚔️ {hero['name']}'s Chronicle\n"
-        f"Chapter {quest['chapter']}: {quest['title']}\n\n"
-        f"Level {hero['level']} — {progress_text} {hero['xp']}/{hero['xp_to_next']} XP\n\n"
-        f"HP {hero['hp']}/{hero['max_hp']} | Energy {hero['energy']}/{hero['max_energy']}\n"
-        f"Gold {hero['gold']} | Coins {hero['coins']} | Points {hero['points']}\n\n"
-        f"Focus {focus_text}\n\n"
-        f"{enemy['art']} {enemy['name']}: {enemy['hp']}/{enemy['max_hp']} HP "
-        f"(ATK {enemy.get('attack', '?')})\n"
-        f"⏭ {intent_line}\n"
-        + (f"{status_line}\n" if status_line else "")
-        + f"Quest: {quest['objective']}\n"
-        f"Inventory: {inventory}\n\n{narrative}\n\n"
-        f"👉 Your move: {coach}\n"
-        f"New here? Send /help for the 60-second guide."
+        f"⚔️ {hero['name']} — {character['name']} ({character['element_name']}), "
+        f"Level {hero['level']}\n"
+        f"{progress} {hero['xp']} XP · {hero['xp_to_next']} to next level\n\n"
+        f"❤️ {hero['hp']}/{hero['max_hp']}    ⚡ {hero['energy']}/{hero['max_energy']}\n"
+        f"🪙 Coins {hero['coins']}    ✨ Points {hero['points']}    🏅 Gold {hero['gold']}\n"
+        f"🎒 Inventory: {carried} items\n\n"
+        f"CHAPTER {quest['chapter']}\n"
+        f"Next foe: {enemy['name']} (Lv {enemy.get('level', 1)}{boss})"
+        f"{' · ' + enemy['ability'] if enemy.get('ability') else ''}\n"
+        f"{quest['objective']}\n\n"
+        "▶️ Tap 'Open ChronicleRift' to fight in the arena."
     )
     return rich, plain
 
 
 def shop_messages(player: dict[str, Any]) -> tuple[str, str]:
-    """Build the Marketplace rich markdown and plain-text fallback."""
+    """The Marketplace, grouped by item kind so the list stops looking like a wall."""
     view = public_player_view(player)
     hero = view["hero"]
-    lines = []
+    groups: dict[str, list[dict[str, Any]]] = {"consumable": [], "relic": []}
     for item in view["shop"]:
-        lines.append(
-            f"{item['emoji']} **{_safe_text(item['name'])}** \\- {_price_of(item)} Coins\n"
-            f"{_safe_text(item['ability'])} \\- {_safe_text(item['desc'])}"
+        groups.setdefault(item.get("kind", "consumable"), []).append(item)
+
+    def rich_block(title: str, cards: list[dict[str, Any]]) -> str:
+        if not cards:
+            return ""
+        rows = "\n".join(
+            f"| {card['emoji']} {_safe_text(card['name'])} | {_safe_text(card['ability'])} "
+            f"| {_price_of(card)} |"
+            for card in cards
         )
-    rich_shop = "\n\n".join(lines)
-    rich = f"# 🏪 The Marketplace\n\n> **Your balance:** 🪙 {hero['coins']} Coins\n\n{rich_shop}"
-    plain_lines = []
-    for item in view["shop"]:
-        plain_lines.append(
-            f"{item['emoji']} {item['name']} - {_price_of(item)} Coins\n{_itemize(item['ability'])}"
+        return f"## {title}\n\n| Item | Effect | 🪙 |\n| --- | --- | ---: |\n{rows}\n\n"
+
+    rich = (
+        "# 🏪 The Marketplace\n"
+        f"**Balance:** 🪙 {hero['coins']} Coins\n\n"
+        + rich_block("Consumables", groups.get("consumable", []))
+        + rich_block("Relics (permanent)", groups.get("relic", []))
+        + "> Tap a button below to buy."
+    )
+
+    def plain_block(title: str, cards: list[dict[str, Any]]) -> str:
+        if not cards:
+            return ""
+        rows = "\n".join(
+            f"  {card['emoji']} {card['name']} — {card['ability']} — {_price_of(card)} Coins"
+            for card in cards
         )
+        return f"{title}\n{rows}\n\n"
+
     plain = (
-        f"🏪 The Marketplace\n"
+        "🏪 The Marketplace\n"
         f"Balance: {hero['coins']} Coins\n\n"
-        + "\n\n".join(plain_lines)
-        + "\n\nTap an item to buy it."
+        + plain_block("CONSUMABLES", groups.get("consumable", []))
+        + plain_block("RELICS (permanent)", groups.get("relic", []))
+        + "Tap a button below to buy."
     )
     return rich, plain
 

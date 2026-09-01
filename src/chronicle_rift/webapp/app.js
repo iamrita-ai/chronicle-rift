@@ -147,6 +147,14 @@
     started: false,
     settling: false,
 
+    fit() {
+      const section = $("screen-battle");
+      const portrait = window.innerHeight > window.innerWidth;
+      section.classList.toggle("force-landscape", portrait);
+      $("rotate-hint").hidden = !portrait;
+      if (this.arena) this.arena.resize(section.offsetWidth, section.offsetHeight);
+    },
+
     ensure() {
       if (this.arena) return this.arena;
       this.arena = new window.ChronicleArena.Arena({
@@ -155,6 +163,8 @@
         onHud: (a) => this.hud(a),
       });
       this.bindControls();
+      window.addEventListener("resize", () => { if (state.screen === "battle") this.fit(); });
+      window.addEventListener("orientationchange", () => setTimeout(() => this.fit(), 220));
       return this.arena;
     },
 
@@ -166,6 +176,8 @@
         name: view.character.name,
         element: view.character.element,
         color: view.character.element_color,
+        art: ART(view.character.art, "png"),
+        artFacing: 1,
         build: "hero",
         stats: {
           hp: Math.max(30, Math.round(hero.hp * HP_SCALE)),
@@ -185,6 +197,8 @@
         name: enemy.name,
         element: enemy.element,
         color: enemy.element_color,
+        art: ART(enemy.sprite, "png"),
+        artFacing: -1,
         build: enemy.boss ? "brute" : "hero",
         stats: {
           hp: Math.round(enemy.max_hp * HP_SCALE),
@@ -202,7 +216,7 @@
       const view = state.player;
       if (!view) return;
       this.ensure();
-      this.arena.resize();
+      this.fit();
       this.started = false;
       const p = this.playerStats(view);
       const e = this.enemyStats(view);
@@ -217,6 +231,8 @@
       $("fight-start-label").textContent = "FIGHT";
       document.documentElement.style.setProperty("--element", view.character.element_color);
       document.documentElement.style.setProperty("--foe-element", view.enemy.element_color);
+      const scenes = { fire: "bg-ember", ice: "bg-frost", shadow: "bg-void", arcane: "bg-arcane", wind: "bg-arcane" };
+      this.arena.setScene(view.enemy.boss ? "bg-void" : scenes[view.enemy.element] || "bg-ember");
       this.renderAbilityButtons(view);
       renderHealRail(view);
       $("fight-overlay").classList.add("is-open");
@@ -229,7 +245,8 @@
       const view = state.player;
       if (!view || this.started) return;
       this.ensure();
-      this.arena.resize();
+      this.fit();
+      window.ChronicleArena.unlockAudio();
       this.arena.setFighters(this.playerStats(view), this.enemyStats(view));
       this.arena.ended = false;
       this.started = true;
@@ -342,9 +359,9 @@
       let stickId = null;
       const radius = 52;
 
-      const setVector = (dx, dz) => {
+      // horizontal-only movement: this is a side-view fighter, no vertical lane
+      const setVector = (dx) => {
         arena.input.dx = dx;
-        arena.input.dz = dz;
       };
       const moveKnob = (x, y) => {
         knob.style.transform = `translate(${x}px, ${y}px)`;
@@ -369,15 +386,15 @@
         const capped = Math.min(len, radius);
         dx = (dx / len) * capped;
         dy = (dy / len) * capped;
-        moveKnob(dx, dy);
-        setVector(dx / radius, dy / radius);
+        moveKnob(dx, dy * 0.35);
+        setVector(dx / radius);
         event.preventDefault();
       };
       const onEnd = () => {
         stickId = null;
         stick.classList.remove("is-active");
         moveKnob(0, 0);
-        setVector(0, 0);
+        setVector(0);
       };
 
       stick.addEventListener("touchstart", onStart, { passive: false });
@@ -408,9 +425,7 @@
       const keys = {};
       const applyKeys = () => {
         const dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
-        const dz = (keys.s || keys.ArrowDown ? 1 : 0) - (keys.w || keys.ArrowUp ? 1 : 0);
         arena.input.dx = dx;
-        arena.input.dz = dz;
       };
       window.addEventListener("keydown", (e) => {
         if (state.screen !== "battle") return;

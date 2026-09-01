@@ -150,8 +150,6 @@
         <!-- LEFT: movement joystick (forward / back / left / right) -->
         <div class="joystick" id="joystick">
           <div class="stick-base">
-            <span class="stick-hint stick-up">▲</span>
-            <span class="stick-hint stick-down">▼</span>
             <span class="stick-hint stick-left">◀</span>
             <span class="stick-hint stick-right">▶</span>
           </div>
@@ -182,6 +180,11 @@
             <img src="./art/icon-attack.png" alt="Basic attack" />
             <span class="atk-ring"></span>
           </button>
+        </div>
+
+        <div class="rotate-hint" id="rotate-hint" hidden>
+          <svg viewBox="0 0 24 24"><path d="M7 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17.5 8.5 21 12l-3.5 3.5"/></svg>
+          <span>Turn your phone sideways for the full-screen arena</span>
         </div>
 
         <!-- pre-fight / post-fight overlay -->
