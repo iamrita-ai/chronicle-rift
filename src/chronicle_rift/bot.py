@@ -12,9 +12,10 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 from . import __version__
 from .config import Settings
 from .database import DatabaseUnavailable
-from .game_engine import HOW_TO_PLAY, RULES, SHOP_ITEMS, VALID_ACTIONS
+from .game_engine import HOW_TO_PLAY, RULES, VALID_ACTIONS
 from .game_service import GameBusyError, GameService, PurchaseError
 from .identity import TelegramIdentity
+from .models import ITEMS, MAX_RELIC_LEVEL, SHOP_ITEMS, inventory_view, relic_cost
 from .rich_messages import (
     RichMessageClient,
     RichMessageError,
@@ -153,6 +154,31 @@ def build_telegram_application(
                 "The Chronicle archives are briefly unavailable. Please try again."
             )
 
+    async def bag_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        del context
+        user = update.effective_user
+        chat = update.effective_chat
+        if not user or not chat:
+            return
+        if not _is_allowed(settings, user.id):
+            await chat.send_message("This realm is not available to your account.")
+            return
+        try:
+            player = await game_service.dashboard(_identity_from_update(user))
+        except DatabaseUnavailable:
+            LOGGER.exception("Unable to load the satchel")
+            await chat.send_message("The Chronicle archives are briefly unavailable.")
+            return
+        await _send_art(
+            update.get_bot(), chat.id, settings, "intro-market", "🎒 Your satchel and relics."
+        )
+        await chat.send_message(
+            bag_message(player),
+            reply_markup=_home_keyboard(
+                mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
+            ),
+        )
+
     async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         del context
         chat = update.effective_chat
@@ -232,6 +258,24 @@ def build_telegram_application(
             return
         identity = _identity_from_update(user)
 
+        if data == "bag":
+            await query.answer()
+            try:
+                player = await game_service.dashboard(identity)
+            except DatabaseUnavailable:
+                await query.answer("The archives are briefly unavailable.", show_alert=True)
+                return
+            await query.message.reply_text(
+                bag_message(player),
+                reply_markup=_home_keyboard(
+                    mini_app_url=settings.mini_app_url,
+                    include_mini_app=query.message.chat.type == "private",
+                ),
+            )
+            return
+        if data == "noop":
+            await query.answer("Already at maximum level.")
+            return
         if data == "howto":
             await query.answer()
             await _send_art(
@@ -289,6 +333,9 @@ def build_telegram_application(
             return
         if data.startswith("shop:"):
             item_id = data.removeprefix("shop:")
+            if item_id == "noop":
+                await query.answer("Already at maximum level.")
+                return
             if item_id not in SHOP_ITEMS:
                 await query.answer("That item is no longer available.", show_alert=True)
                 return
@@ -339,11 +386,15 @@ def build_telegram_application(
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("shop", shop_command))
     application.add_handler(CommandHandler("app", app_command))
+    application.add_handler(CommandHandler("bag", bag_command))
+    application.add_handler(CommandHandler("inventory", bag_command))
     application.add_handler(
         CallbackQueryHandler(choose_action, pattern=r"^act:(strike|guard|scout|rest)$")
     )
     application.add_handler(
-        CallbackQueryHandler(callback_menu, pattern=r"^(rules|about|howto|dashboard|shop:.*)$")
+        CallbackQueryHandler(
+            callback_menu, pattern=r"^(rules|about|howto|bag|noop|dashboard|shop:.*)$"
+        )
     )
     application.add_error_handler(on_error)
     return application
@@ -481,7 +532,12 @@ async def _notify_purchase(bot: Any, chat_id: int, summary: str) -> None:
 
 def action_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
     """Build a compact shared keyboard for rich and ordinary Telegram messages."""
-    rows: list[list[InlineKeyboardButton]] = [
+    rows: list[list[InlineKeyboardButton]] = []
+    if mini_app_url and include_mini_app:
+        rows.append(
+            [InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))]
+        )
+    rows += [
         [
             _styled_button(_ACTION_LABELS["strike"], "act:strike", _ACTION_STYLES["strike"]),
             _styled_button(_ACTION_LABELS["guard"], "act:guard", _ACTION_STYLES["guard"]),
@@ -492,45 +548,89 @@ def action_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inli
         ],
         [
             _styled_button("🏪 Marketplace", "shop:open", _STYLE_PRIMARY),
-            _styled_button("📖 How to Play", "howto", _STYLE_PRIMARY),
+            _styled_button("🎒 Satchel", "bag", _STYLE_PRIMARY),
         ],
         [
+            _styled_button("📖 How to Play", "howto", _STYLE_PRIMARY),
             _styled_button("📜 Rules", "rules", _STYLE_PRIMARY),
             _styled_button("ℹ️ About", "about", _STYLE_PRIMARY),
         ],
     ]
-    if mini_app_url and include_mini_app:
-        rows.append(
-            [InlineKeyboardButton("✨ Tactical Mini App", web_app=WebAppInfo(mini_app_url))]
-        )
     return InlineKeyboardMarkup(rows)
 
 
 def shop_keyboard(*, player: dict[str, Any], private_chat: bool) -> InlineKeyboardMarkup:
     """Build a colored Marketplace keyboard from the authenticated player's balance."""
-    coins = player["game"]["coins"]
+    game = player["game"]
+    coins = game["coins"]
+    relics = game.get("relics") or {}
     rows: list[list[InlineKeyboardButton]] = []
     for item_id, item in SHOP_ITEMS.items():
-        affordable = coins >= item["cost"]
-        style = _STYLE_SUCCESS if affordable else None
-        rows.append(
-            [
-                _styled_button(
-                    f"{item['emoji']} {item['name']} · {item['cost']}🪙",
-                    f"shop:{item_id}",
-                    style,
+        if item["kind"] == "relic":
+            level = int(relics.get(item_id, 0))
+            if level >= MAX_RELIC_LEVEL:
+                rows.append(
+                    [_styled_button(f"{item['emoji']} {item['name']} · MAX", "shop:noop", None)]
                 )
-            ]
-        )
-    rows.append([_styled_button("↩ Back to Chronicle", "dashboard", _STYLE_PRIMARY)])
+                continue
+            price = relic_cost(item_id, level)
+            label = f"{item['emoji']} {item['name']} Lv{level + 1} · {price}🪙"
+        else:
+            price = int(item["cost"])
+            held = int((game.get("inventory") or {}).get(item_id, 0))
+            suffix = f" (x{held})" if held else ""
+            label = f"{item['emoji']} {item['name']}{suffix} · {price}🪙"
+        style = _STYLE_SUCCESS if coins >= price else None
+        rows.append([_styled_button(label, f"shop:{item_id}", style)])
+    rows.append(
+        [
+            _styled_button("🎒 Satchel", "bag", _STYLE_PRIMARY),
+            _styled_button("↩ Chronicle", "dashboard", _STYLE_PRIMARY),
+        ]
+    )
     if private_chat:
         pass  # Mini App button is attached by the caller where relevant
     return InlineKeyboardMarkup(rows)
 
 
+def bag_message(player: dict[str, Any]) -> str:
+    """Plain-text satchel summary for the bot surface."""
+    game = player["game"]
+    lines = ["🎒 Your Satchel", ""]
+    cards = inventory_view(game)
+    if not cards:
+        lines.append("Empty. Clear a chapter — every victory drops random loot.")
+    else:
+        for card in cards:
+            lines.append(
+                f"{card['emoji']} {card['name']} x{card['quantity']} — {card['ability']} "
+                f"(sells for {card['sell']}🪙 each)"
+            )
+    relics = game.get("relics") or {}
+    lines.append("")
+    lines.append("⚒ Relics")
+    if not relics:
+        lines.append("None yet — buy one in /shop, then upgrade it up to level 5.")
+    else:
+        for item_id, level in relics.items():
+            item = ITEMS[item_id]
+            lines.append(f"{item['emoji']} {item['name']} — level {level}/{MAX_RELIC_LEVEL}")
+    lines.append("")
+    lines.append(
+        "Using, selling and upgrading items happens in the Rift Arena Mini App — "
+        "tap ▶️ PLAY below."
+    )
+    return "\n".join(lines)
+
+
 def _home_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
     """A minimal navigation keyboard for the rules / about surfaces."""
-    rows: list[list[InlineKeyboardButton]] = [
+    rows: list[list[InlineKeyboardButton]] = []
+    if mini_app_url and include_mini_app:
+        rows.append(
+            [InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))]
+        )
+    rows += [
         [_styled_button("🏟 Dashboard", "dashboard", _STYLE_PRIMARY)],
         [
             _styled_button("🏪 Marketplace", "shop:open", _STYLE_SUCCESS),
@@ -538,10 +638,6 @@ def _home_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inlin
         ],
         [_styled_button("📜 Rules", "rules", _STYLE_PRIMARY)],
     ]
-    if mini_app_url and include_mini_app:
-        rows.append(
-            [InlineKeyboardButton("✨ Tactical Mini App", web_app=WebAppInfo(mini_app_url))]
-        )
     return InlineKeyboardMarkup(rows)
 
 

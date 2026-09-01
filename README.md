@@ -51,6 +51,30 @@ then a stronger monster steps up.
 - The full guide is in `/help`, on the 📖 How to Play button, and in the Mini App's four-slide
   onboarding.
 
+### Items, loot and the Forge (v0.5)
+
+The Mini App is now the main way to play; the bot is the launcher.
+
+| Category | Items |
+| --- | --- |
+| **Healing** | Ember Salve (+8 HP) · Healing Draught (+15) · Greater Draught (+30) · Emberweave Balm (regen 5 HP × 3 turns) · **Phoenix Tear** (full HP + full Energy) |
+| **Tactical** | Rift Elixir (+3 Energy) · Clarity Tonic (Focus to max) · Rift Grenade (12 unblockable damage) · Veil Powder (the enemy misses its next move) |
+| **Relics (permanent, level 1→5)** | Rift Steel (+2 Strike/lv) · Aegis Sigil (+2 Ward/lv) · Luck Charm (+1 Scout insight/lv) · Ember Heart (+5 max HP/lv) · Rift Core (+1 max Energy/lv) |
+| **Treasure (sell only)** | Ash Shard 12🪙 · Rift Pearl 26🪙 · Colossus Fang 44🪙 · Gilded Idol 75🪙 |
+
+- **Loot:** every cleared chapter opens a reward chest with 2–3 random items (bosses roll 4–5
+  on a much richer table). A modal reveals each drop with its artwork.
+- **Satchel:** every item shows its picture, rarity, ability and sale value. Potions can be
+  used from a **quick-use strip** right under the action buttons, mid-fight, for free.
+- **Forge:** spend coins to raise any owned relic one level at a time to 5, with the exact
+  next-level bonus shown before you pay.
+- **Sell:** turn treasure into coins from the satchel.
+- **Sound & feel:** every action, hit, block, crit, heal, coin, forge and victory has a
+  procedurally synthesised sound effect (no audio files, works offline) plus slash streaks,
+  impact flashes and ward rings. Mute from the speaker button in the header.
+- API: `POST /api/use`, `POST /api/sell`, `POST /api/upgrade` alongside `/api/actions` and
+  `/api/buy`. All of them are server-authoritative and Telegram-authenticated.
+
 ### Preview the Mini App without Telegram
 
 ```bash
@@ -67,7 +91,9 @@ visuals can be iterated on locally. Development only.
 | Telegram bot | Current `python-telegram-bot` handlers for `/start`, `/play`, `/status`, `/shop`, `/rules`, `/about`, `/app`, and `/help` |
 | Colored buttons | Native Bot API button styles (primary/success/danger) via PTB `InlineKeyboardButton(style=...)` |
 | Player economy | XP, **Coins**, **Points**, and **Gold** tracked server-side and exposed in the dashboard and Mini App |
-| Marketplace | Coin-purchasable consumables and permanent upgrades via `/shop` and `/api/buy` |
+| Item system | 18-item catalogue with artwork, rarities and abilities: consumables, upgradeable relics and sellable treasure |
+| Loot | Random reward chest on every chapter clear, with an illustrated reveal |
+| Marketplace | Coin-purchasable consumables and relics via `/shop` and `/api/buy` |
 | Level progress | XP progress bar toward the next level on the dashboard and Mini App |
 | Rules & version | `/rules` (Chronicle regulations) and `/about` (game version and info) commands |
 | Native Rich Messages | Explicit raw Bot API `sendRichMessage` adapter using `rich_message: {"markdown": ...}` |

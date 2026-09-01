@@ -1,3 +1,5 @@
+[hidden] { display: none !important; }
+
 /* ChronicleRift — Rift Arena visual system */
 :root {
   --bg: #070a16;
@@ -512,6 +514,8 @@ svg { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 1
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 10px); } }
 
 /* ---------- onboarding ---------- */
+.onboard.is-open, .loot-modal.is-open { display: grid; }
+body.modal-open { overflow: hidden; }
 .onboard { position: fixed; inset: 0; z-index: 80; display: grid; place-items: end center; }
 .onboard-scrim { position: absolute; inset: 0; background: rgba(4, 6, 14, 0.78); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .onboard-card {
@@ -682,3 +686,136 @@ body.is-resolving .action.is-pending { border-color: var(--violet); box-shadow: 
   margin-top: 6px; padding: 8px 10px; border-radius: 10px; font-size: 12.5px;
   border: 1px solid rgba(79, 240, 210, 0.35); background: rgba(79, 240, 210, 0.1); color: #cfeee7;
 }
+
+
+/* ============ v0.5 — items, satchel, forge, loot, hit effects ============ */
+.item-grid { display: flex; flex-direction: column; gap: 9px; }
+.item-card {
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px; border-radius: 15px;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.035);
+  transition: border-color .2s, transform .2s;
+}
+.item-card:active { transform: scale(0.995); }
+.item-card.is-locked { opacity: 0.68; }
+.item-card.r-rare { border-color: rgba(79, 240, 210, 0.28); }
+.item-card.r-epic { border-color: rgba(124, 108, 255, 0.38); }
+.item-card.r-legendary { border-color: rgba(255, 198, 92, 0.45); background: rgba(255, 198, 92, 0.06); }
+
+.item-art {
+  flex: 0 0 54px; width: 54px; height: 54px; border-radius: 13px; overflow: hidden;
+  display: grid; place-items: center; font-size: 24px;
+  background: rgba(9, 11, 26, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.item-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.item-art.sm { flex-basis: 40px; width: 40px; height: 40px; border-radius: 11px; font-size: 18px; }
+.item-art.r-rare { box-shadow: inset 0 0 0 1px rgba(79, 240, 210, 0.45); }
+.item-art.r-epic { box-shadow: inset 0 0 0 1px rgba(124, 108, 255, 0.55); }
+.item-art.r-legendary { box-shadow: inset 0 0 0 1px rgba(255, 198, 92, 0.7), 0 0 16px rgba(255, 198, 92, 0.25); }
+
+.item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item-info strong { font-size: 13.5px; }
+.item-info em { font-style: normal; font-size: 11.5px; color: var(--teal); font-weight: 700; }
+.item-info small { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.rarity { font-size: 8.5px; font-weight: 800; letter-spacing: 0.16em; color: var(--muted); }
+.rarity.r-rare { color: #4ff0d2; }
+.rarity.r-epic { color: #a99bff; }
+.rarity.r-legendary { color: #ffc65c; }
+
+.lvl-row { display: inline-flex; gap: 4px; margin: 3px 0 1px; }
+.lvl-row .lvl {
+  width: 15px; height: 5px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.lvl-row .lvl.on { background: linear-gradient(90deg, #4ff0d2, #7c6cff); box-shadow: 0 0 8px rgba(124, 108, 255, 0.5); }
+
+.item-actions { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.btn-use, .btn-sell, .btn-forge, .shop-buy {
+  cursor: pointer; border-radius: 10px; padding: 7px 11px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.06em;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.btn-use { background: linear-gradient(135deg, #4ff0d2, #37c9ae); color: #06231e; }
+.btn-sell { background: rgba(255, 255, 255, 0.06); color: #ffd479; border-color: rgba(255, 198, 92, 0.35); }
+.btn-forge { background: linear-gradient(135deg, #7c6cff, #5b47f5); color: #f2f1ff; }
+.btn-use svg, .btn-sell svg, .btn-forge svg, .shop-buy svg { width: 13px; height: 13px; }
+.btn-use:disabled, .btn-sell:disabled, .btn-forge:disabled, .shop-buy:disabled {
+  opacity: 0.42; cursor: not-allowed; filter: grayscale(0.4);
+}
+
+/* quick-use strip in the action dock */
+.quick-use { margin-top: 10px; }
+.quick-label { font-size: 9px; font-weight: 800; letter-spacing: 0.18em; color: var(--muted); }
+.quick-strip { display: flex; gap: 8px; overflow-x: auto; padding: 7px 2px 2px; scrollbar-width: none; }
+.quick-strip::-webkit-scrollbar { display: none; }
+.quick-item {
+  position: relative; flex: 0 0 auto; cursor: pointer;
+  padding: 4px; border-radius: 13px; background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line); display: grid; place-items: center;
+}
+.quick-item b {
+  position: absolute; right: -3px; bottom: -3px;
+  font-size: 9.5px; font-weight: 900; padding: 1px 5px; border-radius: 999px;
+  background: #0a0d18; border: 1px solid var(--line-strong); color: #ffd479;
+}
+.quick-item.r-legendary { border-color: rgba(255, 198, 92, 0.6); }
+.quick-item:disabled { opacity: 0.5; }
+
+/* reward chest */
+.loot-modal { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; }
+.loot-card {
+  position: relative; width: min(92vw, 420px); padding: 20px;
+  border-radius: 22px; border: 1px solid rgba(255, 198, 92, 0.4);
+  background: linear-gradient(180deg, #1a1633, #0b0f22);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7), 0 0 70px rgba(255, 198, 92, 0.18);
+  animation: card-up .45s cubic-bezier(.2, .9, .3, 1.1); text-align: center;
+}
+.loot-card h3 { margin: 4px 0 4px; font-size: 22px; font-weight: 900; color: var(--gold); }
+.loot-card p { margin: 0 0 14px; font-size: 12.5px; color: var(--muted); }
+.loot-card .btn-primary { width: 100%; margin-top: 16px; }
+.loot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+.loot-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 7px;
+  border-radius: 14px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04);
+  animation: loot-pop .5s cubic-bezier(.2, .9, .3, 1.3) both;
+}
+.loot-tile strong { font-size: 11.5px; line-height: 1.25; }
+.loot-tile small { font-size: 10px; color: var(--teal); }
+.loot-tile.r-legendary { border-color: rgba(255, 198, 92, 0.6); box-shadow: 0 0 22px rgba(255, 198, 92, 0.2); }
+.loot-tile.r-epic { border-color: rgba(124, 108, 255, 0.5); }
+@keyframes loot-pop { from { opacity: 0; transform: translateY(14px) scale(.86); } to { opacity: 1; transform: none; } }
+
+/* impact effects */
+.slash-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: inherit; z-index: 4; }
+.slash-fx i {
+  position: absolute; top: 50%; left: 50%; width: 150%; height: 4px;
+  margin: -2px 0 0 -75%; transform: rotate(var(--rot)) scaleX(0);
+  background: linear-gradient(90deg, transparent, #ffffff, #7c6cff, transparent);
+  filter: blur(0.6px); opacity: 0; animation: slash-sweep .34s ease-out forwards;
+}
+.slash-fx.crit i { height: 6px; background: linear-gradient(90deg, transparent, #fff, #ffc65c, #ff5f7a, transparent); }
+@keyframes slash-sweep {
+  0% { transform: rotate(var(--rot)) scaleX(0); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: rotate(var(--rot)) scaleX(1); opacity: 0; }
+}
+.impact-flash {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 3;
+  background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.55), transparent 62%);
+  animation: flash-out .34s ease-out forwards;
+}
+.impact-flash.crit { background: radial-gradient(circle at 50% 45%, rgba(255, 214, 130, 0.75), transparent 66%); }
+.impact-flash.hurt { background: radial-gradient(circle at 50% 50%, rgba(255, 95, 122, 0.5), transparent 64%); }
+.impact-flash.heal { background: radial-gradient(circle at 50% 50%, rgba(79, 240, 210, 0.45), transparent 64%); }
+@keyframes flash-out { from { opacity: 1; } to { opacity: 0; } }
+.ring-fx {
+  position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+  border-radius: 50%; pointer-events: none; z-index: 3;
+  border: 2px solid rgba(124, 108, 255, 0.85); animation: ring-out .7s ease-out forwards;
+}
+.ring-fx.ward { border-color: rgba(93, 168, 255, 0.9); }
+.ring-fx.scan { border-color: rgba(79, 240, 210, 0.9); }
+@keyframes ring-out { from { transform: scale(0.3); opacity: 0.9; } to { transform: scale(6); opacity: 0; } }
+
+#sound-btn svg { pointer-events: none; }

@@ -49,6 +49,15 @@ class BuyRequest(BaseModel):
     item_id: str
 
 
+class SellRequest(BaseModel):
+    """Mini App satchel sale payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    quantity: int = 1
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the deployable service; settings can be injected for integration tests."""
     runtime_settings = settings or Settings.from_env()
@@ -247,6 +256,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "reason": result.reason,
             },
         }
+
+    async def _item_endpoint(request: Request, coroutine: Any) -> dict[str, Any]:
+        try:
+            result = await coroutine
+        except GameBusyError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Game state changed; retry."
+            ) from None
+        except (DatabaseUnavailable, PurchaseError):
+            LOGGER.warning("Database unavailable during a satchel operation")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
+            ) from None
+        del request
+        return {
+            "player": public_player_view(result.player),
+            "turn": {
+                "item_id": result.item_id,
+                "item_name": result.item_name,
+                "summary": result.summary,
+                "success": result.success,
+                "reason": result.reason,
+                "effects": result.effects or {},
+            },
+        }
+
+    @app.post("/api/use", tags=["mini-app"])
+    async def use_item_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request, request.app.state.game_service.use_item(identity, payload.item_id)
+        )
+
+    @app.post("/api/sell", tags=["mini-app"])
+    async def sell_item_endpoint(
+        payload: SellRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request,
+            request.app.state.game_service.sell_item(
+                identity, payload.item_id, max(1, min(99, payload.quantity))
+            ),
+        )
+
+    @app.post("/api/upgrade", tags=["mini-app"])
+    async def upgrade_relic_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request, request.app.state.game_service.upgrade_relic(identity, payload.item_id)
+        )
 
     @app.post(runtime_settings.webhook_path, include_in_schema=False)
     async def telegram_webhook(request: Request) -> JSONResponse:

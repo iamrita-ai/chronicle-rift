@@ -20,7 +20,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from chronicle_rift.game_engine import resolve_purchase, resolve_turn  # noqa: E402
+from chronicle_rift.game_engine import (  # noqa: E402
+    resolve_purchase,
+    resolve_turn,
+    sell_item,
+    upgrade_relic,
+    use_item,
+)
 from chronicle_rift.models import new_player, public_player_view  # noqa: E402
 
 WEBAPP = ROOT / "src" / "chronicle_rift" / "webapp"
@@ -89,6 +95,30 @@ class PreviewHandler(BaseHTTPRequestHandler):
                         "narrative": turn.summary,
                         "victory": turn.victory,
                         "effects": turn.effects,
+                    },
+                }
+            )
+            return
+        if path in {"/api/use", "/api/sell", "/api/upgrade"}:
+            item_id = payload["item_id"]
+            if path == "/api/use":
+                result = use_item(PLAYER, item_id)
+            elif path == "/api/sell":
+                result = sell_item(PLAYER, item_id, int(payload.get("quantity", 1)))
+            else:
+                result = upgrade_relic(PLAYER, item_id)
+            if result.success:
+                PLAYER = result.player
+            self._json(
+                {
+                    "player": public_player_view(PLAYER),
+                    "turn": {
+                        "item_id": result.item_id,
+                        "item_name": result.item_name,
+                        "summary": result.summary,
+                        "success": result.success,
+                        "reason": result.reason,
+                        "effects": result.effects,
                     },
                 }
             )

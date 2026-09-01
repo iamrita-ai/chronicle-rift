@@ -93,7 +93,9 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
     enemy = view["enemy"]
     battle = view.get("battle", {})
     intent = enemy.get("intent") or {}
-    inventory = ", ".join(_safe_text(item) for item in view["inventory"])
+    inventory = ", ".join(
+        f"{_safe_text(card['name'])} x{card['quantity']}" for card in view["inventory"]
+    ) or "empty"
     narrative = _safe_text(view["narrative"])
     progress_text = _progress_bar(hero["progress"])
     inventory_bullets = inventory.replace(", ", "\n- ")
@@ -157,15 +159,16 @@ def shop_messages(player: dict[str, Any]) -> tuple[str, str]:
     lines = []
     for item in view["shop"]:
         lines.append(
-            f"{item['emoji']} **{_safe_text(item['name'])}** \\- {item['cost']} Coins\n"
-            f"{_safe_text(item['desc'])}"
+            f"{item['emoji']} **{_safe_text(item['name'])}** \\- {_price_of(item)} Coins\n"
+            f"{_safe_text(item['ability'])} \\- {_safe_text(item['desc'])}"
         )
     rich_shop = "\n\n".join(lines)
     rich = f"# 🏪 The Marketplace\n\n> **Your balance:** 🪙 {hero['coins']} Coins\n\n{rich_shop}"
     plain_lines = []
     for item in view["shop"]:
         plain_lines.append(
-            f"{item['emoji']} {item['name']} - {item['cost']} Coins\n{_itemize(item['desc'])}"
+            f"{item['emoji']} {item['name']} - {_price_of(item)} Coins\n"
+            f"{_itemize(item['ability'])}"
         )
     plain = (
         f"🏪 The Marketplace\n"
@@ -200,6 +203,13 @@ def about_message(*, version: str) -> tuple[str, str]:
         "Commands: /play, /shop, /rules, /about, /app."
     )
     return rich, plain
+
+
+def _price_of(card: dict[str, Any]) -> int | str:
+    """Shop price: relics quote the cost of the NEXT level the hero can buy."""
+    if card.get("kind") == "relic":
+        return card.get("next_cost") or "MAX"
+    return card.get("cost", 0)
 
 
 def _focus_pips(focus: int, maximum: int) -> str:

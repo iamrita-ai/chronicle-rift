@@ -60,8 +60,18 @@
     log: $("#battle-log"),
     questTitle: $("#quest-title"),
     questObjective: $("#quest-objective"),
-    inventory: $("#inventory-list"),
-    invCount: $("#inv-count"),
+    satchelList: $("#satchel-list"),
+    satchelValue: $("#satchel-value"),
+    forgeList: $("#forge-list"),
+    quickStrip: $("#quick-strip"),
+    quickUse: $("#quick-use"),
+    soundBtn: $("#sound-btn"),
+    soundOnIc: $("#sound-on-ic"),
+    soundOffIc: $("#sound-off-ic"),
+    lootModal: $("#loot-modal"),
+    lootGrid: $("#loot-grid"),
+    lootSub: $("#loot-sub"),
+    lootClose: $("#loot-close"),
     coinBalance: $("#coin-balance"),
     shopList: $("#shop-list"),
     toast: $("#toast"),
@@ -130,6 +140,129 @@
     system: ICONS.spark,
   };
 
+
+  /* ---------- procedural sound effects (no audio files, no network) ---------- */
+  const sfx = (() => {
+    let ctx = null;
+    let enabled = true;
+    try { enabled = localStorage.getItem("cr_sound") !== "off"; } catch (_) { /* private mode */ }
+
+    function ac() {
+      if (!enabled) return null;
+      if (!ctx) {
+        const Ctor = window.AudioContext || window.webkitAudioContext;
+        if (!Ctor) return null;
+        ctx = new Ctor();
+      }
+      if (ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+
+    function tone({ type = "sine", from = 440, to = null, dur = 0.18, gain = 0.16, delay = 0, curve = "exp" }) {
+      const audio = ac();
+      if (!audio) return;
+      const t0 = audio.currentTime + delay;
+      const osc = audio.createOscillator();
+      const amp = audio.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(from, t0);
+      if (to !== null) {
+        if (curve === "exp") osc.frequency.exponentialRampToValueAtTime(Math.max(1, to), t0 + dur);
+        else osc.frequency.linearRampToValueAtTime(Math.max(1, to), t0 + dur);
+      }
+      amp.gain.setValueAtTime(0.0001, t0);
+      amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(amp).connect(audio.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.05);
+    }
+
+    function noise({ dur = 0.22, gain = 0.18, delay = 0, hp = 900, lp = 6000 }) {
+      const audio = ac();
+      if (!audio) return;
+      const t0 = audio.currentTime + delay;
+      const frames = Math.floor(audio.sampleRate * dur);
+      const buffer = audio.createBuffer(1, frames, audio.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < frames; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / frames);
+      const src = audio.createBufferSource();
+      src.buffer = buffer;
+      const band = audio.createBiquadFilter();
+      band.type = "bandpass";
+      band.frequency.value = (hp + lp) / 2;
+      band.Q.value = 0.7;
+      const amp = audio.createGain();
+      amp.gain.setValueAtTime(gain, t0);
+      amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      src.connect(band).connect(amp).connect(audio.destination);
+      src.start(t0);
+    }
+
+    return {
+      get enabled() { return enabled; },
+      toggle() {
+        enabled = !enabled;
+        try { localStorage.setItem("cr_sound", enabled ? "on" : "off"); } catch (_) { /* ignore */ }
+        if (enabled) this.click();
+        return enabled;
+      },
+      click() { tone({ type: "triangle", from: 620, to: 880, dur: 0.07, gain: 0.07 }); },
+      strike() {
+        noise({ dur: 0.14, gain: 0.22, hp: 1800, lp: 7000 });
+        tone({ type: "sawtooth", from: 320, to: 90, dur: 0.2, gain: 0.14 });
+      },
+      crit() {
+        noise({ dur: 0.2, gain: 0.3, hp: 2200, lp: 9000 });
+        tone({ type: "sawtooth", from: 480, to: 70, dur: 0.32, gain: 0.2 });
+        tone({ type: "square", from: 1200, to: 300, dur: 0.28, gain: 0.09, delay: 0.05 });
+      },
+      guard() {
+        tone({ type: "sine", from: 180, to: 320, dur: 0.22, gain: 0.16 });
+        tone({ type: "triangle", from: 900, to: 1400, dur: 0.16, gain: 0.07, delay: 0.04 });
+      },
+      block() { noise({ dur: 0.12, gain: 0.16, hp: 400, lp: 2200 }); },
+      scout() {
+        tone({ type: "sine", from: 700, to: 1250, dur: 0.26, gain: 0.09 });
+        tone({ type: "sine", from: 1050, to: 1600, dur: 0.2, gain: 0.05, delay: 0.08 });
+      },
+      rest() {
+        tone({ type: "sine", from: 300, to: 520, dur: 0.4, gain: 0.11 });
+        tone({ type: "sine", from: 450, to: 780, dur: 0.36, gain: 0.06, delay: 0.1 });
+      },
+      hurt() {
+        tone({ type: "square", from: 220, to: 70, dur: 0.24, gain: 0.15 });
+        noise({ dur: 0.16, gain: 0.14, hp: 200, lp: 1400 });
+      },
+      heal() {
+        [523, 659, 784].forEach((f, i) => tone({ type: "sine", from: f, dur: 0.24, gain: 0.09, delay: i * 0.07 }));
+      },
+      burn() { noise({ dur: 0.3, gain: 0.1, hp: 300, lp: 2600 }); },
+      coin() {
+        tone({ type: "square", from: 1180, dur: 0.07, gain: 0.08 });
+        tone({ type: "square", from: 1560, dur: 0.1, gain: 0.07, delay: 0.06 });
+      },
+      loot() {
+        [660, 880, 1100, 1320].forEach((f, i) => tone({ type: "triangle", from: f, dur: 0.16, gain: 0.09, delay: i * 0.075 }));
+      },
+      victory() {
+        [523, 659, 784, 1047].forEach((f, i) => tone({ type: "triangle", from: f, dur: 0.34, gain: 0.12, delay: i * 0.11 }));
+      },
+      defeat() {
+        [392, 330, 262, 196].forEach((f, i) => tone({ type: "sine", from: f, dur: 0.4, gain: 0.12, delay: i * 0.13 }));
+      },
+      forge() {
+        noise({ dur: 0.1, gain: 0.2, hp: 1200, lp: 5000 });
+        tone({ type: "square", from: 260, to: 520, dur: 0.3, gain: 0.12, delay: 0.05 });
+        noise({ dur: 0.12, gain: 0.16, hp: 1500, lp: 6000, delay: 0.16 });
+      },
+      levelup() {
+        [523, 784, 1047, 1319].forEach((f, i) => tone({ type: "sine", from: f, dur: 0.3, gain: 0.11, delay: i * 0.09 }));
+      },
+      error() { tone({ type: "square", from: 200, to: 120, dur: 0.18, gain: 0.1 }); },
+    };
+  })();
+
   /* ---------- state ---------- */
   let player = null;
   let busy = false;
@@ -183,6 +316,35 @@
     void element.offsetWidth; // restart animation
     element.classList.add(cls);
     window.setTimeout(() => element.classList.remove(cls), duration);
+  }
+
+
+  /* ---------- physical hit effects ---------- */
+  function slashFx(kind) {
+    const layer = document.createElement("div");
+    layer.className = `slash-fx ${kind || ""}`;
+    for (let i = 0; i < (kind === "crit" ? 3 : 2); i += 1) {
+      const streak = document.createElement("i");
+      streak.style.setProperty("--rot", `${-35 + i * 26 + Math.random() * 10}deg`);
+      streak.style.animationDelay = `${i * 0.07}s`;
+      layer.append(streak);
+    }
+    els.enemyCard.append(layer);
+    window.setTimeout(() => layer.remove(), 700);
+  }
+
+  function impactFlash(target, cls) {
+    const flash = document.createElement("div");
+    flash.className = `impact-flash ${cls || ""}`;
+    target.append(flash);
+    window.setTimeout(() => flash.remove(), 480);
+  }
+
+  function ringFx(target, cls) {
+    const ring = document.createElement("div");
+    ring.className = `ring-fx ${cls || ""}`;
+    target.append(ring);
+    window.setTimeout(() => ring.remove(), 760);
   }
 
   function shardBurst() {
@@ -311,22 +473,8 @@
       : `Chapter ${quest.chapter}: ${quest.title}`;
     els.questObjective.textContent = quest.objective;
 
-    const items = view.inventory || [];
-    els.invCount.textContent = items.length;
-    els.inventory.replaceChildren();
-    if (!items.length) {
-      const empty = document.createElement("span");
-      empty.className = "relic relic-empty";
-      empty.textContent = "Empty — relics from the Marketplace appear here.";
-      els.inventory.append(empty);
-    } else {
-      items.forEach((name) => {
-        const chip = document.createElement("span");
-        chip.className = "relic";
-        chip.textContent = name;
-        els.inventory.append(chip);
-      });
-    }
+    renderSatchel(view.inventory || [], view.inventory_value || 0);
+    renderForge(view.relics || [], hero.coins);
 
     const strikingAllowed = hero.energy > 0;
     els.energyHint.hidden = strikingAllowed;
@@ -388,6 +536,140 @@
     return "Strike — the enemy is exposed and your Focus is charged.";
   }
 
+
+  const RARITY_LABEL = { common: "COMMON", rare: "RARE", epic: "EPIC", legendary: "LEGENDARY" };
+
+  function itemArt(card, size) {
+    const wrap = document.createElement("span");
+    wrap.className = `item-art r-${card.rarity} ${size || ""}`;
+    if (card.art) {
+      const img = document.createElement("img");
+      img.src = `./art/${card.art}.jpg`;
+      img.alt = "";
+      img.loading = "lazy";
+      img.addEventListener("error", () => { wrap.textContent = card.emoji || "?"; });
+      wrap.append(img);
+    } else {
+      wrap.textContent = card.emoji || "?";
+      wrap.classList.add("is-emoji");
+    }
+    return wrap;
+  }
+
+  function renderSatchel(items, totalValue) {
+    els.satchelValue.textContent = totalValue;
+    els.satchelList.replaceChildren();
+    els.quickStrip.replaceChildren();
+
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "market-note";
+      empty.textContent = "Your satchel is empty. Clear a chapter — every victory drops loot.";
+      els.satchelList.append(empty);
+      els.quickUse.hidden = true;
+      return;
+    }
+
+    const consumables = items.filter((item) => item.kind === "consumable");
+    els.quickUse.hidden = consumables.length === 0;
+    consumables.forEach((card) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `quick-item r-${card.rarity}`;
+      button.disabled = busy;
+      button.title = `${card.name} — ${card.ability}`;
+      button.append(itemArt(card, "sm"));
+      const qty = document.createElement("b");
+      qty.textContent = `x${card.quantity}`;
+      button.append(qty);
+      button.addEventListener("click", () => useItem(card.id));
+      els.quickStrip.append(button);
+    });
+
+    items.forEach((card) => {
+      const row = document.createElement("div");
+      row.className = `item-card r-${card.rarity}`;
+      row.append(itemArt(card));
+
+      const info = document.createElement("div");
+      info.className = "item-info";
+      info.innerHTML = `<span class="rarity r-${card.rarity}">${RARITY_LABEL[card.rarity]}</span>`;
+      const title = document.createElement("strong");
+      title.textContent = `${card.name} ×${card.quantity}`;
+      const ability = document.createElement("em");
+      ability.textContent = card.ability;
+      const desc = document.createElement("small");
+      desc.textContent = card.desc;
+      info.append(title, ability, desc);
+
+      const actions = document.createElement("div");
+      actions.className = "item-actions";
+      if (card.kind === "consumable") {
+        const use = document.createElement("button");
+        use.type = "button";
+        use.className = "btn-use";
+        use.textContent = "USE";
+        use.disabled = busy;
+        use.addEventListener("click", () => useItem(card.id));
+        actions.append(use);
+      }
+      const sell = document.createElement("button");
+      sell.type = "button";
+      sell.className = "btn-sell";
+      sell.innerHTML = `SELL ${card.sell}${ICONS.coin}`;
+      sell.disabled = busy;
+      sell.addEventListener("click", () => sellItem(card.id, card.name, card.sell));
+      actions.append(sell);
+
+      row.append(info, actions);
+      els.satchelList.append(row);
+    });
+  }
+
+  function renderForge(relics, coins) {
+    els.forgeList.replaceChildren();
+    relics.forEach((card) => {
+      const row = document.createElement("div");
+      row.className = `item-card r-${card.rarity}${card.owned ? "" : " is-locked"}`;
+      row.append(itemArt(card));
+
+      const info = document.createElement("div");
+      info.className = "item-info";
+      const pips = Array.from({ length: card.max_level }, (_, i) =>
+        `<i class="lvl${i < card.level ? " on" : ""}"></i>`).join("");
+      info.innerHTML = `<span class="rarity r-${card.rarity}">${RARITY_LABEL[card.rarity]}</span>`;
+      const title = document.createElement("strong");
+      title.textContent = card.owned ? `${card.name} · Lv ${card.level}` : card.name;
+      const ability = document.createElement("em");
+      ability.textContent = card.owned ? card.bonus_now : card.ability;
+      const meter = document.createElement("span");
+      meter.className = "lvl-row";
+      meter.innerHTML = pips;
+      const desc = document.createElement("small");
+      desc.textContent = card.bonus_next ? `Next level: ${card.bonus_next}` : card.desc;
+      info.append(title, ability, meter, desc);
+
+      const actions = document.createElement("div");
+      actions.className = "item-actions";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn-forge";
+      if (card.next_cost === null || card.next_cost === undefined) {
+        button.textContent = "MAX";
+        button.disabled = true;
+      } else {
+        button.innerHTML = `${card.owned ? "UPGRADE" : "FORGE"} ${card.next_cost}${ICONS.coin}`;
+        button.disabled = busy || coins < card.next_cost;
+        button.addEventListener("click", () =>
+          (card.owned ? upgradeRelic(card.id) : buyItem(card.id)));
+      }
+      actions.append(button);
+
+      row.append(info, actions);
+      els.forgeList.append(row);
+    });
+  }
+
   function renderShop(shop, coins) {
     els.shopList.replaceChildren();
     if (!shop.length) {
@@ -397,47 +679,47 @@
       els.shopList.append(empty);
       return;
     }
-    shop.forEach((item) => {
-      const affordable = coins >= item.cost;
-      const card = document.createElement("div");
-      card.className = "shop-card";
+    shop.forEach((card) => {
+      const price = card.kind === "relic" ? card.next_cost : card.cost;
+      const maxed = card.kind === "relic" && (price === null || price === undefined);
+      const affordable = !maxed && coins >= price;
 
-      const icon = document.createElement("span");
-      icon.className = "shop-ic";
-      if (item.art) {
-        const art = document.createElement("img");
-        art.src = `./art/${item.art}.jpg`;
-        art.alt = "";
-        art.loading = "lazy";
-        art.addEventListener("error", () => {
-          icon.innerHTML = SHOP_ICONS[item.id] || ICONS.spark;
-        });
-        icon.classList.add("has-art");
-        icon.append(art);
-      } else {
-        icon.innerHTML = SHOP_ICONS[item.id] || ICONS.spark;
-      }
+      const row = document.createElement("div");
+      row.className = `item-card r-${card.rarity}`;
+      row.append(itemArt(card));
 
       const info = document.createElement("div");
-      info.className = "shop-info";
-      const kind = item.kind === "upgrade" ? "PERMANENT RELIC" : "CONSUMABLE";
-      info.innerHTML = `<span class="shop-kind">${kind}</span>`;
+      info.className = "item-info";
+      const kind = card.kind === "relic"
+        ? (card.owned ? `RELIC · LV ${card.level}` : "PERMANENT RELIC")
+        : "CONSUMABLE";
+      info.innerHTML = `<span class="rarity r-${card.rarity}">${kind}</span>`;
       const title = document.createElement("strong");
-      title.textContent = item.name;
+      title.textContent = card.name;
+      const ability = document.createElement("em");
+      ability.textContent = card.ability;
       const desc = document.createElement("small");
-      desc.textContent = item.desc;
-      info.append(title, desc);
+      desc.textContent = card.desc;
+      info.append(title, ability, desc);
 
+      const actions = document.createElement("div");
+      actions.className = "item-actions";
       const button = document.createElement("button");
       button.type = "button";
       button.className = "shop-buy";
-      button.disabled = !affordable || busy;
-      button.innerHTML = `${item.cost} ${ICONS.coin}`;
-      button.setAttribute("aria-label", `Buy ${item.name} for ${item.cost} coins`);
-      button.addEventListener("click", () => buyItem(item.id));
+      if (maxed) {
+        button.textContent = "MAX";
+        button.disabled = true;
+      } else {
+        button.innerHTML = `${price} ${ICONS.coin}`;
+        button.disabled = !affordable || busy;
+        button.setAttribute("aria-label", `Buy ${card.name} for ${price} coins`);
+        button.addEventListener("click", () => buyItem(card.id));
+      }
+      actions.append(button);
 
-      card.append(icon, info, button);
-      els.shopList.append(card);
+      row.append(info, actions);
+      els.shopList.append(row);
     });
   }
 
@@ -466,38 +748,61 @@
       button.disabled = next;
       button.classList.toggle("is-pending", next && button.dataset.action === pendingAction);
     });
-    if (player) renderShop(player.shop || [], player.hero.coins);
+    if (player) {
+      renderShop(player.shop || [], player.hero.coins);
+      renderSatchel(player.inventory || [], player.inventory_value || 0);
+      renderForge(player.relics || [], player.hero.coins);
+    }
   }
 
   function animateTurn(turn, view) {
     const fx = turn.effects || {};
     const arena = els.arena;
+    const action = fx.action || turn.action;
+
+    if (action === "guard") { sfx.guard(); ringFx(els.heroCard, "ward"); }
+    if (action === "scout") { sfx.scout(); ringFx(els.enemyCard, "scan"); }
+    if (action === "rest") sfx.rest();
 
     // Hero-side gains first (they read instantly).
-    if (fx.healed > 0) spawnFloat(els.heroFloats, `+${fx.healed} HP`, "heal");
+    if (fx.healed > 0) {
+      spawnFloat(els.heroFloats, `+${fx.healed} HP`, "heal");
+      impactFlash(els.heroCard, "heal");
+      sfx.heal();
+    }
+    if (fx.regen_healed > 0) spawnFloat(els.heroFloats, `+${fx.regen_healed} HP`, "heal", 30);
     if (fx.insight > 0) spawnFloat(els.heroFloats, `+${fx.insight} XP`, "xp", 90);
     if (fx.energy_delta > 0) spawnFloat(els.heroFloats, `+${fx.energy_delta} EN`, "energy", 160);
     if (fx.ward > 0) spawnFloat(els.heroFloats, `WARD ${fx.ward}`, "energy", 120);
+    if (fx.burn_damage > 0) { spawnFloat(els.enemyFloats, `BURN -${fx.burn_damage}`, "burn", 60); sfx.burn(); }
+    if (fx.burn_applied > 0) spawnFloat(els.enemyFloats, "BURNING!", "burn", 260);
+    if (fx.focus_spent > 0) spawnFloat(els.heroFloats, `FOCUS x${fx.focus_spent}`, "level", 40);
+    if (fx.focus_gained > 0) spawnFloat(els.heroFloats, "+1 FOCUS", "energy", 200);
 
     // Enemy-side impact.
     if (fx.damage > 0) {
+      slashFx(fx.crit ? "crit" : "");
+      impactFlash(els.enemyCard, fx.crit ? "crit" : "");
       shake(els.enemyCard, "is-hit");
       shake(arena, "is-shaking");
       spawnFloat(els.enemyFloats, fx.crit ? `CRIT -${fx.damage}` : `-${fx.damage}`, fx.crit ? "crit" : "dmg");
       haptic("impact", fx.crit ? "heavy" : "medium");
+      if (fx.crit) sfx.crit(); else sfx.strike();
     }
     if (fx.reflect > 0) spawnFloat(els.enemyFloats, `REFLECT -${fx.reflect}`, "reflect", 220);
-    if (fx.burn_damage > 0) spawnFloat(els.enemyFloats, `BURN -${fx.burn_damage}`, "burn", 60);
-    if (fx.burn_applied > 0) spawnFloat(els.enemyFloats, "BURNING!", "burn", 260);
-    if (fx.focus_spent > 0) spawnFloat(els.heroFloats, `FOCUS x${fx.focus_spent}`, "level", 40);
-    if (fx.focus_gained > 0) spawnFloat(els.heroFloats, "+1 FOCUS", "energy", 200);
-    if (fx.blocked > 0) spawnFloat(els.heroFloats, `BLOCKED ${fx.blocked}`, "energy", 260);
-    if (fx.energy_drained > 0) spawnFloat(els.heroFloats, `-${fx.energy_drained} EN`, "hurt", 300);
     if (fx.enemy_healed > 0) spawnFloat(els.enemyFloats, `+${fx.enemy_healed} HP`, "heal", 240);
+    if (fx.stunned) spawnFloat(els.enemyFloats, "MISSED!", "energy", 260);
+    if (fx.blocked > 0) {
+      spawnFloat(els.heroFloats, `BLOCKED ${fx.blocked}`, "energy", 260);
+      window.setTimeout(() => sfx.block(), 260);
+    }
     if (fx.enemy_damage > 0) {
       shake(els.heroCard, "is-hit");
+      impactFlash(els.heroCard, "hurt");
       spawnFloat(els.heroFloats, `-${fx.enemy_damage} HP`, "hurt", 320);
+      window.setTimeout(() => sfx.hurt(), 300);
     }
+    if (fx.energy_drained > 0) spawnFloat(els.heroFloats, `-${fx.energy_drained} EN`, "hurt", 340);
 
     if (fx.victory) {
       shardBurst();
@@ -509,22 +814,50 @@
       if (fx.points_gained) parts.push(`+${fx.points_gained} points`);
       showBanner("VICTORY", `Chapter ${view.quest.chapter} opens · ${parts.join(" · ")}`);
       spawnFloat(els.heroFloats, `+${fx.coins_gained} COINS`, "level", 380);
-      if (fx.leveled_up) spawnFloat(els.heroFloats, "LEVEL UP!", "level", 640);
+      if (fx.leveled_up) {
+        spawnFloat(els.heroFloats, "LEVEL UP!", "level", 640);
+        window.setTimeout(() => sfx.levelup(), 900);
+      }
       pushLog("victory", turn.summary);
       haptic("notify", "success");
+      sfx.victory();
+      if (fx.loot && fx.loot.length) window.setTimeout(() => showLoot(fx.loot, view), 1100);
     } else if (fx.defeated) {
       setScene("camp");
       showBanner("DOWN BUT SAFE", "The Chronicle keeps all progress — wake at camp, fully healed.", true);
       pushLog("enemy", turn.summary);
       haptic("notify", "warning");
+      sfx.defeat();
     } else if (fx.revived) {
       setScene("camp");
       showToast("You wake at camp, fully healed. The fight continues.");
       pushLog("system", turn.summary);
+      sfx.heal();
     } else {
-      setScene(turn.action === "rest" ? "camp" : "realm");
-      pushLog(turn.action || "system", turn.summary);
+      setScene(action === "rest" ? "camp" : "realm");
+      pushLog(action === "item" ? "system" : (action || "system"), turn.summary);
     }
+  }
+
+  /* ---------- reward chest ---------- */
+  function showLoot(loot, view) {
+    els.lootSub.textContent = `Chapter ${(view.quest.chapter || 1) - 1} cleared — ${loot.length} item${loot.length === 1 ? "" : "s"} recovered.`;
+    els.lootGrid.replaceChildren();
+    loot.forEach((card, index) => {
+      const tile = document.createElement("div");
+      tile.className = `loot-tile r-${card.rarity}`;
+      tile.style.animationDelay = `${index * 0.09}s`;
+      tile.append(itemArt(card));
+      const name = document.createElement("strong");
+      name.textContent = card.name;
+      const ability = document.createElement("small");
+      ability.textContent = card.ability;
+      tile.append(name, ability);
+      els.lootGrid.append(tile);
+    });
+    openModal(els.lootModal);
+    sfx.loot();
+    haptic("notify", "success");
   }
 
   let currentScene = null;
@@ -565,6 +898,83 @@
     }
   }
 
+
+  async function itemRequest(path, body, onSuccess) {
+    if (busy) return;
+    setBusy(true);
+    setStatus("Working…", "busy");
+    try {
+      const data = await request(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      renderPlayer(data.player);
+      const turn = data.turn || {};
+      if (turn.success) {
+        showToast(turn.summary);
+        pushLog("system", turn.summary);
+        onSuccess(turn, data.player);
+      } else {
+        showToast(turn.summary || "That could not be completed.");
+        sfx.error();
+        haptic("notify", "error");
+      }
+      setStatus("Verified", "ok");
+    } catch (error) {
+      setStatus("Reconnect needed", "error");
+      showToast(error instanceof Error ? error.message : "The rift briefly lost its signal.");
+      sfx.error();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function useItem(itemId) {
+    return itemRequest("/api/use", { item_id: itemId }, (turn, view) => {
+      const fx = turn.effects || {};
+      if (fx.healed > 0) { impactFlash(els.heroCard, "heal"); spawnFloat(els.heroFloats, `+${fx.healed} HP`, "heal"); sfx.heal(); }
+      if (fx.energy_delta > 0) { spawnFloat(els.heroFloats, `+${fx.energy_delta} EN`, "energy", 80); sfx.rest(); }
+      if (fx.focus > 0) { spawnFloat(els.heroFloats, "FOCUS MAX", "level", 60); sfx.scout(); }
+      if (fx.regen > 0) spawnFloat(els.heroFloats, "REGENERATING", "heal", 60);
+      if (fx.stun > 0) { spawnFloat(els.enemyFloats, "BLINDED", "energy"); sfx.scout(); }
+      if (fx.damage > 0) {
+        slashFx("crit");
+        impactFlash(els.enemyCard, "crit");
+        shake(els.enemyCard, "is-hit");
+        shake(els.arena, "is-shaking");
+        spawnFloat(els.enemyFloats, `-${fx.damage}`, "crit");
+        sfx.crit();
+      }
+      if (fx.victory) {
+        shardBurst();
+        setScene("victory");
+        showBanner("VICTORY", "The chapter is yours.");
+        sfx.victory();
+        if (fx.loot && fx.loot.length) window.setTimeout(() => showLoot(fx.loot, view), 1000);
+      }
+      haptic("impact", "soft");
+    });
+  }
+
+  function sellItem(itemId, name, price) {
+    const ok = window.confirm(`Sell one ${name} for ${price} coins?`);
+    if (!ok) return undefined;
+    return itemRequest("/api/sell", { item_id: itemId, quantity: 1 }, () => {
+      sfx.coin();
+      spawnFloat(els.heroFloats, `+${price} COINS`, "level");
+      haptic("notify", "success");
+    });
+  }
+
+  function upgradeRelic(itemId) {
+    return itemRequest("/api/upgrade", { item_id: itemId }, () => {
+      sfx.forge();
+      spawnFloat(els.heroFloats, "RELIC UPGRADED", "level");
+      haptic("notify", "success");
+    });
+  }
+
   async function buyItem(itemId) {
     if (busy) return;
     setBusy(true);
@@ -580,9 +990,11 @@
       if (data.turn && data.turn.success) {
         showToast(data.turn.summary);
         pushLog("system", data.turn.summary);
-        spawnFloat(els.heroFloats, "RELIC CLAIMED", "level");
+        spawnFloat(els.heroFloats, "PURCHASED", "level");
         haptic("notify", "success");
+        sfx.forge();
       } else {
+        sfx.error();
         showToast((data.turn && data.turn.summary) || "That purchase could not be completed.");
       }
       setStatus("Verified", "ok");
@@ -668,17 +1080,34 @@
     els.onboardNext.textContent = slide.cta;
   }
 
+  /* Modals are hidden with BOTH the attribute and a class, because a CSS
+     display rule can silently defeat [hidden] — that is what stopped the
+     How-to-Play card from closing. */
+  function openModal(node) {
+    node.hidden = false;
+    node.classList.add("is-open");
+    document.body.classList.add("modal-open");
+  }
+
+  function closeModal(node) {
+    node.hidden = true;
+    node.classList.remove("is-open");
+    if (!document.querySelector(".onboard.is-open, .loot-modal.is-open")) {
+      document.body.classList.remove("modal-open");
+    }
+  }
+
   function openOnboard(index = 0) {
     slideIndex = index;
     renderSlide();
-    els.onboard.hidden = false;
-    document.body.style.overflow = "hidden";
+    openModal(els.onboard);
+    sfx.click();
   }
 
   function closeOnboard() {
-    els.onboard.hidden = true;
-    document.body.style.overflow = "";
-    try { localStorage.setItem("cr_tutorial_v2", "seen"); } catch (_) { /* private mode */ }
+    closeModal(els.onboard);
+    try { localStorage.setItem("cr_tutorial_v3", "seen"); } catch (_) { /* private mode */ }
+    sfx.click();
   }
 
   function nextSlide() {
@@ -703,18 +1132,53 @@
 
   async function boot() {
     els.actions.forEach((button) => {
-      button.addEventListener("click", () => resolveAction(button.dataset.action));
+      button.addEventListener("click", () => {
+        sfx.click();
+        resolveAction(button.dataset.action);
+      });
     });
     els.helpBtn.addEventListener("click", () => openOnboard(0));
     els.dockHelp.addEventListener("click", () => openOnboard(1));
-    els.onboardClose.addEventListener("click", closeOnboard);
     els.onboardNext.addEventListener("click", nextSlide);
+
+    // Close from the X, the scrim, anything marked data-close, or Escape.
+    // Pointerdown also fires on Telegram in-app browsers that swallow clicks.
+    const closers = [els.onboardClose, ...document.querySelectorAll("[data-close]")];
+    closers.forEach((node) => {
+      if (!node) return;
+      ["click", "pointerdown"].forEach((type) =>
+        node.addEventListener(type, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          closeOnboard();
+          closeModal(els.lootModal);
+        }));
+    });
     els.onboard.addEventListener("click", (event) => {
-      if (event.target.hasAttribute("data-close")) closeOnboard();
+      if (event.target === els.onboard || event.target.hasAttribute("data-close")) closeOnboard();
+    });
+    els.lootClose.addEventListener("click", () => { closeModal(els.lootModal); sfx.click(); });
+    els.lootModal.addEventListener("click", (event) => {
+      if (event.target === els.lootModal || event.target.hasAttribute("data-close")) {
+        closeModal(els.lootModal);
+      }
     });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !els.onboard.hidden) closeOnboard();
+      if (event.key !== "Escape") return;
+      if (els.onboard.classList.contains("is-open")) closeOnboard();
+      if (els.lootModal.classList.contains("is-open")) closeModal(els.lootModal);
     });
+
+    els.soundBtn.addEventListener("click", () => {
+      const on = sfx.toggle();
+      els.soundBtn.setAttribute("aria-pressed", String(on));
+      els.soundOnIc.hidden = !on;
+      els.soundOffIc.hidden = on;
+      showToast(on ? "Sound on" : "Sound muted");
+    });
+    els.soundOnIc.hidden = !sfx.enabled;
+    els.soundOffIc.hidden = sfx.enabled;
+    els.soundBtn.setAttribute("aria-pressed", String(sfx.enabled));
 
     if (!telegram) {
       setStatus("Open in Telegram", "error");
@@ -729,7 +1193,7 @@
     try {
       await loadPlayer();
       let seen = null;
-      try { seen = localStorage.getItem("cr_tutorial_v2"); } catch (_) { /* private mode */ }
+      try { seen = localStorage.getItem("cr_tutorial_v3"); } catch (_) { /* private mode */ }
       if (!seen) openOnboard(0);
     } catch (error) {
       setStatus("Authentication failed", "error");

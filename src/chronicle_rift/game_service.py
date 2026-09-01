@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .database import ConcurrentUpdateError
-from .game_engine import PurchaseResolution, TurnResolution, resolve_purchase, resolve_turn
+from .game_engine import (
+    ItemResolution,
+    PurchaseResolution,
+    TurnResolution,
+    resolve_purchase,
+    resolve_turn,
+    sell_item,
+    upgrade_relic,
+    use_item,
+)
 from .identity import TelegramIdentity
 from .models import public_player_view
 
@@ -55,6 +65,7 @@ class PurchaseResult:
     summary: str
     success: bool
     reason: str | None = None
+    effects: dict[str, Any] = field(default_factory=dict)
 
 
 class GameService:
@@ -133,6 +144,62 @@ class GameService:
                 item_name=resolution.item_name,
                 summary=resolution.summary,
                 success=True,
+            )
+        raise GameBusyError(
+            "Your chronicle changed in another window. Please try again."
+        ) from last_conflict
+
+
+    async def use_item(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
+        """Consume a satchel item (free action) and persist the result."""
+        return await self._apply_item_op(identity, item_id, lambda p: use_item(p, item_id))
+
+    async def sell_item(
+        self, identity: TelegramIdentity, item_id: str, quantity: int = 1
+    ) -> PurchaseResult:
+        """Sell satchel items for coins and persist the result."""
+        return await self._apply_item_op(
+            identity, item_id, lambda p: sell_item(p, item_id, quantity)
+        )
+
+    async def upgrade_relic(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
+        """Spend coins to raise a relic's level and persist the result."""
+        return await self._apply_item_op(identity, item_id, lambda p: upgrade_relic(p, item_id))
+
+    async def _apply_item_op(
+        self,
+        identity: TelegramIdentity,
+        item_id: str,
+        operation: Callable[[dict[str, Any]], ItemResolution],
+    ) -> PurchaseResult:
+        last_conflict: ConcurrentUpdateError | None = None
+        for _ in range(self._max_retries):
+            current = await self.dashboard(identity)
+            resolution = operation(current)
+            if not resolution.success:
+                return PurchaseResult(
+                    player=current,
+                    item_id=resolution.item_id,
+                    item_name=resolution.item_name,
+                    summary=resolution.summary,
+                    success=False,
+                    reason=resolution.reason,
+                    effects=resolution.effects,
+                )
+            try:
+                saved = await self._store.save_game(
+                    resolution.player, expected_revision=current["revision"]
+                )
+            except ConcurrentUpdateError as exc:
+                last_conflict = exc
+                continue
+            return PurchaseResult(
+                player=saved,
+                item_id=resolution.item_id,
+                item_name=resolution.item_name,
+                summary=resolution.summary,
+                success=True,
+                effects=resolution.effects,
             )
         raise GameBusyError(
             "Your chronicle changed in another window. Please try again."

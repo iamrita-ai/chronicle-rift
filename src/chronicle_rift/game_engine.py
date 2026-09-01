@@ -45,7 +45,17 @@ from dataclasses import dataclass, field
 from random import SystemRandom
 from typing import Any, Protocol
 
-from .models import DEFAULT_ENEMY, SHOP_ITEMS, ensure_game_defaults
+from .models import (
+    DEFAULT_ENEMY,
+    ITEMS,
+    LOOT_TABLE,
+    MAX_RELIC_LEVEL,
+    add_item,
+    apply_relic_bonuses,
+    ensure_game_defaults,
+    relic_cost,
+    remove_item,
+)
 
 VALID_ACTIONS = frozenset({"strike", "guard", "scout", "rest"})
 
@@ -138,6 +148,14 @@ class TurnResolution:
     effects: dict[str, Any] = field(default_factory=dict)
 
 
+REGEN_HEAL = 5
+
+# Loot: how many items drop and how likely each rarity tier is. Bosses roll on
+# a much richer table, which is the main reason to hunt them.
+LOOT_ROLLS = 2
+BOSS_LOOT_ROLLS = 4
+
+
 @dataclass(frozen=True, slots=True)
 class PurchaseResolution:
     player: dict[str, Any]
@@ -201,6 +219,9 @@ def _fresh_effects(action: str, enemy: dict[str, Any]) -> dict[str, Any]:
         "ward": 0,
         "reflect": 0,
         "burn_damage": 0,
+        "regen_healed": 0,
+        "stunned": False,
+        "loot": [],
         "burn_applied": 0,
         "focus_spent": 0,
         "focus_gained": 0,
@@ -218,7 +239,12 @@ def _fresh_effects(action: str, enemy: dict[str, Any]) -> dict[str, Any]:
 
 
 def _victory(
-    updated: dict[str, Any], action: str, effects: dict[str, Any], fallen_name: str, was_boss: bool
+    updated: dict[str, Any],
+    action: str,
+    effects: dict[str, Any],
+    fallen_name: str,
+    was_boss: bool,
+    rng: RandomSource | None = None,
 ) -> TurnResolution:
     """Award rewards, roll the next chapter, and build the victory summary."""
     game = updated["game"]
@@ -243,9 +269,27 @@ def _victory(
             "xp_gained": 12,
         }
     )
+    # Reward chest: several random items every time a chapter is cleared.
+    drops = roll_loot(game["chapter"] - 1, was_boss, rng or SystemRandom())
+    loot_cards = []
+    for drop in drops:
+        add_item(game, drop, 1)
+        loot_cards.append(
+            {
+                "id": drop,
+                "name": ITEMS[drop]["name"],
+                "art": ITEMS[drop].get("art", ""),
+                "rarity": ITEMS[drop]["rarity"],
+                "emoji": ITEMS[drop]["emoji"],
+                "ability": ITEMS[drop]["ability"],
+            }
+        )
+    effects["loot"] = loot_cards
+
     if game["xp"] >= game["level"] * 20:
         game["level"] += 1
-        game["max_hp"] += 4
+        game["base_max_hp"] = int(game.get("base_max_hp", game["max_hp"])) + 4
+        apply_relic_bonuses(game)
         game["hp"] = game["max_hp"]
         effects["leveled_up"] = True
     game["enemy"] = _next_enemy(game["chapter"])
@@ -256,12 +300,16 @@ def _victory(
     game["quest_objective"] = (
         f"Defeat the {game['enemy']['name']} to open Chapter {game['chapter'] + 1}."
     )
+    loot_note = ""
+    if loot_cards:
+        names = ", ".join(f"{card['emoji']} {card['name']}" for card in loot_cards)
+        loot_note = f" The reward chest holds: {names}."
     boss_note = " Boss bounties double the haul!" if was_boss else ""
     level_note = " You rise a level, vitality renewed!" if effects["leveled_up"] else ""
     summary = (
         f"Victory! The {fallen_name} falls. You claim {reward} gold, "
         f"{coin_reward} coins, and {point_reward} points as a new chapter opens."
-        f"{boss_note}{level_note}"
+        f"{loot_note}{boss_note}{level_note}"
     )
     game["last_narrative"] = summary
     return TurnResolution(updated, action, summary, victory=True, effects=effects)
@@ -299,6 +347,15 @@ def resolve_turn(
     ward_strength = 0
     lines: list[str] = []
 
+    # --- regeneration and burn tick before you act --------------------------
+    if int(game.get("regen", 0)) > 0:
+        game["regen"] = int(game["regen"]) - 1
+        healed = min(game["max_hp"] - game["hp"], REGEN_HEAL)
+        game["hp"] += healed
+        effects["regen_healed"] = healed
+        if healed:
+            lines.append(f"The Emberweave Balm knits {healed} Vitality back together.")
+
     # --- burn ticks before you act ------------------------------------------
     if int(game.get("burn", 0)) > 0:
         game["burn"] = int(game["burn"]) - 1
@@ -306,7 +363,9 @@ def resolve_turn(
         effects["burn_damage"] = BURN_DAMAGE
         lines.append(f"Rift-fire burns the {enemy['name']} for {BURN_DAMAGE}.")
         if enemy["hp"] <= 0:
-            return _victory(updated, action, effects, enemy["name"], bool(enemy.get("boss")))
+            return _victory(
+                updated, action, effects, enemy["name"], bool(enemy.get("boss")), random_source
+            )
 
     # --- your move -----------------------------------------------------------
     if action == "strike":
@@ -398,7 +457,7 @@ def resolve_turn(
     if enemy["hp"] <= 0:
         was_boss = bool(enemy.get("boss", False))
         fallen = enemy["name"]
-        resolution = _victory(updated, action, effects, fallen, was_boss)
+        resolution = _victory(updated, action, effects, fallen, was_boss, random_source)
         return TurnResolution(
             resolution.player,
             action,
@@ -409,7 +468,11 @@ def resolve_turn(
 
     # --- the enemy performs exactly the move it telegraphed ------------------
     intent = enemy["intent"]
-    if intent["kind"] == "heal":
+    if int(game.get("stun", 0)) > 0:
+        game["stun"] = int(game["stun"]) - 1
+        effects["stunned"] = True
+        lines.append(f"Blinded by Veil Powder, {enemy['name']} swings at empty air.")
+    elif intent["kind"] == "heal":
         before = enemy["hp"]
         enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + intent["heal"])
         effects["enemy_healed"] = enemy["hp"] - before
@@ -461,72 +524,279 @@ def resolve_turn(
     return TurnResolution(updated, action, summary, victory=False, effects=effects)
 
 
+@dataclass(frozen=True, slots=True)
+class ItemResolution:
+    """Result of any satchel/forge operation (use, sell, buy, upgrade)."""
+
+    player: dict[str, Any]
+    item_id: str
+    item_name: str
+    summary: str
+    success: bool
+    reason: str | None = None
+    effects: dict[str, Any] = field(default_factory=dict)
+
+
 def resolve_purchase(player: dict[str, Any], item_id: str) -> PurchaseResolution:
-    """Buy a shop item, spending the hero's coins. Never mutate the input player."""
-    item = SHOP_ITEMS.get(item_id)
-    if item is None:
+    """Buy an item. Consumables go into the satchel; relics are forged at level 1."""
+    item = ITEMS.get(item_id)
+    if item is None or not item.get("cost"):
         return PurchaseResolution(
-            player, item_id, "Unknown", "No such item exists.", False, reason="unknown_item"
+            player, item_id, "Unknown", "That item is not for sale.", False, reason="unknown_item"
         )
     updated = deepcopy(player)
     ensure_game_defaults(updated)
     game = updated["game"]
-    if game["coins"] < item["cost"]:
+    relics = game["relics"]
+
+    if item["kind"] == "relic":
+        level = int(relics.get(item_id, 0))
+        if level >= MAX_RELIC_LEVEL:
+            return PurchaseResolution(
+                updated,
+                item_id,
+                item["name"],
+                f"{item['name']} is already mastered at level {MAX_RELIC_LEVEL}.",
+                False,
+                reason="max_level",
+            )
+        price = relic_cost(item_id, level)
+        if game["coins"] < price:
+            return PurchaseResolution(
+                updated,
+                item_id,
+                item["name"],
+                f"You need {price} coins, but you have {game['coins']}.",
+                False,
+                reason="insufficient_coins",
+            )
+        game["coins"] -= price
+        relics[item_id] = level + 1
+        apply_relic_bonuses(game)
+        verb = "forge" if level == 0 else "reforge"
+        summary = (
+            f"You {verb} the {item['name']} to level {relics[item_id]}. {item['ability']}."
+        )
+        game["last_narrative"] = summary
+        return PurchaseResolution(updated, item_id, item["name"], summary, success=True)
+
+    price = int(item["cost"])
+    if game["coins"] < price:
         return PurchaseResolution(
             updated,
             item_id,
             item["name"],
-            f"You need {item['cost']} coins, but you have {game['coins']}.",
+            f"You need {price} coins, but you have {game['coins']}.",
             False,
             reason="insufficient_coins",
         )
-    if item_id == "heal" and game["hp"] >= game["max_hp"]:
-        return PurchaseResolution(
+    game["coins"] -= price
+    add_item(game, item_id, 1)
+    summary = f"You buy {item['name']} ({item['ability']}). It is in your satchel."
+    game["last_narrative"] = summary
+    return PurchaseResolution(updated, item_id, item["name"], summary, success=True)
+
+
+def upgrade_relic(player: dict[str, Any], item_id: str) -> ItemResolution:
+    """Spend coins to raise an owned relic by one level."""
+    item = ITEMS.get(item_id)
+    if item is None or item["kind"] != "relic":
+        return ItemResolution(
+            player, item_id, "Unknown", "That is not a relic.", False, reason="unknown_item"
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    level = int(game["relics"].get(item_id, 0))
+    if level <= 0:
+        return ItemResolution(
             updated,
             item_id,
             item["name"],
-            "Your Vitality is already full; the potion would be wasted.",
+            f"You do not own the {item['name']} yet — buy it in the Marketplace first.",
+            False,
+            reason="not_owned",
+        )
+    if level >= MAX_RELIC_LEVEL:
+        return ItemResolution(
+            updated,
+            item_id,
+            item["name"],
+            f"{item['name']} is already mastered at level {MAX_RELIC_LEVEL}.",
+            False,
+            reason="max_level",
+        )
+    price = relic_cost(item_id, level)
+    if game["coins"] < price:
+        return ItemResolution(
+            updated,
+            item_id,
+            item["name"],
+            f"Upgrading costs {price} coins, but you have {game['coins']}.",
+            False,
+            reason="insufficient_coins",
+        )
+    game["coins"] -= price
+    game["relics"][item_id] = level + 1
+    apply_relic_bonuses(game)
+    summary = (
+        f"The {item['name']} is reforged to level {level + 1}. {item['ability']}."
+    )
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated,
+        item_id,
+        item["name"],
+        summary,
+        True,
+        effects={"upgraded": True, "level": level + 1},
+    )
+
+
+def sell_item(player: dict[str, Any], item_id: str, quantity: int = 1) -> ItemResolution:
+    """Turn satchel items into coins."""
+    item = ITEMS.get(item_id)
+    if item is None or item["kind"] == "relic":
+        return ItemResolution(
+            player, item_id, "Unknown", "That item cannot be sold.", False, reason="unknown_item"
+        )
+    quantity = max(1, int(quantity))
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    if not remove_item(game, item_id, quantity):
+        return ItemResolution(
+            updated,
+            item_id,
+            item["name"],
+            f"You do not have {quantity} x {item['name']} to sell.",
+            False,
+            reason="not_held",
+        )
+    payout = int(item["sell"]) * quantity
+    game["coins"] += payout
+    summary = f"Sold {quantity} x {item['name']} for {payout} coins."
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, item_id, item["name"], summary, True, effects={"coins_gained": payout}
+    )
+
+
+def use_item(player: dict[str, Any], item_id: str) -> ItemResolution:
+    """Consume an item from the satchel. Using an item does not cost your turn."""
+    item = ITEMS.get(item_id)
+    if item is None:
+        return ItemResolution(
+            player, item_id, "Unknown", "No such item exists.", False, reason="unknown_item"
+        )
+    if item["kind"] != "consumable":
+        return ItemResolution(
+            player, item_id, item["name"], "That item cannot be used.", False, reason="not_usable"
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    if int((game.get("inventory") or {}).get(item_id, 0)) <= 0:
+        return ItemResolution(
+            updated,
+            item_id,
+            item["name"],
+            f"You have no {item['name']} left.",
+            False,
+            reason="not_held",
+        )
+
+    effect = item.get("effect", {})
+    enemy = game["enemy"]
+    sync_intent(enemy)
+    effects: dict[str, Any] = {"item": item_id, "action": "item"}
+    parts: list[str] = []
+
+    if "heal" in effect and game["hp"] >= game["max_hp"] and "energy" not in effect:
+        return ItemResolution(
+            updated,
+            item_id,
+            item["name"],
+            "Your Vitality is already full — save it for later.",
             False,
             reason="already_full",
         )
-    if item_id == "elixir" and game["energy"] >= game["max_energy"]:
-        return PurchaseResolution(
+    if "energy" in effect and "heal" not in effect and game["energy"] >= game["max_energy"]:
+        return ItemResolution(
             updated,
             item_id,
             item["name"],
-            "Your Rift Energy is already full; the elixir would be wasted.",
+            "Your Rift Energy is already full — save it for later.",
             False,
             reason="already_full",
         )
 
-    game["coins"] -= item["cost"]
-    if item_id == "heal":
-        restored = min(15, game["max_hp"] - game["hp"])
-        game["hp"] = min(game["max_hp"], game["hp"] + 15)
-        summary = f"You drink the Healing Draught and restore {restored} Vitality."
-    elif item_id == "elixir":
-        game["energy"] = min(game["max_energy"], game["energy"] + 3)
-        summary = "The Rift Elixir surges through you, restoring 3 Energy."
-    elif item_id == "blade":
-        game["attack_bonus"] += 2
-        game["inventory"].append("Rift Steel")
-        summary = "The Rift Steel is forged into your blade. Strike damage +2 permanently."
-    elif item_id == "ward":
-        game["ward_bonus"] += 2
-        game["inventory"].append("Aegis Sigil")
-        summary = "The Aegis Sigil wards you. Ward strength +2 permanently."
-    elif item_id == "charm":
-        game["luck"] = True
-        game["inventory"].append("Luck Charm")
-        summary = "The Luck Charm hums. Scouting now grants +1 bonus insight."
-    else:  # pragma: no cover - guarded above
-        summary = "The item fades into the rift."
-    if item["kind"] == "upgrade" and item_id not in game["purchased"]:
-        game["purchased"].append(item_id)
-    if item["kind"] == "consumable" and item["name"] not in game["inventory"]:
-        game["inventory"].append(item["name"])
-    updated["game"]["last_narrative"] = summary
-    return PurchaseResolution(updated, item_id, item["name"], summary, success=True)
+    remove_item(game, item_id, 1)
+
+    if "heal" in effect:
+        healed = min(game["max_hp"] - game["hp"], int(effect["heal"]))
+        game["hp"] += healed
+        effects["healed"] = healed
+        parts.append(f"restores {healed} Vitality")
+    if "energy" in effect:
+        before = game["energy"]
+        game["energy"] = min(game["max_energy"], game["energy"] + int(effect["energy"]))
+        effects["energy_delta"] = game["energy"] - before
+        parts.append(f"restores {game['energy'] - before} Rift Energy")
+    if "regen" in effect:
+        game["regen"] = int(game.get("regen", 0)) + int(effect["regen"])
+        effects["regen"] = game["regen"]
+        parts.append(f"grants regeneration for {game['regen']} turns")
+    if "focus" in effect:
+        game["focus"] = min(MAX_FOCUS, int(effect["focus"]))
+        effects["focus"] = game["focus"]
+        parts.append(f"fills Focus to {game['focus']}/{MAX_FOCUS}")
+    if "stun" in effect:
+        game["stun"] = int(game.get("stun", 0)) + int(effect["stun"])
+        effects["stun"] = game["stun"]
+        parts.append("blinds the enemy for its next move")
+    if "damage" in effect:
+        damage = int(effect["damage"])
+        enemy["hp"] = max(0, enemy["hp"] - damage)
+        effects["damage"] = damage
+        parts.append(f"detonates for {damage} damage")
+
+    summary = f"{item['name']} {' and '.join(parts) if parts else 'is used'}."
+
+    if enemy["hp"] <= 0:
+        resolution = _victory(
+            updated, "item", _fresh_effects("item", enemy), enemy["name"], bool(enemy.get("boss"))
+        )
+        merged = {**effects, **resolution.effects}
+        combined = f"{summary} {resolution.summary}"
+        resolution.player["game"]["last_narrative"] = combined
+        return ItemResolution(
+            resolution.player, item_id, item["name"], combined, True, effects=merged
+        )
+
+    game["last_narrative"] = summary
+    return ItemResolution(updated, item_id, item["name"], summary, True, effects=effects)
+
+
+def roll_loot(chapter: int, boss: bool, rng: RandomSource) -> list[str]:
+    """Roll the reward chest for a cleared chapter."""
+    rolls = BOSS_LOOT_ROLLS if boss else LOOT_ROLLS
+    if chapter >= 4:
+        rolls += 1
+    drops: list[str] = []
+    for _ in range(rolls):
+        score = rng.randint(1, 100) + (chapter * 2) + (25 if boss else 0)
+        if score >= 96:
+            tier = "legendary"
+        elif score >= 82:
+            tier = "epic"
+        elif score >= 55:
+            tier = "rare"
+        else:
+            tier = "common"
+        pool = LOOT_TABLE[tier]
+        drops.append(pool[rng.randint(0, len(pool) - 1)])
+    return drops
 
 
 HOW_TO_PLAY = (
@@ -555,8 +825,13 @@ HOW_TO_PLAY = (
     "boss slam, Guard it.\n\n"
     "YOU CANNOT LOSE PROGRESS\n"
     "At 0 HP you simply wake at camp fully healed, keeping every coin and level.\n\n"
+    "LOOT, SATCHEL AND THE FORGE\n"
+    "Every cleared chapter drops random items into your satchel — potions, "
+    "bombs, veil powder and treasure. Open the Rift Arena Mini App to USE "
+    "potions mid-fight, SELL treasure for coins, and UPGRADE relics up to "
+    "level 5 in the Forge. /bag shows what you are carrying.\n\n"
     "SPEND YOUR COINS\n"
-    "Victories pay Coins. /shop sells potions (instant) and relics (permanent).\n\n"
+    "Victories pay Coins. /shop sells 9 consumables and 5 upgradeable relics.\n\n"
     "Commands: /play dashboard · /shop marketplace · /rules full rules · "
     "/app the visual battle arena"
 )
@@ -582,7 +857,11 @@ RULES = (
     "permanent.\n"
     "9. XP raises your Level; each level increases maximum Vitality and Strike "
     "damage.\n"
-    "10. One hero per account, verified server-side. Automation, spoofing, or "
+    "10. Loot is random. Cleared chapters drop items; bosses roll on a richer "
+    "table. Nothing is ever taken from your satchel without your input.\n"
+    "11. Relics upgrade to level 5. Each level costs more coins and adds the "
+    "same bonus again.\n"
+    "12. One hero per account, verified server-side. Automation, spoofing, or "
     "abuse costs you access. Play fair and keep the realm honourable.\n"
 )
 

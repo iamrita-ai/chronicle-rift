@@ -7,12 +7,13 @@ from chronicle_rift.models import new_player
 
 
 class FixedRandom:
+    """Returns the same roll every time, clamped into each requested range."""
+
     def __init__(self, value: int) -> None:
         self.value = value
 
     def randint(self, start: int, stop: int) -> int:
-        assert start <= self.value <= stop
-        return self.value
+        return max(start, min(stop, self.value))
 
 
 class QueuedRandom:
@@ -22,9 +23,13 @@ class QueuedRandom:
         self._rolls = list(rolls)
 
     def randint(self, start: int, stop: int) -> int:
-        value = self._rolls.pop(0)
-        assert start <= value <= stop
-        return value
+        # Loot rolls happen after combat rolls; tests only script what they
+        # care about and anything extra takes the minimum of the range.
+        while self._rolls:
+            value = self._rolls.pop(0)
+            if start <= value <= stop:
+                return value
+        return start
 
 
 def test_strike_is_immutable_and_applies_both_sides() -> None:
@@ -86,6 +91,7 @@ def test_purchase_spends_coins_and_applies_an_upgrade() -> None:
     assert result.success is True
     assert result.player["game"]["coins"] == 100 - 60
     assert result.player["game"]["attack_bonus"] == 2
+    assert result.player["game"]["relics"]["blade"] == 1
 
 
 def test_purchase_is_rejected_when_coins_are_insufficient() -> None:
@@ -99,14 +105,18 @@ def test_purchase_is_rejected_when_coins_are_insufficient() -> None:
     assert result.player["game"]["attack_bonus"] == 0
 
 
-def test_purchase_rejects_a_heal_at_full_hp() -> None:
+def test_using_a_potion_at_full_hp_is_refused() -> None:
+    from chronicle_rift.game_engine import use_item
+
     player = new_player(user_id=7, first_name="Rita", username=None)
     player["game"]["hp"] = player["game"]["max_hp"]
+    player["game"]["inventory"]["draught"] = 1
 
-    result = resolve_purchase(player, "heal")
+    result = use_item(player, "draught")
 
     assert result.success is False
     assert result.reason == "already_full"
+    assert result.player["game"]["inventory"]["draught"] == 1
 
 
 def test_perfect_strike_roll_is_a_critical_hit() -> None:
@@ -267,3 +277,98 @@ def test_public_view_exposes_intent_focus_and_finisher_hint() -> None:
     assert view["enemy"]["intent"]["name"] == "Slash"
     assert view["hero"]["max_focus"] == 3
     assert view["battle"]["can_finish"] is True
+
+
+def test_victory_drops_random_loot_into_the_satchel() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"]["hp"] = 1
+    before = sum(player["game"]["inventory"].values())
+
+    result = resolve_turn(player, "strike", FixedRandom(4))
+
+    assert result.victory is True
+    assert result.effects["loot"]
+    assert sum(result.player["game"]["inventory"].values()) > before
+
+
+def test_relics_can_be_upgraded_and_stack_their_bonus() -> None:
+    from chronicle_rift.game_engine import upgrade_relic
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["coins"] = 500
+    owned = resolve_purchase(player, "blade").player
+    upgraded = upgrade_relic(owned, "blade")
+
+    assert upgraded.success is True
+    assert upgraded.player["game"]["relics"]["blade"] == 2
+    assert upgraded.player["game"]["attack_bonus"] == 4
+
+
+def test_ember_heart_raises_maximum_vitality() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["coins"] = 500
+    result = resolve_purchase(player, "heart")
+
+    assert result.player["game"]["max_hp"] == 24 + 5
+
+
+def test_items_can_be_used_and_sold() -> None:
+    from chronicle_rift.game_engine import sell_item, use_item
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["hp"] = 10
+    player["game"]["inventory"]["greater_draught"] = 1
+
+    used = use_item(player, "greater_draught")
+    assert used.success is True
+    assert used.player["game"]["hp"] == 24
+    assert "greater_draught" not in used.player["game"]["inventory"]
+
+    sold = sell_item(used.player, "salve", 2)
+    assert sold.success is True
+    assert sold.player["game"]["coins"] == 30 + 10
+    assert "salve" not in sold.player["game"]["inventory"]
+
+
+def test_grenade_can_finish_a_fight_without_costing_a_turn() -> None:
+    from chronicle_rift.game_engine import use_item
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"]["hp"] = 5
+    player["game"]["inventory"]["bomb"] = 1
+
+    result = use_item(player, "bomb")
+
+    assert result.success is True
+    assert result.effects["victory"] is True
+    assert result.player["game"]["chapter"] == 2
+
+
+def test_veil_powder_makes_the_enemy_miss() -> None:
+    from chronicle_rift.game_engine import use_item
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["inventory"]["smoke"] = 1
+    veiled = use_item(player, "smoke").player
+
+    result = resolve_turn(veiled, "strike", FixedRandom(4))
+
+    assert result.effects["stunned"] is True
+    assert result.effects["enemy_damage"] == 0
+    assert result.player["game"]["hp"] == 24
+
+
+def test_legacy_documents_migrate_to_the_new_inventory() -> None:
+    from chronicle_rift.models import ensure_game_defaults
+
+    legacy = new_player(user_id=7, first_name="Rita", username=None)
+    legacy["game"]["inventory"] = ["Rift Compass", "Traveler's Tonic", "Rift Steel"]
+    legacy["game"]["purchased"] = ["ward"]
+    legacy["game"].pop("relics")
+
+    ensure_game_defaults(legacy)
+
+    assert legacy["game"]["inventory"] == {"ash_shard": 1, "salve": 1}
+    assert legacy["game"]["relics"] == {"blade": 1, "ward": 1}
+    assert legacy["game"]["attack_bonus"] == 2
+    assert legacy["game"]["ward_bonus"] == 2
