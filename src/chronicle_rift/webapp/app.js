@@ -178,6 +178,7 @@
         color: view.character.element_color,
         art: ART(view.character.art, "png"),
         artFacing: 1,
+        scale: 1,
         build: "hero",
         stats: {
           hp: Math.max(30, Math.round(hero.hp * HP_SCALE)),
@@ -199,7 +200,9 @@
         color: enemy.element_color,
         art: ART(enemy.sprite, "png"),
         artFacing: -1,
-        build: enemy.boss ? "brute" : "hero",
+        // evil is always bigger than the hero, and bosses tower
+        scale: enemy.boss ? 1.55 : 1.22,
+        build: enemy.boss ? "brute" : "beast",
         stats: {
           hp: Math.round(enemy.max_hp * HP_SCALE),
           damage: 5 + enemy.attack * 1.15,

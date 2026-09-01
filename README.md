@@ -170,6 +170,25 @@ Outcomes stay server-authoritative: winning posts to `POST /api/arena/finish`, w
 through the same victory path as before (gold, coins, points, XP, loot chest, next chapter),
 and losing wakes you at camp fully healed. Reported health is clamped to your real maximum.
 
+### v0.9 — jointed fighters, real weapon swings, bigger enemies
+
+* **Every fighter is a jointed puppet drawn frame by frame** — pelvis, spine,
+  neck, head, two-bone arms, two-bone legs, cloth cape and a weapon welded to
+  the hand. No artwork is pasted into the arena any more, so hands, legs, neck
+  and head all move independently instead of a picture shaking.
+* **Weapons swing with the arm.** The blade is rigid to the wrist joint, and the
+  glow trail is traced along the hand's real swing arc.
+* **Abilities are full motions with travel.** Wind-up shifts weight back, the
+  active frame drives the body forward with a genuine velocity impulse (heavy
+  slams lunge, cyclone spins the whole body, casts recoil), so hitboxes follow
+  the movement instead of a static shake.
+* **Size hierarchy:** the hero is normal sized (116 units), regular enemies are
+  ×1.22 and bosses ×1.55 — evil is always physically bigger than you.
+* **Bot home screen stripped** to a single line and one PLAY button; no status
+  cards, no rich message walls.
+* Cheaper drawing: one filled capsule per limb, no `shadowBlur`, no sprite
+  keying at load.
+
 ### v0.8 — real fighters, landscape, faster, better sound
 
 - **The fighters are the artwork.** Each character and monster PNG is keyed to transparency once

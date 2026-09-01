@@ -20,7 +20,6 @@ from .rich_messages import (
     RichMessageClient,
     RichMessageError,
     about_message,
-    dashboard_messages,
     shop_messages,
     turn_messages,
 )
@@ -90,16 +89,9 @@ def build_telegram_application(
         chat = update.effective_chat
         if not chat:
             return
-        await _send_art(
-            update.get_bot(),
-            chat.id,
-            settings,
-            "intro-moves",
-            "⚔️ Three attacks · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
-        )
         await chat.send_message(
-            "The full guide lives inside the app — open it and tap the ? button.",
-            reply_markup=_home_keyboard(
+            "Everything is explained inside the app.",
+            reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
         )
@@ -110,8 +102,8 @@ def build_telegram_application(
         if not chat:
             return
         await chat.send_message(
-            "Rules, items and elements are explained inside the app. Open it below.",
-            reply_markup=_home_keyboard(
+            "Rules, items and elements are explained inside the app.",
+            reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
         )
@@ -121,10 +113,9 @@ def build_telegram_application(
         chat = update.effective_chat
         if not chat:
             return
-        _, plain = about_message(version=__version__)
         await chat.send_message(
-            plain,
-            reply_markup=_home_keyboard(
+            f"ChronicleRift v{__version__}",
+            reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
         )
@@ -169,9 +160,6 @@ def build_telegram_application(
             LOGGER.exception("Unable to load the satchel")
             await chat.send_message("The Chronicle archives are briefly unavailable.")
             return
-        await _send_art(
-            update.get_bot(), chat.id, settings, "intro-market", "🎒 Your satchel and relics."
-        )
         await chat.send_message(
             bag_message(player),
             reply_markup=_home_keyboard(
@@ -278,13 +266,6 @@ def build_telegram_application(
             return
         if data == "howto":
             await query.answer()
-            await _send_art(
-                context.bot,
-                query.message.chat_id,
-                settings,
-                "intro-moves",
-                "⚔️ Strike · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
-            )
             await query.message.reply_text(
                 HOW_TO_PLAY,
                 reply_markup=_home_keyboard(
@@ -408,6 +389,8 @@ async def _show_dashboard(
     *,
     welcome: bool,
 ) -> None:
+    """The bot is only a launcher: one line, one button, no status walls."""
+    del game_service, rich_messages, welcome
     chat = update.effective_chat
     user = update.effective_user
     if not chat or not user:
@@ -415,42 +398,13 @@ async def _show_dashboard(
     if not _is_allowed(settings, user.id):
         await chat.send_message("This realm is not available to your account.")
         return
-    try:
-        player = await game_service.dashboard(_identity_from_update(user))
-        rich, plain = dashboard_messages(player)
-        if welcome:
-            await _send_art(
-                update.get_bot(),
-                chat.id,
-                settings,
-                "intro-arena",
-                "⚔️ ChronicleRift — a turn-based RPG inside Telegram.\n"
-                "One enemy blocks each chapter. Empty its HP bar and the chapter is yours.",
-            )
-            intro = (
-                "# ChronicleRift\n\n"
-                "Tap **✨ Open ChronicleRift** below — heroes, store, satchel "
-                "and the animated battle stage all live inside the app.\n\n"
-            )
-            plain_intro = (
-                "ChronicleRift — tap 'Open ChronicleRift' below.\n"
-                "Heroes, store, satchel and the animated battles are in the app.\n\n"
-            )
-            rich = intro + rich
-            plain = plain_intro + plain
-        await rich_messages.send_or_fallback(
-            bot=update.get_bot(),
-            chat_id=chat.id,
-            rich_markdown=rich,
-            fallback_text=plain,
-            reply_markup=action_keyboard(
-                mini_app_url=settings.mini_app_url,
-                include_mini_app=chat.type == "private",
-            ),
-        )
-    except (DatabaseUnavailable, RichMessageError):
-        LOGGER.exception("Unable to send Telegram dashboard")
-        await chat.send_message("The Chronicle archives are briefly unavailable. Please try again.")
+    await chat.send_message(
+        "ChronicleRift",
+        reply_markup=_launch_keyboard(
+            mini_app_url=settings.mini_app_url,
+            include_mini_app=chat.type == "private",
+        ),
+    )
 
 
 async def _send_dashboard_to(
@@ -461,24 +415,20 @@ async def _send_dashboard_to(
     settings: Settings,
     identity: TelegramIdentity,
 ) -> None:
-    try:
-        player = await game_service.dashboard(identity)
-        rich, plain = dashboard_messages(player)
-        await rich_messages.send_or_fallback(
-            bot=bot,
-            chat_id=chat_id,
-            rich_markdown=rich,
-            fallback_text=plain,
-            reply_markup=action_keyboard(
-                mini_app_url=settings.mini_app_url,
-                include_mini_app=True,
-            ),
-        )
-    except (DatabaseUnavailable, RichMessageError):
-        LOGGER.exception("Unable to send Telegram dashboard")
-        await bot.send_message(
-            chat_id, "The Chronicle archives are briefly unavailable. Please try again."
-        )
+    del game_service, rich_messages, identity
+    await bot.send_message(
+        chat_id,
+        "ChronicleRift",
+        reply_markup=_launch_keyboard(mini_app_url=settings.mini_app_url, include_mini_app=True),
+    )
+
+
+def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
+    """Just the play button — everything else lives inside the Mini App."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if mini_app_url and include_mini_app:
+        rows.append([InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))])
+    return InlineKeyboardMarkup(rows)
 
 
 async def _send_shop_to(
@@ -489,12 +439,10 @@ async def _send_shop_to(
     settings: Settings,
     identity: TelegramIdentity,
 ) -> None:
+    del settings
     try:
         player = await game_service.dashboard(identity)
         rich, plain = shop_messages(player)
-        await _send_art(
-            bot, chat_id, settings, "intro-market", "🏪 The Marketplace — spend your Coins."
-        )
         await rich_messages.send_or_fallback(
             bot=bot,
             chat_id=chat_id,
@@ -605,19 +553,8 @@ def bag_message(player: dict[str, Any]) -> str:
 
 
 def _home_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
-    """A minimal navigation keyboard for the rules / about surfaces."""
-    rows: list[list[InlineKeyboardButton]] = []
-    if mini_app_url and include_mini_app:
-        rows.append([InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))])
-    rows += [
-        [_styled_button("🏟 Dashboard", "dashboard", _STYLE_PRIMARY)],
-        [
-            _styled_button("🏪 Marketplace", "shop:open", _STYLE_SUCCESS),
-            _styled_button("📖 How to Play", "howto", _STYLE_PRIMARY),
-        ],
-        [_styled_button("📜 Rules", "rules", _STYLE_PRIMARY)],
-    ]
-    return InlineKeyboardMarkup(rows)
+    """Kept for older surfaces — it is now the same bare launcher."""
+    return _launch_keyboard(mini_app_url=mini_app_url, include_mini_app=include_mini_app)
 
 
 def _identity_from_update(user: Any) -> TelegramIdentity:
