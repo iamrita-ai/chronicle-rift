@@ -1,17 +1,41 @@
 """Deterministic-friendly, side-effect-free tactical turn resolver.
 
-Combat model (documented so every player can understand it from /help):
+COMBAT MODEL (v2 — everything below is also shown to the player in-game):
 
-- Strike costs 1 Rift Energy and deals ``d(4..8) + level + attack_bonus``.
-  A perfect damage roll (8) is a CRITICAL hit worth 1.5x damage.
-- Guard raises a ward worth ``d(2..5) + ward_bonus`` and refunds 1 Energy.
-  A perfect ward roll (5) also reflects 2 damage back at the enemy.
-- Scout grants ``d(1..3)`` XP (+1 with the Luck Charm), restores 1 Energy,
-  and EXPOSES the enemy: your next Strike deals +2 damage.
-- Rest heals ``d(4..7)`` HP and restores 2 Energy.
-- Every 5th chapter is a boss (Ebon Colossus) with bonus HP/attack and
-  double victory rewards. Falling to 0 HP never deletes progress: the hero
-  retreats to camp, healed, on the next turn.
+The loop is: *the enemy always tells you what it will do next*, then you pick ONE
+of four moves, then the enemy does exactly the move it telegraphed.
+
+Your moves
+- Strike  — costs 1 Energy. Damage = d(4..8) + Level + gear + Focus bonus.
+            A top roll (8) is a CRITICAL (x1.5) and sets the enemy BURNING.
+- Guard   — free, +1 Energy, +1 Focus. Builds a ward of d(2..5) + gear that is
+            subtracted from the enemy's telegraphed hit. A top roll (5) is a
+            PERFECT WARD: it also reflects 2 damage.
+- Scout   — free, +1 Energy, +1 Focus, +d(1..3) XP, and EXPOSES the enemy so
+            your next Strike deals +2.
+- Rest    — free, +2 Energy, +1 Focus, heals d(4..7) HP.
+
+Focus (the combo meter)
+- Guard / Scout / Rest each add 1 Focus (max 3). Strike spends ALL Focus for
+  +2 damage per point. So "set up, then swing" always beats mashing Strike.
+
+Burn
+- A critical hit sets BURN for 2 turns; the enemy loses 3 HP at the start of
+  each of your following turns. Burn cannot kill mid-setup — it can, and that
+  counts as a victory.
+
+Enemy intent (telegraph)
+- Every enemy follows a fixed, learnable pattern of moves, and the NEXT one is
+  always visible: Slash (normal), Heavy Blow (big — Guard it), Rift Drain
+  (steals 1 Energy) or Mend (it heals itself — punish it now). Bosses also use
+  Quake. Because intent is deterministic, Guard is a real decision, not a coin
+  flip.
+
+Safety net
+- Falling to 0 HP never deletes progress: the hero retreats to camp, fully
+  healed, on the next turn.
+- Every 5th chapter is a boss (Ebon Colossus) with bonus HP/attack and double
+  victory rewards.
 """
 
 from __future__ import annotations
@@ -37,6 +61,11 @@ BOSS_HP_FACTOR = 1.6
 BOSS_ATTACK_BONUS = 2
 BOSS_REWARD_FACTOR = 2
 
+MAX_FOCUS = 3
+FOCUS_DAMAGE = 2
+BURN_TURNS = 2
+BURN_DAMAGE = 3
+
 # Flavor titles cycled as chapters advance so the quest line always reads fresh.
 CHAPTER_TITLES = (
     "The Shifting Rift",
@@ -46,6 +75,53 @@ CHAPTER_TITLES = (
     "The Obsidian Choir",
     "Storm Over the Riftlands",
 )
+
+# Enemy intents. Each is telegraphed one turn ahead so Guard/Strike become real
+# decisions instead of guesses. ``bonus`` is added to the enemy's attack value.
+INTENTS: dict[str, dict[str, Any]] = {
+    "slash": {
+        "name": "Slash",
+        "kind": "attack",
+        "bonus": 0,
+        "advice": "A normal hit — Guard trims it, or race it down with Strike.",
+    },
+    "heavy": {
+        "name": "Heavy Blow",
+        "kind": "attack",
+        "bonus": 4,
+        "advice": "Big incoming hit — Guard is usually the right answer.",
+    },
+    "drain": {
+        "name": "Rift Drain",
+        "kind": "drain",
+        "bonus": -2,
+        "advice": "Steals 1 Rift Energy — Rest or Guard keeps your Strikes online.",
+    },
+    "mend": {
+        "name": "Mend",
+        "kind": "heal",
+        "bonus": 0,
+        "advice": "It will heal itself — Strike NOW to waste the attempt.",
+    },
+    "quake": {
+        "name": "Rift Quake",
+        "kind": "attack",
+        "bonus": 6,
+        "advice": "Boss slam — Guard, or you will lose a huge chunk of Vitality.",
+    },
+}
+
+MEND_HEAL = 5
+DRAIN_ENERGY = 1
+
+# Fixed, learnable attack rotations per enemy.
+ENEMY_PATTERNS: dict[str, tuple[str, ...]] = {
+    "Ash Warden": ("slash", "slash", "heavy"),
+    "Obsidian Herald": ("slash", "drain", "heavy"),
+    "Rift Stalker": ("slash", "heavy", "mend"),
+    "Ebon Colossus": ("slash", "heavy", "drain", "quake"),
+}
+DEFAULT_PATTERN = ("slash", "slash", "heavy")
 
 
 class RandomSource(Protocol):
@@ -72,17 +148,66 @@ class PurchaseResolution:
     reason: str | None = None
 
 
+# --------------------------------------------------------------------------- #
+# Enemy intent helpers
+# --------------------------------------------------------------------------- #
+def enemy_pattern(enemy: dict[str, Any]) -> tuple[str, ...]:
+    return ENEMY_PATTERNS.get(str(enemy.get("name")), DEFAULT_PATTERN)
+
+
+def intent_payload(enemy: dict[str, Any]) -> dict[str, Any]:
+    """Describe the move this enemy will perform on its NEXT turn."""
+    pattern = enemy_pattern(enemy)
+    index = int(enemy.get("intent_index", 0)) % len(pattern)
+    intent_id = pattern[index]
+    spec = INTENTS[intent_id]
+    attack = int(enemy.get("attack", DEFAULT_ENEMY["attack"]))
+    damage = 0
+    if spec["kind"] in {"attack", "drain"}:
+        damage = max(1, attack + int(spec["bonus"]))
+    return {
+        "id": intent_id,
+        "name": spec["name"],
+        "kind": spec["kind"],
+        "damage": damage,
+        "heal": MEND_HEAL if spec["kind"] == "heal" else 0,
+        "advice": spec["advice"],
+    }
+
+
+def sync_intent(enemy: dict[str, Any]) -> dict[str, Any]:
+    """Store (and return) the enemy's telegraphed next move on the document."""
+    enemy.setdefault("intent_index", 0)
+    intent = intent_payload(enemy)
+    enemy["intent"] = intent
+    return intent
+
+
+def _advance_intent(enemy: dict[str, Any]) -> None:
+    pattern = enemy_pattern(enemy)
+    enemy["intent_index"] = (int(enemy.get("intent_index", 0)) + 1) % len(pattern)
+    sync_intent(enemy)
+
+
 def _fresh_effects(action: str, enemy: dict[str, Any]) -> dict[str, Any]:
     return {
         "action": action,
         "crit": False,
         "damage": 0,
         "enemy_damage": 0,
+        "blocked": 0,
         "healed": 0,
         "insight": 0,
         "ward": 0,
         "reflect": 0,
+        "burn_damage": 0,
+        "burn_applied": 0,
+        "focus_spent": 0,
+        "focus_gained": 0,
         "energy_delta": 0,
+        "energy_drained": 0,
+        "enemy_healed": 0,
+        "enemy_intent": None,
         "exposed_used": False,
         "leveled_up": False,
         "victory": False,
@@ -90,6 +215,56 @@ def _fresh_effects(action: str, enemy: dict[str, Any]) -> dict[str, Any]:
         "revived": False,
         "boss": bool(enemy.get("boss", False)),
     }
+
+
+def _victory(
+    updated: dict[str, Any], action: str, effects: dict[str, Any], fallen_name: str, was_boss: bool
+) -> TurnResolution:
+    """Award rewards, roll the next chapter, and build the victory summary."""
+    game = updated["game"]
+    multiplier = BOSS_REWARD_FACTOR if was_boss else 1
+    reward = (10 + game["chapter"] * 3) * multiplier
+    coin_reward = (8 + game["chapter"] * 2) * multiplier
+    point_reward = (20 + game["chapter"] * 5) * multiplier
+    game["gold"] += reward
+    game["coins"] += coin_reward
+    game["points"] += point_reward
+    game["xp"] += 12
+    game["chapter"] += 1
+    game["exposed_strikes"] = 0
+    game["focus"] = 0
+    game["burn"] = 0
+    effects["victory"] = True
+    effects.update(
+        {
+            "gold_gained": reward,
+            "coins_gained": coin_reward,
+            "points_gained": point_reward,
+            "xp_gained": 12,
+        }
+    )
+    if game["xp"] >= game["level"] * 20:
+        game["level"] += 1
+        game["max_hp"] += 4
+        game["hp"] = game["max_hp"]
+        effects["leveled_up"] = True
+    game["enemy"] = _next_enemy(game["chapter"])
+    sync_intent(game["enemy"])
+    effects["enemy_intent"] = game["enemy"]["intent"]
+    title = CHAPTER_TITLES[(game["chapter"] - 1) % len(CHAPTER_TITLES)]
+    game["quest_title"] = f"Chapter {game['chapter']}: {title}"
+    game["quest_objective"] = (
+        f"Defeat the {game['enemy']['name']} to open Chapter {game['chapter'] + 1}."
+    )
+    boss_note = " Boss bounties double the haul!" if was_boss else ""
+    level_note = " You rise a level, vitality renewed!" if effects["leveled_up"] else ""
+    summary = (
+        f"Victory! The {fallen_name} falls. You claim {reward} gold, "
+        f"{coin_reward} coins, and {point_reward} points as a new chapter opens."
+        f"{boss_note}{level_note}"
+    )
+    game["last_narrative"] = summary
+    return TurnResolution(updated, action, summary, victory=True, effects=effects)
 
 
 def resolve_turn(
@@ -104,25 +279,44 @@ def resolve_turn(
     ensure_game_defaults(updated)
     game = updated["game"]
     enemy = game["enemy"]
+    sync_intent(enemy)
     effects = _fresh_effects(action, enemy)
 
+    # --- safety net: waking up at camp costs the turn but nothing else -------
     if game["hp"] <= 0:
         game["hp"] = game["max_hp"]
         game["energy"] = max(1, game["max_energy"] // 2)
+        game["focus"] = 0
         effects["revived"] = True
+        effects["enemy_intent"] = enemy["intent"]
         summary = "You return to the rift camp, wounds sealed, ready to fight again."
         game["last_narrative"] = summary
         return TurnResolution(updated, action, summary, victory=False, effects=effects)
 
+    game["turn"] = int(game.get("turn", 0)) + 1
     energy_before = game["energy"]
+    focus_before = int(game.get("focus", 0))
     ward_strength = 0
+    lines: list[str] = []
+
+    # --- burn ticks before you act ------------------------------------------
+    if int(game.get("burn", 0)) > 0:
+        game["burn"] = int(game["burn"]) - 1
+        enemy["hp"] = max(0, enemy["hp"] - BURN_DAMAGE)
+        effects["burn_damage"] = BURN_DAMAGE
+        lines.append(f"Rift-fire burns the {enemy['name']} for {BURN_DAMAGE}.")
+        if enemy["hp"] <= 0:
+            return _victory(updated, action, effects, enemy["name"], bool(enemy.get("boss")))
+
+    # --- your move -----------------------------------------------------------
     if action == "strike":
         if game["energy"] <= 0:
             summary = (
-                "Your blade is ready, but your Energy is spent. "
-                "Guard, Scout, or Rest to recover it."
+                "Your blade is ready, but your Rift Energy is spent. "
+                "Guard, Scout, or Rest to recover it (they are all free)."
             )
             game["last_narrative"] = summary
+            effects["enemy_intent"] = enemy["intent"]
             return TurnResolution(updated, action, summary, victory=False, effects=effects)
         game["energy"] -= 1
         roll = random_source.randint(STRIKE_MIN, STRIKE_MAX)
@@ -130,18 +324,33 @@ def resolve_turn(
         if roll == STRIKE_MAX:
             damage = int(round(damage * CRIT_MULTIPLIER))
             effects["crit"] = True
+            game["burn"] = BURN_TURNS
+            effects["burn_applied"] = BURN_TURNS
         if game.get("exposed_strikes", 0) > 0:
             game["exposed_strikes"] -= 1
             damage += EXPOSED_BONUS
             effects["exposed_used"] = True
+        if focus_before > 0:
+            damage += focus_before * FOCUS_DAMAGE
+            effects["focus_spent"] = focus_before
+            game["focus"] = 0
         enemy["hp"] = max(0, enemy["hp"] - damage)
         effects["damage"] = damage
         if effects["crit"]:
-            summary = f"CRITICAL HIT! Your strike tears through the rift for {damage} damage."
+            lines.append(
+                f"CRITICAL HIT! Your strike tears through for {damage} damage "
+                f"and leaves the {enemy['name']} burning."
+            )
+        elif effects["focus_spent"] and effects["exposed_used"]:
+            lines.append(
+                f"You spend {effects['focus_spent']} Focus on the exposed foe: {damage} damage."
+            )
+        elif effects["focus_spent"]:
+            lines.append(f"You unleash {effects['focus_spent']} Focus for {damage} damage.")
         elif effects["exposed_used"]:
-            summary = f"You exploit the enemy's exposure and strike for {damage} damage."
+            lines.append(f"You exploit the enemy's exposure and strike for {damage} damage.")
         else:
-            summary = f"You strike for {damage} rift damage."
+            lines.append(f"You strike for {damage} rift damage.")
     elif action == "guard":
         ward_roll = random_source.randint(GUARD_MIN, GUARD_MAX)
         ward_strength = ward_roll + game.get("ward_bonus", 0)
@@ -150,12 +359,12 @@ def resolve_turn(
         if ward_roll == GUARD_MAX:
             enemy["hp"] = max(0, enemy["hp"] - REFLECT_DAMAGE)
             effects["reflect"] = REFLECT_DAMAGE
-            summary = (
-                f"Perfect ward! You brace to absorb {ward_strength} damage "
+            lines.append(
+                f"Perfect ward! You brace against {ward_strength} damage "
                 f"and reflect {REFLECT_DAMAGE} back."
             )
         else:
-            summary = f"You raise a ward and prepare to absorb {ward_strength} damage."
+            lines.append(f"You raise a ward against {ward_strength} damage.")
     elif action == "scout":
         insight = random_source.randint(SCOUT_MIN, SCOUT_MAX)
         if game.get("luck"):
@@ -164,9 +373,9 @@ def resolve_turn(
         game["energy"] = min(game["max_energy"], game["energy"] + 1)
         game["exposed_strikes"] = max(1, game.get("exposed_strikes", 0))
         effects["insight"] = insight
-        summary = (
-            f"You read the rift winds, gaining {insight} insight. "
-            f"The enemy is exposed: your next Strike deals +{EXPOSED_BONUS} damage."
+        lines.append(
+            f"You read the rift winds for {insight} XP. The enemy is EXPOSED: "
+            f"your next Strike deals +{EXPOSED_BONUS}."
         )
     else:  # rest
         healing = random_source.randint(REST_MIN, REST_MAX)
@@ -174,68 +383,80 @@ def resolve_turn(
         game["hp"] = min(game["max_hp"], game["hp"] + healing)
         game["energy"] = min(game["max_energy"], game["energy"] + 2)
         effects["healed"] = healed_actual
-        summary = f"You rest beside the ember shrine and recover {healed_actual} HP."
+        lines.append(f"You rest beside the ember shrine and recover {healed_actual} HP.")
+
+    # Setup moves build Focus; Strike is the payoff.
+    if action != "strike":
+        gained = min(MAX_FOCUS, focus_before + 1) - focus_before
+        game["focus"] = min(MAX_FOCUS, focus_before + 1)
+        effects["focus_gained"] = gained
+        if gained:
+            lines.append(f"Focus {game['focus']}/{MAX_FOCUS} — your next Strike hits harder.")
 
     effects["energy_delta"] = game["energy"] - energy_before
 
     if enemy["hp"] <= 0:
-        effects["victory"] = True
-        fallen_name = enemy["name"]
         was_boss = bool(enemy.get("boss", False))
-        multiplier = BOSS_REWARD_FACTOR if was_boss else 1
-        reward = (10 + game["chapter"] * 3) * multiplier
-        coin_reward = (8 + game["chapter"] * 2) * multiplier
-        point_reward = (20 + game["chapter"] * 5) * multiplier
-        game["gold"] += reward
-        game["coins"] += coin_reward
-        game["points"] += point_reward
-        game["xp"] += 12
-        game["chapter"] += 1
-        game["exposed_strikes"] = 0
-        effects.update(
-            {
-                "gold_gained": reward,
-                "coins_gained": coin_reward,
-                "points_gained": point_reward,
-                "xp_gained": 12,
-            }
+        fallen = enemy["name"]
+        resolution = _victory(updated, action, effects, fallen, was_boss)
+        return TurnResolution(
+            resolution.player,
+            action,
+            " ".join([*lines, resolution.summary]),
+            victory=True,
+            effects=resolution.effects,
         )
-        if game["xp"] >= game["level"] * 20:
-            game["level"] += 1
-            game["max_hp"] += 4
-            game["hp"] = game["max_hp"]
-            effects["leveled_up"] = True
-        enemy.update(_next_enemy(game["chapter"]))
-        title = CHAPTER_TITLES[(game["chapter"] - 1) % len(CHAPTER_TITLES)]
-        game["quest_title"] = f"Chapter {game['chapter']}: {title}"
-        game["quest_objective"] = "Stabilize the next breach before the realm fractures."
-        boss_note = " Boss bounties double the haul!" if was_boss else ""
-        level_note = " You rise a level, vitality renewed!" if effects["leveled_up"] else ""
-        summary = (
-            f"Victory! The {fallen_name} falls. You claim {reward} gold, "
-            f"{coin_reward} coins, and {point_reward} points as a new chapter opens."
-            f"{boss_note}{level_note}"
-        )
-        game["last_narrative"] = summary
-        return TurnResolution(updated, action, summary, victory=True, effects=effects)
 
-    enemy_damage = random_source.randint(2, max(3, int(enemy.get("attack", 3))))
-    if action == "guard":
-        enemy_damage = max(0, enemy_damage - ward_strength)
-    game["hp"] = max(0, game["hp"] - enemy_damage)
-    effects["enemy_damage"] = enemy_damage
-    if enemy_damage:
-        summary = f"{summary} {enemy['name']} retaliates for {enemy_damage} damage."
-    elif effects["reflect"]:
-        summary = f"{summary} Your perfect ward absorbs the counterattack."
+    # --- the enemy performs exactly the move it telegraphed ------------------
+    intent = enemy["intent"]
+    if intent["kind"] == "heal":
+        before = enemy["hp"]
+        enemy["hp"] = min(enemy["max_hp"], enemy["hp"] + intent["heal"])
+        effects["enemy_healed"] = enemy["hp"] - before
+        if effects["enemy_healed"]:
+            lines.append(f"{enemy['name']} mends itself for {effects['enemy_healed']}.")
+        else:
+            lines.append(f"{enemy['name']} tries to mend, but it is already whole.")
     else:
-        summary = f"{summary} Your ward absorbs the counterattack."
+        raw = int(intent["damage"])
+        dealt = max(0, raw - ward_strength)
+        effects["blocked"] = raw - dealt
+        game["hp"] = max(0, game["hp"] - dealt)
+        effects["enemy_damage"] = dealt
+        if intent["kind"] == "drain" and dealt > 0 and game["energy"] > 0:
+            game["energy"] = max(0, game["energy"] - DRAIN_ENERGY)
+            effects["energy_drained"] = DRAIN_ENERGY
+        label = intent["name"]
+        if dealt and effects["blocked"]:
+            lines.append(
+                f"{enemy['name']} answers with {label}: {dealt} damage "
+                f"({effects['blocked']} blocked by your ward)."
+            )
+        elif dealt:
+            lines.append(f"{enemy['name']} answers with {label} for {dealt} damage.")
+        else:
+            lines.append(f"Your ward swallows {enemy['name']}'s {label} completely.")
+        if effects["energy_drained"]:
+            lines.append("It siphons 1 Rift Energy.")
+
+    effects["energy_delta"] = game["energy"] - energy_before
+
+    _advance_intent(enemy)
+    effects["enemy_intent"] = enemy["intent"]
+    next_intent = enemy["intent"]
+    if next_intent["kind"] == "heal":
+        lines.append(f"Next: it will {next_intent['name']} for {next_intent['heal']} — punish it.")
+    else:
+        lines.append(f"Next: {next_intent['name']} for {next_intent['damage']} damage.")
+
     if game["hp"] == 0:
         effects["defeated"] = True
-        summary = (
-            f"{summary} Darkness takes you — but the Chronicle preserves all progress. "
+        lines.append(
+            "Darkness takes you — but the Chronicle preserves all progress. "
             "Choose any move to wake at camp, fully healed."
         )
+
+    summary = " ".join(lines)
     game["last_narrative"] = summary
     return TurnResolution(updated, action, summary, victory=False, effects=effects)
 
@@ -309,44 +530,60 @@ def resolve_purchase(player: dict[str, Any], item_id: str) -> PurchaseResolution
 
 
 HOW_TO_PLAY = (
-    "📖 How to Play ChronicleRift\n\n"
-    "ChronicleRift is a turn-based RPG inside Telegram. You face one enemy at a "
-    "time and pick ONE move per turn. Bring the enemy's HP to 0 to clear the "
-    "chapter and earn Gold, Coins, and Points.\n\n"
-    "The four moves:\n"
-    "⚔️ Strike — costs 1 Energy; deals 4–8 + Level + gear damage. A perfect roll "
-    "is a CRITICAL hit worth 1.5x.\n"
-    "🛡 Guard — blocks 2–5 of the counterattack and restores 1 Energy. A perfect "
-    "ward also reflects 2 damage.\n"
-    "🔮 Scout — +1–3 XP, +1 Energy, and EXPOSES the enemy so your next Strike "
-    "hits +2 harder.\n"
-    "🔥 Rest — recovers 4–7 HP and 2 Energy. Strikes need Energy, so weave these "
-    "in.\n\n"
-    "Death is safe: at 0 HP you wake at camp fully healed and keep everything.\n"
-    "Every 5th chapter is a boss with double rewards.\n"
-    "Spend Coins in /shop (potions, energy, permanent upgrades) and open /app "
-    "for the visual battlefield.\n\n"
-    "Commands: /play dashboard · /shop marketplace · /rules full rules · /app mini app"
+    "📖 HOW TO PLAY — ChronicleRift in 60 seconds\n\n"
+    "WHAT IS THIS GAME?\n"
+    "A turn-based fantasy RPG that lives inside Telegram. You are a Riftwalker. "
+    "One monster blocks each chapter. Empty its HP bar and you clear the chapter, "
+    "collect Gold, Coins and Points, and a stronger monster appears.\n\n"
+    "THE ONE RULE\n"
+    "Each turn you tap ONE of four buttons. Then the enemy does exactly the move "
+    "it warned you about (look for the ‘Next:’ line). That is the whole game.\n\n"
+    "YOUR FOUR MOVES\n"
+    "⚔️ Strike — costs 1 Energy. Damage = roll 4–8 + your Level + gear + Focus. "
+    "A perfect roll is a CRITICAL (x1.5) and sets the enemy on fire.\n"
+    "🛡 Guard — free. Blocks 2–5 of the incoming hit, +1 Energy, +1 Focus. "
+    "Use it on the turn the enemy telegraphs Heavy Blow or Rift Quake.\n"
+    "🔮 Scout — free. +1–3 XP, +1 Energy, +1 Focus, and EXPOSES the enemy "
+    "(next Strike +2).\n"
+    "🔥 Rest — free. Heals 4–7 HP, +2 Energy, +1 Focus.\n\n"
+    "FOCUS = YOUR COMBO METER\n"
+    "Guard, Scout and Rest each give +1 Focus (max 3). Strike spends all of it "
+    "for +2 damage per point. Set up two turns, then swing — that is the combo.\n\n"
+    "READ THE ENEMY\n"
+    "Slash = normal hit · Heavy Blow = big hit, Guard it · Rift Drain = steals "
+    "1 Energy · Mend = it heals itself, so Strike immediately · Rift Quake = "
+    "boss slam, Guard it.\n\n"
+    "YOU CANNOT LOSE PROGRESS\n"
+    "At 0 HP you simply wake at camp fully healed, keeping every coin and level.\n\n"
+    "SPEND YOUR COINS\n"
+    "Victories pay Coins. /shop sells potions (instant) and relics (permanent).\n\n"
+    "Commands: /play dashboard · /shop marketplace · /rules full rules · "
+    "/app the visual battle arena"
 )
 
 
 RULES = (
     "⚖️ ChronicleRift — Rules & Regulations\n\n"
-    "1. Start your journey with /start or /play. Your hero is saved to the Chronicle "
-    "and only you can change it.\n"
-    "2. Pick one move per turn — Strike, Guard, Scout, or Rest. Strikes use Rift "
-    "Energy; the other moves restore it while shaping the battle differently.\n"
-    "3. Defeat the enemy to advance a chapter and earn Gold, Coins, and Points. "
+    "1. Start with /start or /play. Your hero is saved to the Chronicle and only "
+    "you can change it.\n"
+    "2. One move per turn — Strike, Guard, Scout, or Rest. Strikes spend Rift "
+    "Energy; the other three are free and refill it.\n"
+    "3. The enemy always telegraphs its next move. It will perform exactly that "
+    "move after yours — no hidden dice on its side.\n"
+    "4. Focus builds 1 per non-Strike move (max 3) and is fully spent by your "
+    "next Strike for +2 damage each.\n"
+    "5. Critical hits apply Burn: 3 damage at the start of each of your next "
+    "2 turns.\n"
+    "6. Defeat the enemy to advance a chapter and earn Gold, Coins, and Points. "
     "Every 5th chapter is a boss with double rewards.\n"
-    "4. Reaching 0 HP sends you back to camp fully healed — progress is never lost.\n"
-    "5. Spend Coins in the Marketplace (/shop) on helpful items: potions, energy, and "
-    "permanent upgrades.\n"
-    "6. Progression accumulates XP toward your next Level. Each level raises your "
-    "maximum Vitality and your Strike damage.\n"
-    "7. One hero per account. Progress is tied to your Telegram identity and is "
-    "verified server-side — never trust client-reported scores.\n"
-    "8. Be fair. Automation, spoofing, or abuse of the Chronicle results in loss of "
-    "access. Have fun and keep the realm honourable.\n"
+    "7. Reaching 0 HP sends you back to camp fully healed — progress is never "
+    "lost.\n"
+    "8. Spend Coins in the Marketplace (/shop): potions are instant, relics are "
+    "permanent.\n"
+    "9. XP raises your Level; each level increases maximum Vitality and Strike "
+    "damage.\n"
+    "10. One hero per account, verified server-side. Automation, spoofing, or "
+    "abuse costs you access. Play fair and keep the realm honourable.\n"
 )
 
 
@@ -354,19 +591,24 @@ def _next_enemy(chapter: int) -> dict[str, Any]:
     scale = max(chapter - 1, 0)
     if chapter % BOSS_EVERY == 0:
         hp = int((DEFAULT_ENEMY["max_hp"] + scale * 5) * BOSS_HP_FACTOR)
-        return {
+        enemy = {
             "name": "Ebon Colossus",
             "hp": hp,
             "max_hp": hp,
             "attack": DEFAULT_ENEMY["attack"] + scale + BOSS_ATTACK_BONUS,
             "art": "🌑",
             "boss": True,
+            "intent_index": 0,
         }
-    return {
-        "name": "Rift Stalker" if chapter % 2 == 0 else "Obsidian Herald",
-        "hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
-        "max_hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
-        "attack": DEFAULT_ENEMY["attack"] + scale,
-        "art": "🜂" if chapter % 2 == 0 else "🗿",
-        "boss": False,
-    }
+    else:
+        enemy = {
+            "name": "Rift Stalker" if chapter % 2 == 0 else "Obsidian Herald",
+            "hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
+            "max_hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
+            "attack": DEFAULT_ENEMY["attack"] + scale,
+            "art": "🜂" if chapter % 2 == 0 else "🗿",
+            "boss": False,
+            "intent_index": 0,
+        }
+    sync_intent(enemy)
+    return enemy

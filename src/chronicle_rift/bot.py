@@ -46,6 +46,25 @@ _ACTION_STYLES = {
 }
 
 
+def art_url(settings: Settings, name: str) -> str | None:
+    """Public HTTPS URL of a bundled illustration, served by our own Mini App."""
+    base = settings.mini_app_url
+    if not base:
+        return None
+    return f"{base.rstrip('/')}/art/{name}.jpg"
+
+
+async def _send_art(bot: Any, chat_id: int, settings: Settings, name: str, caption: str) -> None:
+    """Best-effort illustrated message; the game never depends on it succeeding."""
+    url = art_url(settings, name)
+    if not url:
+        return
+    try:
+        await bot.send_photo(chat_id=chat_id, photo=url, caption=caption)
+    except Exception:
+        LOGGER.debug("Could not send illustration %s", name)
+
+
 def _styled_button(text: str, callback_data: str, style: str | None = None) -> InlineKeyboardButton:
     """Build an InlineKeyboardButton, optionally colored via the style field."""
     return InlineKeyboardButton(text, callback_data=callback_data, style=style)
@@ -70,6 +89,13 @@ def build_telegram_application(
         chat = update.effective_chat
         if not chat:
             return
+        await _send_art(
+            update.get_bot(),
+            chat.id,
+            settings,
+            "intro-moves",
+            "⚔️ Strike · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
+        )
         await chat.send_message(
             HOW_TO_PLAY,
             reply_markup=_home_keyboard(
@@ -206,6 +232,23 @@ def build_telegram_application(
             return
         identity = _identity_from_update(user)
 
+        if data == "howto":
+            await query.answer()
+            await _send_art(
+                context.bot,
+                query.message.chat_id,
+                settings,
+                "intro-moves",
+                "⚔️ Strike · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
+            )
+            await query.message.reply_text(
+                HOW_TO_PLAY,
+                reply_markup=_home_keyboard(
+                    mini_app_url=settings.mini_app_url,
+                    include_mini_app=query.message.chat.type == "private",
+                ),
+            )
+            return
         if data == "rules":
             await query.answer()
             await query.message.reply_text(
@@ -300,7 +343,7 @@ def build_telegram_application(
         CallbackQueryHandler(choose_action, pattern=r"^act:(strike|guard|scout|rest)$")
     )
     application.add_handler(
-        CallbackQueryHandler(callback_menu, pattern=r"^(rules|about|dashboard|shop:.*)$")
+        CallbackQueryHandler(callback_menu, pattern=r"^(rules|about|howto|dashboard|shop:.*)$")
     )
     application.add_error_handler(on_error)
     return application
@@ -325,17 +368,38 @@ async def _show_dashboard(
         player = await game_service.dashboard(_identity_from_update(user))
         rich, plain = dashboard_messages(player)
         if welcome:
+            await _send_art(
+                update.get_bot(),
+                chat.id,
+                settings,
+                "intro-arena",
+                "⚔️ ChronicleRift — a turn-based RPG inside Telegram.\n"
+                "One enemy blocks each chapter. Empty its HP bar and the chapter is yours.",
+            )
             intro = (
                 "# Welcome to ChronicleRift\n\n"
-                "A turn-based RPG right here in Telegram. Defeat the enemy below, "
-                "chapter by chapter. Each turn, pick ONE move — the four buttons "
-                "under your dashboard. New here? /help explains every move in a "
-                "minute.\n\n"
+                "**What is this?** A turn-based fantasy RPG inside Telegram. "
+                "One monster guards each chapter — empty its HP bar to clear it "
+                "and earn Gold, Coins and Points.\n\n"
+                "**How do I play?** Each turn you tap ONE of the four buttons "
+                "below. The enemy always shows its next move in the `Next:` "
+                "line, then does exactly that. Guard the big hits, Scout to set "
+                "up, Strike to cash in.\n\n"
+                "**Can I lose?** Never permanently — at 0 HP you wake at camp "
+                "fully healed and keep everything. Tap 📖 How to Play or send "
+                "/help for the 60-second guide.\n\n"
             )
             plain_intro = (
-                "Welcome to ChronicleRift — a turn-based RPG in Telegram.\n"
-                "Pick ONE move per turn (the buttons below) and drop the enemy's "
-                "HP to 0 to clear each chapter. /help explains every move.\n\n"
+                "👋 Welcome to ChronicleRift — a turn-based RPG inside Telegram.\n\n"
+                "WHAT IS IT: one monster guards each chapter. Empty its HP bar "
+                "to clear the chapter and earn Gold, Coins and Points.\n"
+                "HOW TO PLAY: each turn tap ONE of the four buttons below. The "
+                "enemy tells you its next move on the 'Next:' line, then does "
+                "exactly that — Guard the big hits, Scout to set up, Strike to "
+                "cash in.\n"
+                "NO PERMADEATH: at 0 HP you wake at camp fully healed.\n\n"
+                "Tap 📖 How to Play (or send /help) for the full 60-second "
+                "guide.\n\n"
             )
             rich = intro + rich
             plain = plain_intro + plain
@@ -393,6 +457,9 @@ async def _send_shop_to(
     try:
         player = await game_service.dashboard(identity)
         rich, plain = shop_messages(player)
+        await _send_art(
+            bot, chat_id, settings, "intro-market", "🏪 The Marketplace — spend your Coins."
+        )
         await rich_messages.send_or_fallback(
             bot=bot,
             chat_id=chat_id,
@@ -425,6 +492,9 @@ def action_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inli
         ],
         [
             _styled_button("🏪 Marketplace", "shop:open", _STYLE_PRIMARY),
+            _styled_button("📖 How to Play", "howto", _STYLE_PRIMARY),
+        ],
+        [
             _styled_button("📜 Rules", "rules", _STYLE_PRIMARY),
             _styled_button("ℹ️ About", "about", _STYLE_PRIMARY),
         ],
@@ -464,8 +534,9 @@ def _home_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inlin
         [_styled_button("🏟 Dashboard", "dashboard", _STYLE_PRIMARY)],
         [
             _styled_button("🏪 Marketplace", "shop:open", _STYLE_SUCCESS),
-            _styled_button("📜 Rules", "rules", _STYLE_PRIMARY),
+            _styled_button("📖 How to Play", "howto", _STYLE_PRIMARY),
         ],
+        [_styled_button("📜 Rules", "rules", _STYLE_PRIMARY)],
     ]
     if mini_app_url and include_mini_app:
         rows.append(

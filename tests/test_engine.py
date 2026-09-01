@@ -63,7 +63,7 @@ def test_guard_reduces_incoming_damage_and_restores_energy() -> None:
 
     assert result.player["game"]["energy"] == 3
     assert result.player["game"]["hp"] == 24
-    assert "absorbs" in result.summary
+    assert "swallows" in result.summary
 
 
 def test_victory_awards_coins_and_points() -> None:
@@ -132,9 +132,10 @@ def test_scout_exposes_enemy_and_buffs_next_strike() -> None:
     assert scouted.player["game"]["exposed_strikes"] == 1
 
     struck = resolve_turn(scouted.player, "strike", QueuedRandom([4, 2]))
-    # Damage: 4 + level 1 + 2 exposure bonus = 7.
+    # Damage: 4 + level 1 + 2 exposure bonus + 1 Focus x2 = 9.
     assert struck.effects["exposed_used"] is True
-    assert struck.effects["damage"] == 7
+    assert struck.effects["focus_spent"] == 1
+    assert struck.effects["damage"] == 9
     assert struck.player["game"]["exposed_strikes"] == 0
 
 
@@ -181,3 +182,88 @@ def test_boss_victory_doubles_rewards() -> None:
     assert result.victory is True
     assert result.player["game"]["coins"] - coins_before == (8 + 5 * 2) * 2
     assert result.effects["gold_gained"] == (10 + 5 * 3) * 2
+
+
+def test_enemy_intent_is_telegraphed_and_follows_a_fixed_pattern() -> None:
+    """Players can always see the enemy's next move before committing."""
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    intent = resolve_turn(player, "scout", FixedRandom(2)).effects["enemy_intent"]
+
+    # Ash Warden rotation is slash, slash, heavy — after one turn the next
+    # telegraphed move is the second Slash.
+    assert intent["id"] == "slash"
+    assert intent["damage"] == 5
+
+    second = resolve_turn(
+        resolve_turn(player, "scout", FixedRandom(2)).player, "scout", FixedRandom(2)
+    )
+    assert second.effects["enemy_intent"]["id"] == "heavy"
+    assert second.effects["enemy_intent"]["damage"] == 9
+    assert "Heavy Blow" in second.summary
+
+
+def test_guard_blocks_the_telegraphed_heavy_blow() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"]["intent_index"] = 2  # Heavy Blow is next.
+
+    result = resolve_turn(player, "guard", FixedRandom(4))
+
+    assert result.effects["blocked"] == 4
+    assert result.effects["enemy_damage"] == 5
+    assert result.player["game"]["hp"] == 19
+
+
+def test_focus_builds_on_setup_moves_and_is_spent_by_strike() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+
+    rested = resolve_turn(player, "rest", FixedRandom(4))
+    guarded = resolve_turn(rested.player, "guard", FixedRandom(2))
+    assert guarded.player["game"]["focus"] == 2
+
+    struck = resolve_turn(guarded.player, "strike", FixedRandom(4))
+    # 4 roll + level 1 + 2 Focus x2 = 9 damage, and the meter empties.
+    assert struck.effects["focus_spent"] == 2
+    assert struck.effects["damage"] == 9
+    assert struck.player["game"]["focus"] == 0
+
+
+def test_critical_hit_applies_burn_that_ticks_next_turn() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+
+    crit = resolve_turn(player, "strike", FixedRandom(8))
+    assert crit.player["game"]["burn"] == 2
+
+    after = resolve_turn(crit.player, "rest", FixedRandom(4))
+    assert after.effects["burn_damage"] == 3
+    assert after.player["game"]["burn"] == 1
+
+
+def test_mend_intent_heals_the_enemy() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"] = {
+        "name": "Rift Stalker",
+        "hp": 10,
+        "max_hp": 23,
+        "attack": 6,
+        "art": "🜂",
+        "boss": False,
+        "intent_index": 2,  # Mend
+    }
+
+    result = resolve_turn(player, "guard", FixedRandom(2))
+
+    assert result.effects["enemy_healed"] == 5
+    assert result.effects["enemy_damage"] == 0
+    assert result.player["game"]["enemy"]["hp"] == 15
+
+
+def test_public_view_exposes_intent_focus_and_finisher_hint() -> None:
+    from chronicle_rift.models import public_player_view
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"]["hp"] = 3
+    view = public_player_view(player)
+
+    assert view["enemy"]["intent"]["name"] == "Slash"
+    assert view["hero"]["max_focus"] == 3
+    assert view["battle"]["can_finish"] is True

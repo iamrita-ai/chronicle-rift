@@ -13,6 +13,8 @@ DEFAULT_ENEMY = {
     "attack": 5,
     "art": "🔥",
     "boss": False,
+    # Index into the enemy's fixed, telegraphed attack rotation.
+    "intent_index": 0,
 }
 
 # Fields that newer versions expect on every player document. Keeping them here
@@ -25,6 +27,11 @@ GAME_DEFAULTS: dict[str, Any] = {
     "ward_bonus": 0,
     "luck": False,
     "exposed_strikes": 0,
+    # Combo meter charged by Guard/Scout/Rest and spent by Strike.
+    "focus": 0,
+    # Remaining Burn ticks applied by a critical hit.
+    "burn": 0,
+    "turn": 0,
 }
 
 LEVEL_XP_FACTOR = 20
@@ -34,6 +41,7 @@ LEVEL_XP_FACTOR = 20
 # instant effect; permanent upgrades stack with the hero's base combat values.
 SHOP_ITEMS: dict[str, dict[str, Any]] = {
     "heal": {
+        "art": "item-heal",
         "name": "Healing Draught",
         "emoji": "❤️",
         "cost": 25,
@@ -41,6 +49,7 @@ SHOP_ITEMS: dict[str, dict[str, Any]] = {
         "desc": "Instantly restores 15 Vitality (never above your maximum).",
     },
     "elixir": {
+        "art": "item-elixir",
         "name": "Rift Elixir",
         "emoji": "⚡",
         "cost": 20,
@@ -48,6 +57,7 @@ SHOP_ITEMS: dict[str, dict[str, Any]] = {
         "desc": "Instantly restores 3 Rift Energy.",
     },
     "blade": {
+        "art": "item-blade",
         "name": "Rift Steel",
         "emoji": "⚔️",
         "cost": 60,
@@ -55,6 +65,7 @@ SHOP_ITEMS: dict[str, dict[str, Any]] = {
         "desc": "Permanently grants +2 Strike damage.",
     },
     "ward": {
+        "art": "item-ward",
         "name": "Aegis Sigil",
         "emoji": "🛡",
         "cost": 60,
@@ -62,6 +73,7 @@ SHOP_ITEMS: dict[str, dict[str, Any]] = {
         "desc": "Permanently grants +2 Ward strength.",
     },
     "charm": {
+        "art": "item-charm",
         "name": "Luck Charm",
         "emoji": "🍀",
         "cost": 40,
@@ -95,9 +107,12 @@ def new_player(*, user_id: int, first_name: str, username: str | None) -> dict[s
             "attack_bonus": 0,
             "ward_bonus": 0,
             "luck": False,
+            "focus": 0,
+            "burn": 0,
+            "turn": 0,
             "chapter": 1,
             "quest_title": "The Ember Gate",
-            "quest_objective": "Break the Ash Warden's siege at the rift gate.",
+            "quest_objective": "Empty the Ash Warden's HP bar to open Chapter 2.",
             "enemy": deepcopy(DEFAULT_ENEMY),
             "inventory": ["Rift Compass", "Traveler's Tonic"],
             "purchased": [],
@@ -117,7 +132,9 @@ def ensure_game_defaults(player: dict[str, Any]) -> None:
             game[key] = deepcopy(value)
     game.setdefault("inventory", [])
     game.setdefault("purchased", [])
-    game.setdefault("enemy", deepcopy(DEFAULT_ENEMY))
+    enemy = game.setdefault("enemy", deepcopy(DEFAULT_ENEMY))
+    enemy.setdefault("intent_index", 0)
+    enemy.setdefault("boss", False)
 
 
 def level_threshold(game: dict[str, Any]) -> int:
@@ -133,9 +150,18 @@ def level_progress(game: dict[str, Any]) -> float:
 
 def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     """Return only the Mini App fields that a player is allowed to see."""
+    # Imported lazily: game_engine imports this module, so a top-level import
+    # would create a cycle.
+    from .game_engine import (
+        MAX_FOCUS,
+        STRIKE_MIN,
+        sync_intent,
+    )
+
     ensure_game_defaults(player)
     game = player["game"]
     enemy = game["enemy"]
+    intent = sync_intent(enemy)
     threshold = level_threshold(game)
     shop = [
         {
@@ -145,6 +171,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "cost": item["cost"],
             "kind": item["kind"],
             "desc": item["desc"],
+            "art": item.get("art", ""),
         }
         for item_id, item in SHOP_ITEMS.items()
     ]
@@ -165,6 +192,8 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "attack_bonus": game["attack_bonus"],
             "ward_bonus": game["ward_bonus"],
             "luck": game["luck"],
+            "focus": int(game.get("focus", 0)),
+            "max_focus": MAX_FOCUS,
         },
         "quest": {
             "chapter": game["chapter"],
@@ -178,9 +207,23 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "attack": enemy.get("attack", DEFAULT_ENEMY["attack"]),
             "art": enemy["art"],
             "boss": bool(enemy.get("boss", False)),
+            "intent": intent,
         },
         "battle": {
             "exposed": bool(game.get("exposed_strikes", 0)),
+            "burn": int(game.get("burn", 0)),
+            "turn": int(game.get("turn", 0)),
+            # True when even a minimum Strike roll would end this fight, so the
+            # UI can shout "FINISH IT" instead of leaving players guessing.
+            "can_finish": bool(
+                game["energy"] > 0
+                and enemy["hp"]
+                <= STRIKE_MIN
+                + int(game["level"])
+                + int(game.get("attack_bonus", 0))
+                + (2 if game.get("exposed_strikes", 0) else 0)
+                + int(game.get("focus", 0)) * 2
+            ),
         },
         "inventory": list(game["inventory"]),
         "shop": shop,

@@ -91,10 +91,23 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
     hero = view["hero"]
     quest = view["quest"]
     enemy = view["enemy"]
+    battle = view.get("battle", {})
+    intent = enemy.get("intent") or {}
     inventory = ", ".join(_safe_text(item) for item in view["inventory"])
     narrative = _safe_text(view["narrative"])
     progress_text = _progress_bar(hero["progress"])
     inventory_bullets = inventory.replace(", ", "\n- ")
+    focus_text = _focus_pips(hero.get("focus", 0), hero.get("max_focus", 3))
+    intent_line = _intent_line(intent)
+    coach = _coach_tip(hero, enemy, battle, intent)
+    status_bits = []
+    if battle.get("exposed"):
+        status_bits.append("🎯 EXPOSED (next Strike +2)")
+    if battle.get("burn"):
+        status_bits.append(f"🔥 BURNING ({battle['burn']} turns)")
+    if battle.get("can_finish"):
+        status_bits.append("💀 FINISHER READY")
+    status_line = " · ".join(status_bits)
 
     rich = (
         f"# ⚔️ {_safe_text(hero['name'])}'s Chronicle\n\n"
@@ -108,9 +121,13 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
         f"| Gold | {hero['gold']} |\n"
         f"| 🪙 Coins | {hero['coins']} |\n"
         f"| ✨ Points | {hero['points']} |\n\n"
+        f"| 🎯 Focus | {focus_text} |\n\n"
         f"## {enemy['art']} Enemy: {_safe_text(enemy['name'])}\n"
-        f"**HP:** {enemy['hp']} / {enemy['max_hp']}\n\n"
-        f"## Quest\n{_safe_text(quest['objective'])}\n\n"
+        f"**HP:** {enemy['hp']} / {enemy['max_hp']} · **ATK:** {enemy.get('attack', '?')}\n\n"
+        f"> ⏭ **{_safe_text(intent_line)}**\n\n"
+        + (f"`{_safe_text(status_line)}`\n\n" if status_line else "")
+        + f"## Quest\n{_safe_text(quest['objective'])}\n\n"
+        f"**Your move:** {_safe_text(coach)}\n\n"
         f"<details><summary>🎒 Inventory</summary>\n\n- {inventory_bullets}\n\n</details>\n\n"
         f"> {narrative}"
     )
@@ -120,10 +137,15 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
         f"Level {hero['level']} — {progress_text} {hero['xp']}/{hero['xp_to_next']} XP\n\n"
         f"HP {hero['hp']}/{hero['max_hp']} | Energy {hero['energy']}/{hero['max_energy']}\n"
         f"Gold {hero['gold']} | Coins {hero['coins']} | Points {hero['points']}\n\n"
-        f"{enemy['art']} {enemy['name']}: {enemy['hp']}/{enemy['max_hp']} HP\n"
-        f"Quest: {quest['objective']}\n"
+        f"Focus {focus_text}\n\n"
+        f"{enemy['art']} {enemy['name']}: {enemy['hp']}/{enemy['max_hp']} HP "
+        f"(ATK {enemy.get('attack', '?')})\n"
+        f"⏭ {intent_line}\n"
+        + (f"{status_line}\n" if status_line else "")
+        + f"Quest: {quest['objective']}\n"
         f"Inventory: {inventory}\n\n{narrative}\n\n"
-        f"Tip: spend coins with /shop for helpful upgrades."
+        f"👉 Your move: {coach}\n"
+        f"New here? Send /help for the 60-second guide."
     )
     return rich, plain
 
@@ -178,6 +200,47 @@ def about_message(*, version: str) -> tuple[str, str]:
         "Commands: /play, /shop, /rules, /about, /app."
     )
     return rich, plain
+
+
+def _focus_pips(focus: int, maximum: int) -> str:
+    """Render the combo meter, e.g. ◆◆◇ (2/3)."""
+    focus = max(0, min(int(maximum), int(focus)))
+    return f"{'◆' * focus}{'◇' * (int(maximum) - focus)} ({focus}/{maximum})"
+
+
+def _intent_line(intent: dict[str, Any]) -> str:
+    """One human sentence describing what the enemy will do next turn."""
+    if not intent:
+        return "The enemy's next move is unreadable."
+    if intent.get("kind") == "heal":
+        return f"Next: {intent['name']} — it heals itself for {intent.get('heal', 0)}."
+    return f"Next: {intent.get('name', 'Attack')} — {intent.get('damage', 0)} damage incoming."
+
+
+def _coach_tip(
+    hero: dict[str, Any], enemy: dict[str, Any], battle: dict[str, Any], intent: dict[str, Any]
+) -> str:
+    """A single, always-correct suggestion so nobody stares at four buttons."""
+    incoming = int(intent.get("damage", 0) or 0)
+    if hero["hp"] <= 0:
+        return "Tap any button to wake at camp, fully healed."
+    if battle.get("can_finish"):
+        return "⚔️ Strike — this hit can finish the enemy right now."
+    if intent.get("kind") == "heal":
+        return "⚔️ Strike — it is about to heal itself, so hurt it first."
+    if hero["hp"] <= incoming:
+        return "🛡 Guard or 🔥 Rest — that next hit could drop you."
+    if incoming >= 8:
+        return f"🛡 Guard — a {incoming} damage hit is coming."
+    if hero["energy"] <= 0:
+        return "🔥 Rest or 🛡 Guard — you need Rift Energy before you can Strike."
+    if hero["hp"] / max(1, hero["max_hp"]) <= 0.4:
+        return "🔥 Rest — heal up before you trade blows again."
+    if int(hero.get("focus", 0)) >= int(hero.get("max_focus", 3)):
+        return "⚔️ Strike — your Focus meter is full, cash it in."
+    if not battle.get("exposed"):
+        return "🔮 Scout — expose the enemy (+2 next Strike) and build Focus."
+    return "⚔️ Strike — the enemy is exposed."
 
 
 def _progress_bar(fraction: float, width: int = 10) -> str:

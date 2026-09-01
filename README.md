@@ -16,22 +16,49 @@ The rules are deterministic and server-side. Groq adds concise atmosphere; it ne
 
 ## How to play
 
-ChronicleRift is a **turn-based RPG inside Telegram**. You face one enemy at a time and
-pick **ONE move per turn**. Drop the enemy's HP to zero to clear the chapter and earn
-Gold, Coins, and Points.
+ChronicleRift is a **turn-based RPG inside Telegram**. You are a Riftwalker; **one monster
+guards each chapter**. Empty its HP bar to clear the chapter and earn Gold, Coins and Points —
+then a stronger monster steps up.
+
+**The whole loop:** you tap **ONE** move → the enemy performs the move it already telegraphed
+→ repeat.
 
 | Move | Cost | What it does |
 | --- | --- | --- |
-| ⚔️ **Strike** | 1 Energy | Deals `4–8 + Level + gear` damage. A perfect roll (8) is a **CRITICAL hit ×1.5**. |
-| 🛡 **Guard** | — | Blocks `2–5` of the enemy's counterattack and restores 1 Energy. A perfect ward **reflects 2 damage**. |
-| 🔮 **Scout** | — | `+1–3 XP` and `+1 Energy`. Also **exposes the enemy**: your next Strike deals `+2`. |
-| 🔥 **Rest** | — | Recovers `4–7 HP` and `2 Energy` beside the ember shrine. |
+| ⚔️ **Strike** | 1 Energy | `4–8 + Level + gear + Focus` damage. A perfect roll (8) is a **CRITICAL ×1.5** that sets the enemy **Burning**. |
+| 🛡 **Guard** | free, +1 Energy | Ward of `2–5 + gear` is subtracted from the incoming telegraphed hit. A perfect ward **reflects 2**. |
+| 🔮 **Scout** | free, +1 Energy | `+1–3 XP` and **exposes** the enemy: next Strike `+2`. |
+| 🔥 **Rest** | free, +2 Energy | Recovers `4–7 HP` beside the ember shrine. |
 
-- **Energy loop:** Strikes spend Energy; the other three moves refill it.
+### Combat systems (v0.4)
+
+- **Enemy intent — the enemy always shows its next move.** Every enemy follows a fixed,
+  learnable rotation and the next move is displayed before you commit: **Slash** (normal),
+  **Heavy Blow** (+4, Guard it), **Rift Drain** (steals 1 Energy), **Mend** (it heals itself —
+  Strike now) and the boss-only **Rift Quake** (+6). Guard is therefore a real decision, not a
+  coin flip.
+- **Focus — the combo meter.** Guard, Scout and Rest each add **+1 Focus** (max 3). Your next
+  Strike spends **all** of it for **+2 damage per point**. Set up, then swing.
+- **Burn.** Critical hits burn the enemy for `3` damage at the start of each of your next
+  2 turns.
+- **Finisher hint.** When a minimum Strike roll would end the fight, the Mini App lights the
+  Strike button and the bot says so.
+- **Coach line.** Both surfaces print one always-correct suggested move, so a new player is
+  never staring blankly at four buttons.
 - **Death is safe:** at 0 HP you wake at camp fully healed and keep everything.
 - **Bosses:** every 5th chapter the **Ebon Colossus** appears with bonus stats and **double rewards**.
-- **Marketplace:** spend Coins on potions, Energy, and permanent relics (`/shop` or the Mini App).
-- The full guide lives in `/help`, and the Mini App shows the same guide on first launch.
+- **Marketplace:** spend Coins on potions and permanent relics (`/shop` or the Mini App).
+- The full guide is in `/help`, on the 📖 How to Play button, and in the Mini App's four-slide
+  onboarding.
+
+### Preview the Mini App without Telegram
+
+```bash
+python tools/preview_miniapp.py     # http://localhost:8080
+```
+
+Runs the real engine and the real UI in memory (no MongoDB, no Telegram auth) so combat and
+visuals can be iterated on locally. Development only.
 
 ## What it ships
 
@@ -63,10 +90,10 @@ Gold, Coins, and Points.
 
 **Mini App surface**
 
-1. From a private chat, the player opens **Tactical Mini App** — first launch shows a three-slide "How to Play" guide (always reopenable from the ? button).
+1. From a private chat, the player opens **Tactical Mini App** — first launch shows a four-slide "How to Play" guide (always reopenable from the ? button).
 2. The browser sends only `Telegram.WebApp.initData` to `/api/me` and `/api/actions`.
 3. FastAPI verifies Telegram's signature and timestamp before using the authenticated Telegram identity.
-4. The **Rift Arena** view renders AI-generated artwork for the hero, the realm, and every enemy, animated health/energy/XP bars, floating damage numbers, critical-hit flashes, victory banners with reward breakdowns, a live battle log, and the illustrated Marketplace.
+4. The **Rift Arena** view renders the enemy-intent telegraph card, the Focus combo meter, burn/exposed/finisher states, a coach tip, AI-generated artwork for the hero, the realm, and every enemy, animated health/energy/XP bars, floating damage numbers, critical-hit flashes, victory banners with reward breakdowns, a live battle log, and the illustrated Marketplace.
 5. The API returns a structured `turn.effects` payload (damage, crits, healing, wards, rewards) so clients can render combat unambiguously. The UI never sends or controls HP, gold, inventory, revision, or another user's ID.
 
 ## Architecture

@@ -104,9 +104,11 @@ svg { width: 1em; height: 1em; stroke: currentColor; fill: none; stroke-width: 1
   border-radius: 22px; border: 1px solid var(--line-strong);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(124, 108, 255, 0.06);
 }
+.arena { --scene: url("./art/realm.jpg"); }
 .arena-bg {
   position: absolute; inset: 0;
-  background: url("./art/realm.jpg") center 32% / cover no-repeat;
+  background: var(--scene) center 32% / cover no-repeat;
+  transition: opacity 0.4s ease;
   transform: scale(1.04);
   animation: realm-drift 26s ease-in-out infinite alternate;
 }
@@ -576,4 +578,107 @@ body.is-resolving .action.is-pending { border-color: var(--violet); box-shadow: 
 
 @media (prefers-reduced-motion: reduce) {
   .arena-bg, .enemy-art-wrap, .onboard-media img, .bar > span::after { animation: none; }
+}
+
+
+/* ============ v0.4 — enemy intent, focus meter, coach, item art ============ */
+.intent {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px; padding: 9px 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(124, 108, 255, 0.42);
+  background: linear-gradient(120deg, rgba(124, 108, 255, 0.20), rgba(10, 12, 28, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: intent-pulse 2.8s ease-in-out infinite;
+}
+.intent.is-danger {
+  border-color: rgba(255, 95, 122, 0.55);
+  background: linear-gradient(120deg, rgba(255, 95, 122, 0.22), rgba(10, 12, 28, 0.74));
+}
+.intent.is-heal {
+  border-color: rgba(79, 240, 210, 0.5);
+  background: linear-gradient(120deg, rgba(79, 240, 210, 0.18), rgba(10, 12, 28, 0.74));
+}
+.intent-ic {
+  display: grid; place-items: center; flex: 0 0 34px; width: 34px; height: 34px;
+  border-radius: 11px; background: rgba(9, 11, 26, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.intent-ic svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.intent.is-danger .intent-ic { color: var(--rose); }
+.intent.is-heal .intent-ic { color: var(--teal); }
+.intent-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.intent-kicker { font-size: 9px; letter-spacing: 0.18em; color: var(--muted); font-weight: 700; }
+.intent-copy strong { font-size: 14px; letter-spacing: 0.02em; }
+.intent-copy small { font-size: 11px; color: #b8bee6; line-height: 1.35; }
+.intent-num {
+  font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums;
+  color: #ffd479; text-shadow: 0 2px 14px rgba(255, 198, 92, 0.35);
+}
+.intent-num.is-danger { color: var(--rose); text-shadow: 0 2px 14px rgba(255, 95, 122, 0.45); }
+.intent-num.is-heal { color: var(--teal); }
+@keyframes intent-pulse {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 0 rgba(124,108,255,0.0); }
+  50% { box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 18px 0 rgba(124,108,255,0.22); }
+}
+
+.status-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip-burn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: 0.1em;
+  color: #ffb27a; border: 1px solid rgba(255, 138, 76, 0.45); background: rgba(255, 122, 51, 0.14);
+}
+.chip-burn svg { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+
+.focus-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.focus-label { font-size: 9px; font-weight: 800; letter-spacing: 0.18em; color: var(--muted); }
+.pips { display: inline-flex; gap: 5px; }
+.pip {
+  width: 13px; height: 13px; border-radius: 4px; transform: rotate(45deg);
+  border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.05);
+  transition: all 0.22s ease;
+}
+.pip.on {
+  background: linear-gradient(140deg, #ffd479, #ff9f45);
+  border-color: rgba(255, 212, 121, 0.8);
+  box-shadow: 0 0 12px rgba(255, 190, 90, 0.55);
+}
+.focus-row small { font-size: 10.5px; color: var(--muted); }
+
+.coach {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 10px; padding: 8px 11px; border-radius: 12px;
+  font-size: 12.5px; line-height: 1.4; color: #d7dbfb;
+  border: 1px dashed rgba(124, 108, 255, 0.45); background: rgba(124, 108, 255, 0.09);
+}
+.coach b {
+  flex: 0 0 auto; font-size: 9px; letter-spacing: 0.16em; padding: 3px 7px; border-radius: 999px;
+  background: rgba(124, 108, 255, 0.28); color: #cfd3ff;
+}
+
+.action.is-finisher {
+  border-color: rgba(255, 198, 92, 0.7) !important;
+  box-shadow: 0 0 0 1px rgba(255, 198, 92, 0.35), 0 0 26px rgba(255, 198, 92, 0.28);
+  animation: finisher-glow 1.5s ease-in-out infinite;
+}
+.action.is-finisher small { color: #ffd479 !important; font-weight: 700; }
+@keyframes finisher-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255,198,92,0.3), 0 0 18px rgba(255,198,92,0.18); }
+  50% { box-shadow: 0 0 0 1px rgba(255,198,92,0.55), 0 0 30px rgba(255,198,92,0.38); }
+}
+
+.shop-ic.has-art { padding: 0; overflow: hidden; border-radius: 12px; }
+.shop-ic.has-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.banner-art {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; opacity: 0.35; border-radius: inherit; z-index: -1;
+}
+.arena-banner { position: relative; overflow: hidden; isolation: isolate; }
+.arena-banner.is-defeat .banner-art { display: none; }
+
+.float.burn { color: #ff9f45; text-shadow: 0 2px 12px rgba(255, 140, 60, 0.5); }
+.onboard-tip {
+  margin-top: 6px; padding: 8px 10px; border-radius: 10px; font-size: 12.5px;
+  border: 1px solid rgba(79, 240, 210, 0.35); background: rgba(79, 240, 210, 0.1); color: #cfeee7;
 }

@@ -18,6 +18,19 @@
     enemyHpBar: $("#enemy-hp-bar"),
     enemyHpText: $("#enemy-hp-text"),
     exposedChip: $("#exposed-chip"),
+    intentCard: $("#intent-card"),
+    intentIc: $("#intent-ic"),
+    intentName: $("#intent-name"),
+    intentAdvice: $("#intent-advice"),
+    intentNum: $("#intent-num"),
+    burnChip: $("#burn-chip"),
+    burnTurns: $("#burn-turns"),
+    focusPips: $("#focus-pips"),
+    focusNote: $("#focus-note"),
+    coach: $("#coach"),
+    coachText: $("#coach-text"),
+    strikeSub: $("#strike-sub"),
+    bannerArt: $("#banner-art"),
     enemyFloats: $("#enemy-float-layer"),
     arena: $("#arena"),
     banner: $("#arena-banner"),
@@ -77,7 +90,19 @@
     potion: SVG_OPEN + '<path d="M9 3h6M10 3v5l-5 8a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-5-8V3"/><path d="M7.5 13h9"/></svg>',
     bolt: SVG_OPEN + '<path d="M13 2 4.5 13.5H11L10 22l8.5-11.5H13z"/></svg>',
     clover: SVG_OPEN + '<path d="M12 12c-2.5-4.5.5-9 3.5-7s-.5 6.5-3.5 7zm0 0c2.5-4.5-.5-9-3.5-7s.5 6.5 3.5 7zm0 0c4.5-2.5 9 .5 7 3.5s-6.5-.5-7-3.5zm0 0c-4.5-2.5-9 .5-7 3.5s6.5-.5 7-3.5z"/><path d="M12 12v6c0 2 1 3 1 3"/></svg>',
+    heart: SVG_OPEN + '<path d="M12 20s-7.5-4.6-9.3-9.2C1.4 7.4 3.6 4.5 6.7 4.5c2 0 3.6 1.1 4.3 2.6.7-1.5 2.3-2.6 4.3-2.6 3.1 0 5.3 2.9 4 6.3C17.5 15.4 12 20 12 20z"/></svg>',
+    hammer: SVG_OPEN + '<path d="M3 21l7-7M9.5 13.5 6 10l3-3 3.5 3.5M13 6l5-3 3 3-3 5-3-3z"/></svg>',
+    drain: SVG_OPEN + '<path d="M12 3s6 6.4 6 10.2A6 6 0 0 1 6 13.2C6 9.4 12 3 12 3z"/></svg>',
+    quake: SVG_OPEN + '<path d="M2 14h4l3-7 3 12 3-9 2 4h5"/></svg>',
     target: SVG_OPEN + '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></svg>',
+  };
+
+  const INTENT_ICONS = {
+    slash: "sword",
+    heavy: "hammer",
+    drain: "drain",
+    mend: "heart",
+    quake: "quake",
   };
 
   const ENEMY_ART = {
@@ -260,6 +285,19 @@
     els.enemyHpText.textContent = `${enemy.hp} / ${enemy.max_hp}`;
     els.exposedChip.hidden = !battle.exposed;
     swapEnemyArt(enemy.name);
+    renderIntent(enemy.intent || null);
+    renderFocus(hero);
+
+    const burning = Number(battle.burn || 0);
+    els.burnChip.hidden = burning <= 0;
+    els.burnTurns.textContent = burning;
+
+    const canFinish = Boolean(battle.can_finish);
+    els.strikeBtn.classList.toggle("is-finisher", canFinish);
+    els.strikeSub.textContent = canFinish
+      ? "FINISH IT — this hit can end the fight"
+      : "4–8 + LV damage · a perfect roll CRITS ×1.5";
+    els.coachText.textContent = coachTip(hero, enemy, battle);
 
     const buffs = [];
     if (hero.attack_bonus > 0) buffs.push(`<span class="buff">STRIKE +${hero.attack_bonus}</span>`);
@@ -297,6 +335,59 @@
     renderShop(view.shop || [], hero.coins);
   }
 
+
+  function renderIntent(intent) {
+    if (!intent) {
+      els.intentCard.hidden = true;
+      return;
+    }
+    els.intentCard.hidden = false;
+    els.intentIc.innerHTML = ICONS[INTENT_ICONS[intent.id] || "sword"] || ICONS.sword;
+    els.intentName.textContent = intent.name;
+    els.intentAdvice.textContent = intent.advice || "";
+    if (intent.kind === "heal") {
+      els.intentNum.textContent = `+${intent.heal}`;
+      els.intentNum.className = "intent-num is-heal";
+    } else {
+      els.intentNum.textContent = `${intent.damage}`;
+      els.intentNum.className = intent.damage >= 8 ? "intent-num is-danger" : "intent-num";
+    }
+    els.intentCard.classList.toggle("is-danger", intent.damage >= 8);
+    els.intentCard.classList.toggle("is-heal", intent.kind === "heal");
+  }
+
+  function renderFocus(hero) {
+    const max = Number(hero.max_focus || 3);
+    const value = Number(hero.focus || 0);
+    els.focusPips.replaceChildren();
+    for (let i = 0; i < max; i += 1) {
+      const pip = document.createElement("i");
+      pip.className = i < value ? "pip on" : "pip";
+      els.focusPips.append(pip);
+    }
+    els.focusNote.textContent = value >= max
+      ? `Full! Strike now for +${value * 2} bonus damage`
+      : value > 0
+        ? `+${value * 2} bonus damage on your next Strike`
+        : "Guard · Scout · Rest build Focus — Strike spends it";
+  }
+
+  /* One always-correct suggestion so nobody stares blankly at four buttons. */
+  function coachTip(hero, enemy, battle) {
+    const intent = enemy.intent || {};
+    const incoming = Number(intent.damage || 0);
+    if (hero.hp <= 0) return "Tap any move to wake at camp, fully healed.";
+    if (battle.can_finish) return "Strike — this hit can finish the enemy right now.";
+    if (intent.kind === "heal") return "Strike — it is about to heal itself, so hurt it first.";
+    if (hero.hp <= incoming) return "Guard or Rest — that next hit could drop you.";
+    if (incoming >= 8) return `Guard — a ${incoming} damage ${intent.name || "hit"} is coming.`;
+    if (hero.energy <= 0) return "Rest or Guard — you need Rift Energy before you can Strike.";
+    if (hero.hp / Math.max(1, hero.max_hp) <= 0.4) return "Rest — heal up before trading blows.";
+    if (Number(hero.focus || 0) >= Number(hero.max_focus || 3)) return "Strike — your Focus meter is full, cash it in.";
+    if (!battle.exposed) return "Scout — expose the enemy (+2 next Strike) and build Focus.";
+    return "Strike — the enemy is exposed and your Focus is charged.";
+  }
+
   function renderShop(shop, coins) {
     els.shopList.replaceChildren();
     if (!shop.length) {
@@ -313,7 +404,19 @@
 
       const icon = document.createElement("span");
       icon.className = "shop-ic";
-      icon.innerHTML = SHOP_ICONS[item.id] || ICONS.spark;
+      if (item.art) {
+        const art = document.createElement("img");
+        art.src = `./art/${item.art}.jpg`;
+        art.alt = "";
+        art.loading = "lazy";
+        art.addEventListener("error", () => {
+          icon.innerHTML = SHOP_ICONS[item.id] || ICONS.spark;
+        });
+        icon.classList.add("has-art");
+        icon.append(art);
+      } else {
+        icon.innerHTML = SHOP_ICONS[item.id] || ICONS.spark;
+      }
 
       const info = document.createElement("div");
       info.className = "shop-info";
@@ -384,6 +487,13 @@
       haptic("impact", fx.crit ? "heavy" : "medium");
     }
     if (fx.reflect > 0) spawnFloat(els.enemyFloats, `REFLECT -${fx.reflect}`, "reflect", 220);
+    if (fx.burn_damage > 0) spawnFloat(els.enemyFloats, `BURN -${fx.burn_damage}`, "burn", 60);
+    if (fx.burn_applied > 0) spawnFloat(els.enemyFloats, "BURNING!", "burn", 260);
+    if (fx.focus_spent > 0) spawnFloat(els.heroFloats, `FOCUS x${fx.focus_spent}`, "level", 40);
+    if (fx.focus_gained > 0) spawnFloat(els.heroFloats, "+1 FOCUS", "energy", 200);
+    if (fx.blocked > 0) spawnFloat(els.heroFloats, `BLOCKED ${fx.blocked}`, "energy", 260);
+    if (fx.energy_drained > 0) spawnFloat(els.heroFloats, `-${fx.energy_drained} EN`, "hurt", 300);
+    if (fx.enemy_healed > 0) spawnFloat(els.enemyFloats, `+${fx.enemy_healed} HP`, "heal", 240);
     if (fx.enemy_damage > 0) {
       shake(els.heroCard, "is-hit");
       spawnFloat(els.heroFloats, `-${fx.enemy_damage} HP`, "hurt", 320);
@@ -391,6 +501,7 @@
 
     if (fx.victory) {
       shardBurst();
+      setScene("victory");
       shake(els.enemyCard, "is-defeated", 1600);
       const parts = [];
       if (fx.gold_gained) parts.push(`+${fx.gold_gained} gold`);
@@ -402,15 +513,26 @@
       pushLog("victory", turn.summary);
       haptic("notify", "success");
     } else if (fx.defeated) {
+      setScene("camp");
       showBanner("DOWN BUT SAFE", "The Chronicle keeps all progress — wake at camp, fully healed.", true);
       pushLog("enemy", turn.summary);
       haptic("notify", "warning");
     } else if (fx.revived) {
+      setScene("camp");
       showToast("You wake at camp, fully healed. The fight continues.");
       pushLog("system", turn.summary);
     } else {
+      setScene(turn.action === "rest" ? "camp" : "realm");
       pushLog(turn.action || "system", turn.summary);
     }
+  }
+
+  let currentScene = null;
+  function setScene(name) {
+    if (currentScene === name) return;
+    currentScene = name;
+    els.arena.style.setProperty("--scene", `url("./art/${name === "victory" ? "victory" : name === "camp" ? "camp" : "realm"}.jpg")`);
+    if (name === "victory") window.setTimeout(() => { if (currentScene === "victory") setScene("realm"); }, 2600);
   }
 
   async function resolveAction(action) {
@@ -476,41 +598,55 @@
   /* ---------- how-to-play onboarding ---------- */
   const SLIDES = [
     {
-      kicker: "HOW TO PLAY · 1 OF 3",
-      img: "./art/hero.jpg",
-      title: "A turn-based RPG in Telegram",
-      html: `<p>You are a <b>Riftwalker</b>. A creature guards each chapter of the rift — <b>drop its HP to zero</b> and the chapter is yours.</p>
+      kicker: "HOW TO PLAY · 1 OF 4",
+      img: "./art/intro-arena.jpg",
+      title: "What is ChronicleRift?",
+      html: `<p>It is a <b>turn-based fantasy RPG inside Telegram</b>. You are a Riftwalker. One monster guards each chapter — <b>empty its HP bar</b> and the chapter is yours.</p>
         <ul class="onboard-list">
-          <li>${ICONS.sword}<span><b>One move per turn.</b> Pick Strike, Guard, Scout, or Rest — the enemy answers right back.</span></li>
-          <li>${ICONS.coin}<span><b>Wins pay Gold, Coins, and Points.</b> Coins buy relics and potions in the Marketplace.</span></li>
-          <li>${ICONS.spark}<span><b>XP raises your Level</b>, and every level makes you hit harder and survive longer.</span></li>
+          <li>${ICONS.sword}<span><b>You tap ONE move per turn.</b> Then the enemy answers. That is the entire game.</span></li>
+          <li>${ICONS.coin}<span><b>Every win pays Gold, Coins and Points</b>, and a stronger monster steps up.</span></li>
+          <li>${ICONS.check}<span><b>You can never lose progress.</b> At 0 HP you just wake at camp, fully healed.</span></li>
         </ul>`,
       cta: "The four moves",
     },
     {
-      kicker: "HOW TO PLAY · 2 OF 3",
-      img: "./art/realm.jpg",
-      title: "Know your four moves",
+      kicker: "HOW TO PLAY · 2 OF 4",
+      img: "./art/intro-moves.jpg",
+      title: "Your four moves",
       html: `<div class="move-rows">
-          <div class="move-row strike"><span class="action-ic">${ICONS.sword}</span><div><b>Strike — costs 1 Energy</b><span class="line">Deals 4–8 + your Level + gear damage. A perfect roll is a <b>CRITICAL hit ×1.5</b>.</span></div></div>
-          <div class="move-row guard"><span class="action-ic">${ICONS.shield}</span><div><b>Guard — restores 1 Energy</b><span class="line">Blocks 2–5 of the enemy's counterattack. A perfect ward <b>reflects 2 damage</b>.</span></div></div>
-          <div class="move-row scout"><span class="action-ic">${ICONS.eye}</span><div><b>Scout — +1–3 XP, +1 Energy</b><span class="line">Reads the rift and <b>exposes the enemy</b> — your next Strike deals +2.</span></div></div>
-          <div class="move-row rest"><span class="action-ic">${ICONS.flame}</span><div><b>Rest — +2 Energy</b><span class="line">Recovers 4–7 HP beside the ember shrine.</span></div></div>
+          <div class="move-row strike"><span class="action-ic">${ICONS.sword}</span><div><b>Strike — costs 1 Energy</b><span class="line">Roll 4–8 + Level + gear + Focus. A perfect roll is a <b>CRITICAL ×1.5</b> that sets the enemy on fire.</span></div></div>
+          <div class="move-row guard"><span class="action-ic">${ICONS.shield}</span><div><b>Guard — free, +1 Energy</b><span class="line">Blocks 2–5 of the incoming hit. A perfect ward <b>reflects 2 damage</b>.</span></div></div>
+          <div class="move-row scout"><span class="action-ic">${ICONS.eye}</span><div><b>Scout — free, +1 Energy</b><span class="line">+1–3 XP and <b>EXPOSES</b> the enemy: your next Strike deals +2.</span></div></div>
+          <div class="move-row rest"><span class="action-ic">${ICONS.flame}</span><div><b>Rest — free, +2 Energy</b><span class="line">Recovers 4–7 HP beside the ember shrine.</span></div></div>
         </div>
-        <p>Strikes need Energy — weave in Guard, Scout, and Rest so you never run dry mid-fight.</p>`,
-      cta: "Staying alive",
+        <p>Only Strike costs Energy. The other three are free and refill it — that is the rhythm of every fight.</p>`,
+      cta: "Read the enemy",
     },
     {
-      kicker: "HOW TO PLAY · 3 OF 3",
+      kicker: "HOW TO PLAY · 3 OF 4",
       img: "./art/ash-warden.jpg",
-      title: "Stay alive, spend smart",
-      html: `<ul class="onboard-list">
-          <li>${ICONS.check}<span><b>Death is safe.</b> At 0 HP you wake at camp fully healed — you keep every coin and level.</span></li>
-          <li>${ICONS.skull}<span><b>Every 5th chapter is a boss.</b> The Ebon Colossus hits harder but pays double rewards.</span></li>
-          <li>${ICONS.coin}<span><b>Spend coins in the Marketplace.</b> Potions act instantly; relics like Rift Steel are permanent upgrades.</span></li>
-          <li>${ICONS.target}<span><b>Combo tip:</b> Scout to expose, then Strike for bonus damage. Guard when the enemy is about to punish you.</span></li>
+      title: "Read the enemy, build Focus",
+      html: `<p>The enemy <b>always shows its next move</b> in the purple <b>NEXT ENEMY MOVE</b> card — and it always does exactly that. No guessing.</p>
+        <ul class="onboard-list">
+          <li>${ICONS.hammer}<span><b>Heavy Blow / Rift Quake</b> — a big number. <b>Guard</b> this turn.</span></li>
+          <li>${ICONS.heart}<span><b>Mend</b> — it is about to heal itself. <b>Strike</b> immediately.</span></li>
+          <li>${ICONS.drain}<span><b>Rift Drain</b> — it steals 1 Energy. Rest or Guard to stay armed.</span></li>
+          <li>${ICONS.target}<span><b>FOCUS is your combo meter.</b> Guard, Scout and Rest each add 1 (max 3); your next Strike spends it all for <b>+2 damage per point</b>.</span></li>
         </ul>
-        <p>Everything is saved server-side — play from the bot or right here.</p>`,
+        <p class="onboard-tip">The classic combo: <b>Scout → Guard → Strike</b>. Exposed +2, two Focus +4, all in one swing.</p>`,
+      cta: "Coins & relics",
+    },
+    {
+      kicker: "HOW TO PLAY · 4 OF 4",
+      img: "./art/intro-market.jpg",
+      title: "Spend your coins, chase the bosses",
+      html: `<ul class="onboard-list">
+          <li>${ICONS.potion}<span><b>Potions are instant:</b> Healing Draught (+15 HP) and Rift Elixir (+3 Energy).</span></li>
+          <li>${ICONS.sword}<span><b>Relics are permanent:</b> Rift Steel (+2 Strike), Aegis Sigil (+2 Ward), Luck Charm (+1 Scout insight).</span></li>
+          <li>${ICONS.skull}<span><b>Every 5th chapter is a boss.</b> The Ebon Colossus hits harder and pays <b>double</b>.</span></li>
+          <li>${ICONS.spark}<span><b>Stuck?</b> The <b>Tip</b> line above the buttons always tells you the smart move.</span></li>
+        </ul>
+        <p>Everything is saved server-side — keep playing here or from the bot with /play.</p>`,
       cta: "Enter the Rift",
     },
   ];
