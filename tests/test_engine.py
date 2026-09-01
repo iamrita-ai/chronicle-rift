@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from chronicle_rift.game_engine import resolve_purchase, resolve_turn
+from chronicle_rift.game_engine import resolve_arena, resolve_purchase, resolve_turn
 from chronicle_rift.models import new_player
 
 
@@ -454,3 +454,36 @@ def test_monsters_scale_and_carry_their_own_ability() -> None:
     assert boss["boss"] is True
     assert boss["ability"]
     assert early["sprite"] == "mob-ash-warden"
+
+
+def test_arena_win_clears_the_chapter_and_drops_loot() -> None:
+    player = new_player(user_id=42, first_name="Duelist", username=None)
+    chapter_before = player["game"]["chapter"]
+    result = resolve_arena(player, "win", hp_left=7)
+
+    assert result.victory is True
+    assert result.player["game"]["chapter"] == chapter_before + 1
+    assert result.player["game"]["hp"] == 7
+    assert result.effects["loot"]
+    assert result.effects["coins_gained"] > 0
+    # the input document is never mutated
+    assert player["game"]["chapter"] == chapter_before
+
+
+def test_arena_loss_wakes_the_hero_at_camp() -> None:
+    player = new_player(user_id=43, first_name="Duelist", username=None)
+    player["game"]["hp"] = 2
+    player["game"]["enemy"]["hp"] = 3
+    result = resolve_arena(player, "lose")
+
+    assert result.victory is False
+    assert result.effects["defeated"] is True
+    assert result.player["game"]["hp"] == result.player["game"]["max_hp"]
+    assert result.player["game"]["enemy"]["hp"] == result.player["game"]["enemy"]["max_hp"]
+    assert result.player["game"]["chapter"] == player["game"]["chapter"]
+
+
+def test_arena_cannot_invent_health() -> None:
+    player = new_player(user_id=44, first_name="Duelist", username=None)
+    result = resolve_arena(player, "win", hp_left=9999)
+    assert result.player["game"]["hp"] == result.player["game"]["max_hp"]

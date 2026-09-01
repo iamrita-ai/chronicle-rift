@@ -41,6 +41,15 @@ class ActionRequest(BaseModel):
     action: Literal["strike", "heavy", "special", "guard", "scout", "rest"]
 
 
+class ArenaRequest(BaseModel):
+    """Outcome of a real-time arena duel, reported by the Mini App."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: Literal["win", "lose"]
+    hp_left: int | None = None
+
+
 class BuyRequest(BaseModel):
     """Mini App Marketplace purchase payload."""
 
@@ -214,6 +223,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ) from None
         except DatabaseUnavailable:
             LOGGER.warning("Database unavailable while saving Mini App action")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
+            ) from None
+        return {
+            "player": public_player_view(turn.player),
+            "turn": {
+                "action": turn.action,
+                "summary": turn.summary,
+                "narrative": turn.narrative,
+                "victory": turn.victory,
+                "effects": turn.effects or {},
+            },
+        }
+
+    @app.post("/api/arena/finish", tags=["mini-app"])
+    async def arena_finish(
+        payload: ArenaRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        try:
+            turn = await request.app.state.game_service.arena_finish(
+                identity, payload.outcome, payload.hp_left
+            )
+        except GameBusyError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Game state changed; retry."
+            ) from None
+        except DatabaseUnavailable:
+            LOGGER.warning("Database unavailable while saving an arena duel")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
             ) from None

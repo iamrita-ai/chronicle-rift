@@ -1932,3 +1932,389 @@ body.is-busy {
     grid-template-columns: 96px 1fr;
   }
 }
+
+/* ================================================================== *
+ * v0.7 — REAL-TIME ARENA SCREEN
+ * ================================================================== */
+body.in-fight {
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+body.in-fight #tabbar {
+  display: none;
+}
+body.in-fight #app {
+  padding: 0;
+  max-width: none;
+}
+
+.battle-screen.is-active {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: hidden;
+  background: #05060f;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#arena-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* ---------------- top HUD ---------------- */
+.fight-hud {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 10px;
+  right: 10px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: start;
+  z-index: 12;
+  pointer-events: none;
+}
+.hud-side {
+  min-width: 0;
+}
+.hud-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+.hud-enemy .hud-row {
+  justify-content: flex-end;
+}
+.hud-name {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 6px #000;
+}
+.hud-hp {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--gold);
+  text-shadow: 0 2px 6px #000;
+}
+.hud-bar {
+  position: relative;
+  height: 13px;
+  border-radius: 4px;
+  background: rgba(4, 6, 16, 0.82);
+  border: 1px solid rgba(180, 190, 255, 0.3);
+  overflow: hidden;
+  transform: skewX(-14deg);
+}
+.hud-bar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 100%;
+}
+.hud-bar .ghost {
+  background: rgba(255, 220, 120, 0.55);
+  transition: width 0.25s linear;
+}
+.hud-bar .fill {
+  background: linear-gradient(90deg, #35d07f, #8ef0a8);
+  box-shadow: 0 0 14px rgba(90, 240, 160, 0.6);
+  transition: width 0.12s linear;
+}
+.hud-enemy .hud-bar .fill {
+  background: linear-gradient(90deg, #ff3d5e, var(--foe-element));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--foe-element) 55%, transparent);
+}
+.hud-bar.rtl,
+.hud-stam.rtl {
+  transform: skewX(14deg) scaleX(-1);
+}
+.hud-stam {
+  position: relative;
+  height: 5px;
+  margin-top: 3px;
+  border-radius: 3px;
+  background: rgba(4, 6, 16, 0.8);
+  border: 1px solid rgba(160, 170, 255, 0.18);
+  overflow: hidden;
+  transform: skewX(-14deg);
+}
+.hud-stam i {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(90deg, #ffb038, var(--gold));
+  transition: width 0.1s linear;
+}
+.hud-mid {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+.hud-chapter {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  color: var(--muted);
+  background: rgba(4, 6, 16, 0.7);
+  border: 1px solid var(--line);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.hud-vs {
+  font-size: 15px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 12px var(--element);
+}
+
+.fight-topbtns {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  z-index: 13;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fight-topbtns .icon-btn {
+  width: 34px;
+  height: 34px;
+  background: rgba(6, 8, 22, 0.7);
+}
+
+/* ---------------- joystick ---------------- */
+.joystick {
+  position: absolute;
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  width: 132px;
+  height: 132px;
+  z-index: 14;
+  touch-action: none;
+}
+.stick-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 24, 54, 0.55), rgba(6, 8, 22, 0.4));
+  border: 2px solid rgba(160, 172, 255, 0.28);
+  box-shadow: inset 0 0 26px rgba(120, 132, 255, 0.16);
+  backdrop-filter: blur(4px);
+}
+.stick-hint {
+  position: absolute;
+  font-size: 9px;
+  color: rgba(200, 208, 255, 0.4);
+}
+.stick-up { top: 6px; left: 50%; transform: translateX(-50%); }
+.stick-down { bottom: 6px; left: 50%; transform: translateX(-50%); }
+.stick-left { left: 7px; top: 50%; transform: translateY(-50%); }
+.stick-right { right: 7px; top: 50%; transform: translateY(-50%); }
+.stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  margin: -29px 0 0 -29px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, color-mix(in srgb, var(--element) 70%, #2a2f5e));
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55), 0 0 22px color-mix(in srgb, var(--element) 55%, transparent);
+  transition: transform 0.06s linear;
+}
+.joystick.is-active .stick-base {
+  border-color: color-mix(in srgb, var(--element) 70%, transparent);
+}
+
+/* ---------------- attack + ability pad ---------------- */
+.pad {
+  position: absolute;
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  width: 208px;
+  height: 208px;
+  z-index: 14;
+  touch-action: none;
+}
+.attack-btn {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--element) 70%, #fff 10%);
+  background: radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.22), rgba(8, 10, 26, 0.9));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.6), 0 0 26px color-mix(in srgb, var(--element) 45%, transparent);
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+.attack-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+.attack-btn .atk-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--element) 55%, transparent);
+  animation: atk-pulse 2.2s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes atk-pulse {
+  0% { transform: scale(0.94); opacity: 0.9; }
+  70% { transform: scale(1.12); opacity: 0; }
+  100% { opacity: 0; }
+}
+.attack-btn.is-press,
+.ability-btn.is-press {
+  transform: scale(0.9);
+}
+.attack-btn.is-poor {
+  filter: grayscale(0.7) brightness(0.7);
+}
+
+.ability-btn {
+  position: absolute;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--element) 60%, transparent);
+  background: rgba(8, 10, 26, 0.9);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55);
+  overflow: visible;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.ability-btn img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.ability-btn .cd-arc {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.ability-btn .cd-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 8px #000;
+  pointer-events: none;
+}
+.ability-btn .ab-label {
+  position: absolute;
+  left: 50%;
+  bottom: -14px;
+  transform: translateX(-50%);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+  white-space: nowrap;
+  color: rgba(230, 235, 255, 0.85);
+  text-shadow: 0 2px 6px #000;
+  pointer-events: none;
+}
+.ability-btn.is-cd img {
+  filter: grayscale(0.9) brightness(0.55);
+}
+.ability-btn.is-poor {
+  opacity: 0.55;
+}
+.ability-btn:disabled {
+  cursor: not-allowed;
+}
+/*        ABILITY 1
+ *   ABILITY 2   ABILITY 3
+ *        ATTACK              */
+.ability-btn.slot-1 { right: 25px; bottom: 132px; }
+.ability-btn.slot-2 { right: 108px; bottom: 84px; }
+.ability-btn.slot-3 { right: 0px;  bottom: 84px; }
+
+/* ---------------- pre/post-fight overlay ---------------- */
+.fight-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(4, 5, 14, 0.86), rgba(4, 5, 14, 0.95));
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+}
+.fight-overlay.is-open {
+  display: flex;
+  animation: screen-in 0.3s ease-out;
+}
+.matchup {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.mu-side {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 2px;
+}
+.mu-side img {
+  width: 100%;
+  max-width: 150px;
+  height: 156px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+  animation: float-idle 3.4s ease-in-out infinite;
+}
+.mu-side b {
+  font-size: 15px;
+}
+.mu-side small {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.mu-vs {
+  font-size: 20px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 16px var(--element);
+}
+.mu-note {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fight-overlay .play-btn {
+  margin: 4px 0 0;
+}

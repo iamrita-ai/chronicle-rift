@@ -1,5 +1,5 @@
-/* ChronicleRift Mini App — v0.6.0
- * Multi-screen client: Home hub, animated battle stage, store, satchel, settings.
+/* ChronicleRift Mini App — v0.7.0
+ * Home hub + a real-time 2.5D arena fight (see arena.js for the engine).
  */
 (() => {
   "use strict";
@@ -13,10 +13,8 @@
     return node;
   };
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
   const ART = (name, ext = "jpg") => `./art/${name}.${ext}`;
-  const HEAL_KEYWORDS = ["salve", "draught", "greater_draught", "regen_balm", "phoenix_tear", "elixir"];
+  const HP_SCALE = 4; // real-time duels need more hit points than a turn fight
 
   const state = {
     player: null,
@@ -24,113 +22,65 @@
     busy: false,
     screen: "home",
     tab: "heroes",
-    settings: {
-      sound: true,
-      haptics: true,
-      shake: true,
-    },
-    lastHeroHp: null,
-    lastEnemyHp: null,
-    restockShown: false,
+    settings: { sound: true, haptics: true, shake: true },
   };
 
   /* ------------------------------------------------------------------ *
-   * settings persistence
+   * settings
    * ------------------------------------------------------------------ */
   const SETTINGS_KEY = "cr_settings_v1";
   function loadSettings() {
     try {
       Object.assign(state.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"));
-    } catch (_) {
-      /* ignore */
-    }
+    } catch (_) { /* ignore */ }
   }
   function saveSettings() {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
-    } catch (_) {
-      /* ignore */
-    }
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings)); } catch (_) { /* ignore */ }
   }
-
-  /* ------------------------------------------------------------------ *
-   * audio
-   * ------------------------------------------------------------------ */
-  let audioCtx = null;
-  function tone({ freq = 440, type = "sine", dur = 0.16, gain = 0.15, slide = 0, delay = 0 }) {
-    if (!state.settings.sound) return;
-    try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if (audioCtx.state === "suspended") audioCtx.resume();
-      const t0 = audioCtx.currentTime + delay;
-      const osc = audioCtx.createOscillator();
-      const amp = audioCtx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, t0);
-      if (slide) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
-      amp.gain.setValueAtTime(0.0001, t0);
-      amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
-      amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-      osc.connect(amp).connect(audioCtx.destination);
-      osc.start(t0);
-      osc.stop(t0 + dur + 0.03);
-    } catch (_) {
-      /* audio is a nice-to-have */
-    }
-  }
-  const SFX = {
-    tap: () => tone({ freq: 520, type: "triangle", dur: 0.06, gain: 0.07 }),
-    strike: () => {
-      tone({ freq: 320, type: "square", dur: 0.1, gain: 0.12, slide: -180 });
-      tone({ freq: 880, type: "triangle", dur: 0.08, gain: 0.06, delay: 0.03 });
-    },
-    heavy: () => {
-      tone({ freq: 160, type: "sawtooth", dur: 0.22, gain: 0.16, slide: -90 });
-      tone({ freq: 70, type: "sine", dur: 0.3, gain: 0.18 });
-    },
-    special: () => {
-      tone({ freq: 420, type: "sine", dur: 0.3, gain: 0.12, slide: 600 });
-      tone({ freq: 840, type: "triangle", dur: 0.35, gain: 0.08, delay: 0.08, slide: 400 });
-    },
-    hurt: () => tone({ freq: 220, type: "sawtooth", dur: 0.16, gain: 0.12, slide: -120 }),
-    heal: () => {
-      tone({ freq: 660, type: "sine", dur: 0.18, gain: 0.1 });
-      tone({ freq: 990, type: "sine", dur: 0.22, gain: 0.08, delay: 0.08 });
-    },
-    coin: () => {
-      tone({ freq: 1180, type: "square", dur: 0.06, gain: 0.07 });
-      tone({ freq: 1560, type: "square", dur: 0.09, gain: 0.06, delay: 0.05 });
-    },
-    victory: () => {
-      [523, 659, 784, 1046].forEach((f, i) =>
-        tone({ freq: f, type: "triangle", dur: 0.22, gain: 0.11, delay: i * 0.1 }),
-      );
-    },
-    defeat: () => {
-      [392, 330, 262].forEach((f, i) =>
-        tone({ freq: f, type: "sawtooth", dur: 0.28, gain: 0.1, delay: i * 0.14 }),
-      );
-    },
-  };
   function haptic(kind = "light") {
     if (!state.settings.haptics) return;
     try {
-      if (kind === "success" || kind === "error" || kind === "warning") {
-        tg?.HapticFeedback?.notificationOccurred(kind);
-      } else {
-        tg?.HapticFeedback?.impactOccurred(kind);
-      }
-    } catch (_) {
-      /* ignore */
-    }
+      if (["success", "error", "warning"].includes(kind)) tg?.HapticFeedback?.notificationOccurred(kind);
+      else tg?.HapticFeedback?.impactOccurred(kind);
+    } catch (_) { /* ignore */ }
   }
+
+  /* ------------------------------------------------------------------ *
+   * ui sound (menus only; the arena has its own kit)
+   * ------------------------------------------------------------------ */
+  let actx = null;
+  function tone(freq, type, dur, gain, slide = 0, delay = 0) {
+    if (!state.settings.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      const t0 = actx.currentTime + delay;
+      const o = actx.createOscillator();
+      const g = actx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t0);
+      if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(g).connect(actx.destination);
+      o.start(t0);
+      o.stop(t0 + dur + 0.03);
+    } catch (_) { /* ignore */ }
+  }
+  const UI = {
+    tap: () => tone(520, "triangle", 0.06, 0.07),
+    coin: () => { tone(1180, "square", 0.06, 0.07); tone(1560, "square", 0.09, 0.06, 0, 0.05); },
+    heal: () => { tone(660, "sine", 0.18, 0.09); tone(990, "sine", 0.2, 0.07, 0, 0.08); },
+    win: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, "triangle", 0.22, 0.1, 0, i * 0.1)),
+  };
 
   /* ------------------------------------------------------------------ *
    * networking
    * ------------------------------------------------------------------ */
   function authHeaders() {
-    const initData = tg?.initData || "";
     const headers = { "Content-Type": "application/json" };
+    const initData = tg?.initData || "";
     if (initData) headers["X-Telegram-Init-Data"] = initData;
     return headers;
   }
@@ -142,20 +92,12 @@
     });
     if (!res.ok) {
       let detail = `Request failed (${res.status})`;
-      try {
-        const data = await res.json();
-        if (data?.detail) detail = data.detail;
-      } catch (_) {
-        /* ignore */
-      }
+      try { const data = await res.json(); if (data?.detail) detail = data.detail; } catch (_) { /* ignore */ }
       throw new Error(detail);
     }
     return res.json();
   }
 
-  /* ------------------------------------------------------------------ *
-   * toast
-   * ------------------------------------------------------------------ */
   let toastTimer = null;
   function toast(message, kind = "info") {
     const node = $("toast");
@@ -173,241 +115,318 @@
   /* ------------------------------------------------------------------ *
    * navigation
    * ------------------------------------------------------------------ */
-  const SCREENS = {
-    home: "screen-home",
-    battle: "screen-battle",
-    store: "screen-store",
-    bag: "screen-bag",
-    settings: "screen-settings",
-    heroes: "screen-store",
-  };
+  const SCREENS = { home: "screen-home", battle: "screen-battle", store: "screen-store", bag: "screen-bag", settings: "screen-settings" };
   function goto(name) {
-    const target = SCREENS[name] ? name : "home";
-    if (target === "heroes") {
-      switchTab("heroes");
-      state.screen = "store";
-    } else {
-      state.screen = target;
-    }
-    const id = SCREENS[target];
-    document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("is-active", s.id === id));
-    document.querySelectorAll("#tabbar button").forEach((b) => {
-      const key = b.dataset.goto === "settings" ? "settings" : b.dataset.goto;
-      b.classList.toggle("is-on", key === state.screen);
-    });
+    const target = name === "heroes" ? "store" : SCREENS[name] ? name : "home";
+    if (name === "heroes") switchTab("heroes");
+    if (state.screen === "battle" && target !== "battle") Fight.leave();
+    state.screen = target;
+    document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("is-active", s.id === SCREENS[target]));
+    document.body.classList.toggle("in-fight", target === "battle");
+    document.querySelectorAll("#tabbar button").forEach((b) => b.classList.toggle("is-on", b.dataset.goto === state.screen));
     window.scrollTo({ top: 0, behavior: "smooth" });
-    if (state.screen === "battle") {
+    if (target === "battle") {
       tg?.BackButton?.show?.();
+      Fight.open();
     } else {
       tg?.BackButton?.hide?.();
     }
-    SFX.tap();
+    UI.tap();
   }
   function switchTab(tab) {
     state.tab = tab;
     document.querySelectorAll("#store-tabs .tab").forEach((b) => b.classList.toggle("is-on", b.dataset.tab === tab));
-    ["heroes", "items", "relics"].forEach((key) => {
-      $(`tab-${key}`).hidden = key !== tab;
-    });
+    ["heroes", "items", "relics"].forEach((key) => { $(`tab-${key}`).hidden = key !== tab; });
   }
 
-  /* ------------------------------------------------------------------ *
-   * battle stage animation
-   * ------------------------------------------------------------------ */
-  const ELEMENT_GLYPH = {
-    fire: "🔥",
-    ice: "❄",
-    wind: "🌪",
-    arcane: "✦",
-    shadow: "🌑",
-  };
+  /* ================================================================== *
+   * FIGHT — wires the arena engine to the server state and the controls
+   * ================================================================== */
+  const Fight = {
+    arena: null,
+    started: false,
+    settling: false,
 
-  function burst(layerId, color, glyph, big = false) {
-    const layer = $(layerId);
-    if (!layer) return;
-    const node = el("span", `burst${big ? " burst-big" : ""}`, glyph || "✦");
-    node.style.setProperty("--fx", color || "#ffd479");
-    node.style.left = `${20 + Math.random() * 60}%`;
-    node.style.top = `${25 + Math.random() * 40}%`;
-    layer.appendChild(node);
-    setTimeout(() => node.remove(), 760);
-  }
-  function ring(layerId, color) {
-    const layer = $(layerId);
-    if (!layer) return;
-    const node = el("span", "ring");
-    node.style.setProperty("--fx", color || "#ffd479");
-    layer.appendChild(node);
-    setTimeout(() => node.remove(), 620);
-  }
-  function slash(layerId, color) {
-    const layer = $(layerId);
-    if (!layer) return;
-    for (let i = 0; i < 3; i += 1) {
-      const node = el("span", "slash");
-      node.style.setProperty("--fx", color || "#fff");
-      node.style.animationDelay = `${i * 60}ms`;
-      node.style.top = `${28 + i * 16}%`;
-      layer.appendChild(node);
-      setTimeout(() => node.remove(), 520 + i * 60);
-    }
-  }
-  function floatText(layerId, text, kind = "dmg") {
-    const layer = $(layerId);
-    if (!layer) return;
-    const node = el("span", `float float-${kind}`, text);
-    node.style.left = `${30 + Math.random() * 30}%`;
-    layer.appendChild(node);
-    setTimeout(() => node.remove(), 1100);
-  }
-  function pulse(node, cls, ms = 520) {
-    if (!node) return;
-    node.classList.remove(cls);
-    void node.offsetWidth;
-    node.classList.add(cls);
-    setTimeout(() => node.classList.remove(cls), ms);
-  }
-  function shake(strength = "soft") {
-    if (!state.settings.shake) return;
-    pulse($("arena"), strength === "hard" ? "quake-hard" : "quake", 460);
-  }
+    ensure() {
+      if (this.arena) return this.arena;
+      this.arena = new window.ChronicleArena.Arena({
+        canvas: $("arena-canvas"),
+        onEnd: (outcome, hpLeft) => this.finish(outcome, hpLeft),
+        onHud: (a) => this.hud(a),
+      });
+      this.bindControls();
+      return this.arena;
+    },
 
-  async function playCombat(action, effects) {
-    const hero = $("hero-fighter");
-    const foe = $("foe-fighter");
-    const color = effects.element ? (ELEMENTS_COLOR[effects.element] || "#ffd479") : "#ffd479";
-    const glyph = ELEMENT_GLYPH[effects.element] || "✦";
+    playerStats(view) {
+      const hero = view.hero;
+      const kit = window.ChronicleArena.kitFor(view.character.element);
+      const speedByElement = { wind: 268, shadow: 240, fire: 232, arcane: 224, ice: 206 };
+      return {
+        name: view.character.name,
+        element: view.character.element,
+        color: view.character.element_color,
+        build: "hero",
+        stats: {
+          hp: Math.max(30, Math.round(hero.hp * HP_SCALE)),
+          damage: 7 + hero.power * 2.2 + hero.level * 1.4 + hero.attack_bonus * 1.6,
+          speed: speedByElement[view.character.element] || 230,
+          atkSpeed: view.character.element === "wind" ? 1.35 : view.character.element === "ice" ? 0.85 : 1,
+          range: kit.basic.range,
+          crit: clamp(0.1 + (hero.luck + hero.luck_bonus) * 0.012, 0.05, 0.45),
+          defense: 16 + hero.ward_bonus * 4 + hero.level,
+        },
+      };
+    },
 
-    if (effects.blocked_action) {
-      pulse(hero, "is-refused", 500);
-      floatText("hero-float-layer", "NO ENERGY", "warn");
-      return;
-    }
+    enemyStats(view) {
+      const enemy = view.enemy;
+      return {
+        name: enemy.name,
+        element: enemy.element,
+        color: enemy.element_color,
+        build: enemy.boss ? "brute" : "hero",
+        stats: {
+          hp: Math.round(enemy.max_hp * HP_SCALE),
+          damage: 5 + enemy.attack * 1.15,
+          speed: (enemy.boss ? 172 : 198) + enemy.level * 3,
+          atkSpeed: enemy.boss ? 0.8 : 0.95,
+          range: enemy.boss ? 122 : 98,
+          crit: 0.08 + enemy.level * 0.005,
+          defense: 12 + enemy.level * 2 + (enemy.boss ? 10 : 0),
+        },
+      };
+    },
 
-    if (action === "strike" || action === "heavy" || action === "special") {
-      if (action === "special") {
-        pulse(hero, "is-casting", 700);
-        ring("hero-fx", color);
-        SFX.special();
-        await sleep(420);
-      } else {
-        SFX[action === "heavy" ? "heavy" : "strike"]();
-      }
-      pulse(hero, action === "heavy" ? "is-lunging-hard" : "is-lunging", 620);
-      await sleep(action === "heavy" ? 220 : 170);
-      if (effects.damage) {
-        pulse(foe, "is-hit", 520);
-        slash("foe-fx", color);
-        burst("foe-fx", color, glyph, action !== "strike");
-        floatText("enemy-float-layer", `-${effects.damage}${effects.crit ? " CRIT!" : ""}`, effects.crit ? "crit" : "dmg");
-        shake(action === "heavy" || effects.crit ? "hard" : "soft");
-        haptic(action === "heavy" ? "medium" : "light");
-      }
-      if (effects.second_hit) {
-        await sleep(230);
-        pulse(hero, "is-lunging", 500);
-        pulse(foe, "is-hit", 420);
-        burst("foe-fx", color, glyph);
-        floatText("enemy-float-layer", `-${effects.second_hit}`, "dmg");
-        SFX.strike();
-      }
-      if (effects.burn_applied) {
-        burst("foe-fx", "#ff8a3c", "🔥", true);
-        floatText("enemy-float-layer", "BURN", "status");
-      }
-      if (effects.stun) {
-        burst("foe-fx", "#7fd8ff", "❄", true);
-        floatText("enemy-float-layer", "FROZEN", "status");
-      }
-      if (effects.pierce) floatText("enemy-float-layer", "PIERCE", "status");
-      if (effects.healed) {
-        burst("hero-fx", "#8ef0a8", "✚");
-        floatText("hero-float-layer", `+${effects.healed}`, "heal");
-        SFX.heal();
-      }
-    } else if (action === "guard") {
-      pulse(hero, "is-guarding", 900);
-      ring("hero-fx", "#7fd8ff");
-      tone({ freq: 300, type: "sine", dur: 0.25, gain: 0.1, slide: 120 });
-    } else if (action === "scout") {
-      pulse(foe, "is-scanned", 900);
-      ring("foe-fx", "#b48bff");
-      tone({ freq: 880, type: "sine", dur: 0.2, gain: 0.08, slide: 300 });
-    } else if (action === "rest") {
-      pulse(hero, "is-resting", 900);
-      burst("hero-fx", "#8ef0a8", "✚", true);
-      if (effects.healed) floatText("hero-float-layer", `+${effects.healed}`, "heal");
-      SFX.heal();
-    }
+    open() {
+      const view = state.player;
+      if (!view) return;
+      this.ensure();
+      this.arena.resize();
+      this.started = false;
+      const p = this.playerStats(view);
+      const e = this.enemyStats(view);
+      $("mu-hero-art").src = ART(view.character.art, "png");
+      $("mu-hero-name").textContent = p.name;
+      $("mu-hero-stats").textContent = `${p.stats.hp} HP · ${Math.round(p.stats.damage)} DMG · ${view.character.element_name}`;
+      $("mu-foe-art").src = ART(view.enemy.sprite, "png");
+      $("mu-foe-name").textContent = e.name;
+      $("mu-foe-stats").textContent = `${e.stats.hp} HP · ${Math.round(e.stats.damage)} DMG · ${view.enemy.ability || "—"}`;
+      $("hud-chapter").textContent = `CH ${view.quest.chapter}`;
+      $("fight-start-sub").textContent = `${view.quest.title} · ${view.enemy.boss ? "BOSS FIGHT" : "Chapter duel"}`;
+      $("fight-start-label").textContent = "FIGHT";
+      document.documentElement.style.setProperty("--element", view.character.element_color);
+      document.documentElement.style.setProperty("--foe-element", view.enemy.element_color);
+      this.renderAbilityButtons(view);
+      renderHealRail(view);
+      $("fight-overlay").classList.add("is-open");
+      this.arena.setFighters(p, e);
+      this.arena.stop();
+      this.arena.draw();
+    },
 
-    if (effects.burn_damage) {
-      await sleep(180);
-      burst("foe-fx", "#ff8a3c", "🔥");
-      floatText("enemy-float-layer", `-${effects.burn_damage}`, "dmg");
-    }
-    if (effects.regen_healed) {
-      floatText("hero-float-layer", `+${effects.regen_healed}`, "heal");
-    }
-
-    if (effects.victory) {
-      pulse(foe, "is-defeated", 1200);
-      SFX.victory();
-      haptic("success");
-      banner("VICTORY", effects.leveled_up ? "You rise a level!" : "Chapter cleared");
-      return;
-    }
-
-    if (effects.enemy_damage) {
-      await sleep(360);
-      pulse(foe, "is-lunging", 560);
-      await sleep(170);
-      pulse(hero, "is-hit", 520);
-      slash("hero-fx", "#ff5f6d");
-      floatText("hero-float-layer", `-${effects.enemy_damage}`, "dmg");
-      SFX.hurt();
-      shake("soft");
+    begin() {
+      const view = state.player;
+      if (!view || this.started) return;
+      this.ensure();
+      this.arena.resize();
+      this.arena.setFighters(this.playerStats(view), this.enemyStats(view));
+      this.arena.ended = false;
+      this.started = true;
+      this.settling = false;
+      $("fight-overlay").classList.remove("is-open");
+      window.ChronicleArena.setMuted(!state.settings.sound);
+      this.arena.start();
       haptic("medium");
-    } else if (effects.stunned) {
-      floatText("enemy-float-layer", "STUNNED", "status");
-    } else if (effects.blocked) {
-      floatText("hero-float-layer", `BLOCKED ${effects.blocked}`, "status");
-    }
-    if (effects.enemy_healed) {
-      burst("foe-fx", "#8ef0a8", "✚");
-      floatText("enemy-float-layer", `+${effects.enemy_healed}`, "heal");
-    }
-    if (effects.revived) {
-      SFX.defeat();
-      banner("DOWNED", "A phoenix ember pulls you back");
-    }
-  }
+    },
 
-  const ELEMENTS_COLOR = {
-    fire: "#ff8a3c",
-    ice: "#7fd8ff",
-    wind: "#8ef0a8",
-    arcane: "#b48bff",
-    shadow: "#ff6ac1",
+    leave() {
+      if (this.arena) this.arena.stop();
+      this.started = false;
+      $("fight-overlay").classList.add("is-open");
+    },
+
+    renderAbilityButtons(view) {
+      const kit = window.ChronicleArena.kitFor(view.character.element);
+      kit.abilities.forEach((ability, i) => {
+        const img = $(`ab-${i}-img`);
+        img.src = ART(ability.icon, "png");
+        img.onerror = () => { img.style.visibility = "hidden"; };
+        $(`ab-${i}-label`).textContent = ability.name;
+        $(`ab-${i}`).style.setProperty("--element", view.character.element_color);
+        $(`ab-${i}`).title = `${ability.name} — ${ability.desc}`;
+      });
+      $("btn-attack").style.setProperty("--element", view.character.element_color);
+    },
+
+    hud(a) {
+      const p = a.player;
+      const e = a.enemy;
+      const set = (id, ratio) => { const n = $(id); if (n) n.style.width = `${clamp(ratio * 100, 0, 100)}%`; };
+      set("hud-p-fill", p.hp / p.maxHp);
+      set("hud-e-fill", e.hp / e.maxHp);
+      set("hud-p-stam", p.stamina / p.maxStamina);
+      set("hud-e-stam", e.stamina / e.maxStamina);
+      $("hud-p-name").textContent = p.name;
+      $("hud-e-name").textContent = e.name;
+      $("hud-p-hp").textContent = `${Math.ceil(p.hp)}`;
+      $("hud-e-hp").textContent = `${Math.ceil(e.hp)}`;
+      // ghost bars trail the real damage for a punchy readout
+      ["p", "e"].forEach((k) => {
+        const fighter = k === "p" ? p : e;
+        const ghost = $(`hud-${k}-ghost`);
+        const target = (fighter.hp / fighter.maxHp) * 100;
+        const cur = parseFloat(ghost.style.width) || 100;
+        ghost.style.width = `${cur + (target - cur) * 0.08}%`;
+      });
+      // cooldowns
+      for (let i = 0; i < 3; i += 1) {
+        const btn = $(`ab-${i}`);
+        const arc = $(`ab-${i}-arc`);
+        const num = $(`ab-${i}-num`);
+        const spec = p.kit.abilities[i];
+        const cd = p.cooldowns[i];
+        const onCd = cd > 0;
+        const poor = p.stamina < spec.stamina;
+        btn.classList.toggle("is-cd", onCd);
+        btn.classList.toggle("is-poor", !onCd && poor);
+        btn.disabled = onCd || poor || p.dead;
+        if (onCd) {
+          const pct = (1 - cd / spec.cd) * 100;
+          arc.style.background = `conic-gradient(transparent ${pct}%, rgba(3,5,16,0.78) 0)`;
+          num.textContent = cd >= 1 ? Math.ceil(cd) : cd.toFixed(1);
+        } else {
+          arc.style.background = "transparent";
+          num.textContent = "";
+        }
+      }
+      const atk = $("btn-attack");
+      atk.classList.toggle("is-poor", p.stamina < p.kit.basic.stamina);
+    },
+
+    async finish(outcome, hpLeft) {
+      if (this.settling) return;
+      this.settling = true;
+      this.started = false;
+      try {
+        const data = await api("/api/arena/finish", {
+          outcome,
+          hp_left: Math.max(1, Math.round(hpLeft / HP_SCALE)),
+        });
+        render(data.player);
+        const effects = data.turn.effects || {};
+        if (outcome === "win") {
+          UI.win();
+          haptic("success");
+          toast(data.turn.summary, "success");
+          if (effects.loot?.length) showLoot(effects.loot, data.turn.summary);
+        } else {
+          haptic("error");
+          toast(data.turn.summary, "error");
+        }
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        this.arena.stop();
+        this.open();
+        $("fight-start-label").textContent = outcome === "win" ? "NEXT CHAPTER" : "REMATCH";
+        this.settling = false;
+      }
+    },
+
+    /* ---------------- controls ---------------- */
+    bindControls() {
+      const arena = this.arena;
+      const stick = $("joystick");
+      const knob = $("stick-knob");
+      let stickId = null;
+      const radius = 52;
+
+      const setVector = (dx, dz) => {
+        arena.input.dx = dx;
+        arena.input.dz = dz;
+      };
+      const moveKnob = (x, y) => {
+        knob.style.transform = `translate(${x}px, ${y}px)`;
+      };
+      const onStart = (event) => {
+        const t = event.changedTouches ? event.changedTouches[0] : event;
+        stickId = t.identifier !== undefined ? t.identifier : "mouse";
+        stick.classList.add("is-active");
+        onMove(event);
+      };
+      const onMove = (event) => {
+        if (stickId === null) return;
+        const rect = stick.getBoundingClientRect();
+        const touches = event.changedTouches ? Array.from(event.changedTouches) : [event];
+        const t = touches.find((x) => (x.identifier !== undefined ? x.identifier === stickId : true));
+        if (!t) return;
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        let dx = t.clientX - cx;
+        let dy = t.clientY - cy;
+        const len = Math.hypot(dx, dy) || 1;
+        const capped = Math.min(len, radius);
+        dx = (dx / len) * capped;
+        dy = (dy / len) * capped;
+        moveKnob(dx, dy);
+        setVector(dx / radius, dy / radius);
+        event.preventDefault();
+      };
+      const onEnd = () => {
+        stickId = null;
+        stick.classList.remove("is-active");
+        moveKnob(0, 0);
+        setVector(0, 0);
+      };
+
+      stick.addEventListener("touchstart", onStart, { passive: false });
+      stick.addEventListener("touchmove", onMove, { passive: false });
+      stick.addEventListener("touchend", onEnd);
+      stick.addEventListener("touchcancel", onEnd);
+      stick.addEventListener("mousedown", (e) => { onStart(e); e.preventDefault(); });
+      window.addEventListener("mousemove", (e) => { if (stickId !== null) onMove(e); });
+      window.addEventListener("mouseup", () => { if (stickId !== null) onEnd(); });
+
+      const press = (node, fn) => {
+        const handler = (event) => {
+          event.preventDefault();
+          fn();
+          node.classList.add("is-press");
+          setTimeout(() => node.classList.remove("is-press"), 130);
+          haptic("light");
+        };
+        node.addEventListener("touchstart", handler, { passive: false });
+        node.addEventListener("mousedown", handler);
+      };
+      press($("btn-attack"), () => { arena.input.attack = true; });
+      for (let i = 0; i < 3; i += 1) {
+        press($(`ab-${i}`), () => { arena.input.abilities[i] = true; });
+      }
+
+      // keyboard for desktop testing
+      const keys = {};
+      const applyKeys = () => {
+        const dx = (keys.d || keys.ArrowRight ? 1 : 0) - (keys.a || keys.ArrowLeft ? 1 : 0);
+        const dz = (keys.s || keys.ArrowDown ? 1 : 0) - (keys.w || keys.ArrowUp ? 1 : 0);
+        arena.input.dx = dx;
+        arena.input.dz = dz;
+      };
+      window.addEventListener("keydown", (e) => {
+        if (state.screen !== "battle") return;
+        keys[e.key] = true;
+        if (e.key === " " || e.key === "j") arena.input.attack = true;
+        if (e.key === "u") arena.input.abilities[0] = true;
+        if (e.key === "i") arena.input.abilities[1] = true;
+        if (e.key === "o") arena.input.abilities[2] = true;
+        applyKeys();
+      });
+      window.addEventListener("keyup", (e) => { keys[e.key] = false; applyKeys(); });
+    },
   };
 
-  let bannerTimer = null;
-  function banner(title, sub) {
-    const node = $("arena-banner");
-    $("banner-title").textContent = title;
-    $("banner-sub").textContent = sub || "";
-    node.hidden = false;
-    node.classList.remove("is-in");
-    void node.offsetWidth;
-    node.classList.add("is-in");
-    clearTimeout(bannerTimer);
-    bannerTimer = setTimeout(() => {
-      node.classList.remove("is-in");
-      setTimeout(() => (node.hidden = true), 400);
-    }, 1900);
-  }
-
   /* ------------------------------------------------------------------ *
-   * rendering
+   * rendering (home / store / satchel)
    * ------------------------------------------------------------------ */
   function setBar(id, ratio) {
     const node = $(id);
@@ -416,11 +435,10 @@
 
   function render(view) {
     state.player = view;
-    const { hero, quest, enemy, battle, character, roster } = view;
-
+    const { hero, quest, enemy, character, roster } = view;
     document.documentElement.style.setProperty("--element", character.element_color);
+    document.documentElement.style.setProperty("--foe-element", enemy.element_color);
 
-    // ---- home ----
     $("home-char-art").src = ART(character.art, "png");
     $("home-char-name").textContent = character.name;
     $("home-char-title").textContent = character.title;
@@ -446,116 +464,37 @@
     $("bag-count").textContent = view.inventory.reduce((sum, c) => sum + c.quantity, 0);
     $("hero-count").textContent = roster.filter((c) => c.owned).length;
     $("satchel-value").textContent = view.inventory_value;
+    $("version-note").textContent = `ChronicleRift ${state.version ? `v${state.version}` : ""}`;
 
-    // ---- battle ----
-    $("chapter-chip").textContent = `CH ${quest.chapter}`;
-    $("hero-sprite").src = ART(character.art, "png");
-    $("hero-sprite").alt = character.name;
-    $("foe-sprite").src = ART(enemy.sprite, "png");
-    $("foe-sprite").alt = enemy.name;
-    $("foe-name").textContent = enemy.name;
-    $("foe-level").textContent = `LV ${enemy.level}`;
-    $("boss-tag").hidden = !enemy.boss;
-    $("foe-ability").textContent = enemy.ability ? `${enemy.ability}` : "";
-    document.documentElement.style.setProperty("--foe-element", enemy.element_color);
-    setBar("enemy-hp-bar", enemy.hp / Math.max(1, enemy.max_hp));
-    $("enemy-hp-text").textContent = `${enemy.hp} / ${enemy.max_hp} HP`;
-    setBar("hero-hp-bar", hero.hp / Math.max(1, hero.max_hp));
-    $("hero-hp-text").textContent = `${hero.hp} / ${hero.max_hp}`;
-    setBar("hero-energy-bar", hero.energy / Math.max(1, hero.max_energy));
-    $("hero-energy-text").textContent = `${hero.energy} / ${hero.max_energy}`;
-
-    const pips = $("focus-pips");
-    pips.replaceChildren();
-    for (let i = 0; i < hero.max_focus; i += 1) {
-      pips.appendChild(el("i", i < hero.focus ? "pip is-on" : "pip"));
-    }
-
-    const chips = $("status-chips");
-    chips.replaceChildren();
-    const addChip = (text, cls) => chips.appendChild(el("span", `chip ${cls}`, text));
-    if (battle.exposed) addChip("EXPOSED +2", "chip-good");
-    if (battle.burn) addChip(`BURN ${battle.burn}`, "chip-fire");
-    if (battle.regen) addChip(`REGEN ${battle.regen}`, "chip-good");
-    if (battle.stun) addChip(`FROZEN ${battle.stun}`, "chip-ice");
-    if (battle.can_finish) addChip("FINISH IT", "chip-finish");
-    if (!chips.childElementCount) addChip(`TURN ${battle.turn}`, "chip-muted");
-
-    const intent = enemy.intent || {};
-    $("intent-name").textContent = intent.name || "Unknown";
-    $("intent-advice").textContent = intent.advice || "";
-    $("intent-num").textContent = intent.damage ? `${intent.damage}` : "—";
-    $("intent-ic").textContent = intent.emoji || "⚔";
-
-    $("coach-text").textContent = coachLine(view);
-    renderAttacks(view);
     renderHealRail(view);
     renderHeroStore(view);
     renderShop(view);
     renderForge(view);
     renderSatchel(view);
-    $("version-note").textContent = `ChronicleRift ${state.version ? `v${state.version}` : ""}`;
-
-    state.lastHeroHp = hero.hp;
-    state.lastEnemyHp = enemy.hp;
+    if (state.screen === "battle" && !Fight.started) Fight.renderAbilityButtons(view);
   }
 
-  function coachLine(view) {
-    const { hero, enemy, battle, character } = view;
-    if (battle.can_finish) return "One hit ends it — attack now.";
-    if (hero.hp <= hero.max_hp * 0.3) return "You're hurt. Use a potion or Guard to blunt the next hit.";
-    if (hero.energy === 0) return "Out of Energy — Guard or Rest to recover.";
-    if (hero.energy >= 3) return `Enough Energy for ${character.attacks[2].name} — your ${character.element_name} special.`;
-    if (!battle.exposed) return "Scout to expose the enemy for +2 damage on your next hit.";
-    return `${enemy.name} uses ${enemy.ability}. Watch its telegraphed move above.`;
-  }
-
-  function renderAttacks(view) {
-    const wrap = $("attack-controls");
-    wrap.replaceChildren();
-    view.character.attacks.forEach((attack) => {
-      const btn = el("button", `attack atk-${attack.id}`);
-      btn.type = "button";
-      btn.dataset.action = attack.id;
-      btn.style.setProperty("--element", view.character.element_color);
-      const affordable = view.hero.energy >= attack.cost;
-      btn.disabled = state.busy || !affordable;
-      btn.classList.toggle("is-poor", !affordable);
-      const top = el("div", "attack-top");
-      top.appendChild(el("b", null, attack.name));
-      const cost = el("span", "cost");
-      for (let i = 0; i < attack.cost; i += 1) cost.appendChild(el("i", "en"));
-      top.appendChild(cost);
-      btn.appendChild(top);
-      btn.appendChild(el("small", "attack-dmg", `${attack.min}–${attack.max} DMG`));
-      btn.appendChild(el("small", "attack-desc", attack.desc));
-      btn.addEventListener("click", () => takeTurn(attack.id));
-      wrap.appendChild(btn);
-    });
-  }
-
+  const HEAL_IDS = ["salve", "draught", "greater_draught", "regen_balm", "phoenix_tear", "elixir"];
   function healingItems(view) {
-    return view.inventory.filter(
-      (card) => card.kind === "consumable" && (HEAL_KEYWORDS.includes(card.id) || /heal|hp|vital/i.test(card.ability)),
-    );
+    return view.inventory.filter((c) => c.kind === "consumable" && (HEAL_IDS.includes(c.id) || /heal|hp|vital/i.test(c.ability)));
   }
 
   function renderHealRail(view) {
     const strip = $("rail-strip");
+    if (!strip) return;
     strip.replaceChildren();
     const heals = healingItems(view);
     if (!heals.length) {
       const empty = el("button", "rail-empty");
       empty.type = "button";
       empty.innerHTML = "<b>No potions left</b><small>Tap to buy instantly</small>";
-      empty.addEventListener("click", () => openRestock());
+      empty.addEventListener("click", openRestock);
       strip.appendChild(empty);
       return;
     }
     heals.forEach((card) => {
       const btn = el("button", "rail-item");
       btn.type = "button";
-      btn.disabled = state.busy;
       const img = el("img");
       img.src = ART(card.art || "item-heal");
       img.alt = "";
@@ -571,6 +510,7 @@
     const grid = $("hero-store");
     grid.replaceChildren();
     view.roster.forEach((card) => {
+      const kit = window.ChronicleArena.kitFor(card.element);
       const node = el("article", `hero-card${card.active ? " is-active" : ""}`);
       node.style.setProperty("--element", card.element_color);
       const media = el("div", "hero-card-art");
@@ -593,10 +533,14 @@
       stats.appendChild(el("span", null, `+${card.power} PWR`));
       body.appendChild(stats);
       const moves = el("ul", "hero-moves");
-      card.attacks.forEach((a) => {
+      const basic = el("li");
+      basic.appendChild(el("b", null, kit.basic.name));
+      basic.appendChild(el("span", null, "basic attack"));
+      moves.appendChild(basic);
+      kit.abilities.forEach((a) => {
         const li = el("li");
         li.appendChild(el("b", null, a.name));
-        li.appendChild(el("span", null, `${a.min}–${a.max} · ${a.cost} EN`));
+        li.appendChild(el("span", null, `${a.cd}s CD`));
         moves.appendChild(li);
       });
       body.appendChild(moves);
@@ -604,9 +548,7 @@
       const btn = el("button", "btn-primary wide");
       btn.type = "button";
       btn.disabled = state.busy || card.active;
-      if (card.active) btn.textContent = "In play";
-      else if (card.owned) btn.textContent = "Select hero";
-      else btn.textContent = `Recruit · ${card.cost} 🪙`;
+      btn.textContent = card.active ? "In play" : card.owned ? "Select hero" : `Recruit · ${card.cost} 🪙`;
       btn.addEventListener("click", () => (card.owned ? selectCharacter(card) : buyCharacter(card)));
       body.appendChild(btn);
       node.appendChild(body);
@@ -619,9 +561,7 @@
     const img = el("img");
     img.src = ART(card.art || "item-heal");
     img.alt = "";
-    img.onerror = () => {
-      img.replaceWith(el("div", "item-emoji", card.emoji));
-    };
+    img.onerror = () => img.replaceWith(el("div", "item-emoji", card.emoji));
     node.appendChild(img);
     const body = el("div", "item-body");
     body.appendChild(el("b", null, card.name));
@@ -640,17 +580,13 @@
   function renderShop(view) {
     const grid = $("shop-list");
     grid.replaceChildren();
-    view.shop
-      .filter((card) => card.kind === "consumable")
-      .forEach((card) => {
-        grid.appendChild(
-          itemNode(card, {
-            actionLabel: `${card.cost} 🪙`,
-            disabled: view.hero.coins < card.cost,
-            onAction: () => buyItem(card),
-          }),
-        );
-      });
+    view.shop.filter((c) => c.kind === "consumable").forEach((card) => {
+      grid.appendChild(itemNode(card, {
+        actionLabel: `${card.cost} 🪙`,
+        disabled: view.hero.coins < card.cost,
+        onAction: () => buyItem(card),
+      }));
+    });
   }
 
   function renderForge(view) {
@@ -658,14 +594,12 @@
     grid.replaceChildren();
     view.relics.forEach((card) => {
       const capped = card.level >= card.max_level;
-      grid.appendChild(
-        itemNode(card, {
-          actionLabel: capped ? "MAX" : `${card.next_cost} 🪙`,
-          disabled: capped || view.hero.coins < (card.next_cost || 0),
-          caption: `Lv ${card.level}/${card.max_level} · ${card.bonus_now || "not forged"}${card.bonus_next ? ` → ${card.bonus_next}` : ""}`,
-          onAction: () => upgradeRelic(card),
-        }),
-      );
+      grid.appendChild(itemNode(card, {
+        actionLabel: capped ? "MAX" : `${card.next_cost} 🪙`,
+        disabled: capped || view.hero.coins < (card.next_cost || 0),
+        caption: `Lv ${card.level}/${card.max_level} · ${card.bonus_now || "not forged"}${card.bonus_next ? ` → ${card.bonus_next}` : ""}`,
+        onAction: () => upgradeRelic(card),
+      }));
     });
   }
 
@@ -673,17 +607,16 @@
     const grid = $("satchel-list");
     grid.replaceChildren();
     if (!view.inventory.length) {
-      grid.appendChild(el("p", "note", "Your satchel is empty. Clear a chapter to earn loot."));
+      grid.appendChild(el("p", "note", "Your satchel is empty. Win a duel to earn loot."));
       return;
     }
     view.inventory.forEach((card) => {
-      const usable = card.kind === "consumable";
       const node = itemNode(card, {
         actionLabel: `Sell ${card.sell} 🪙`,
         onAction: () => sellItem(card),
         caption: `${card.desc} · carrying ${card.quantity}`,
       });
-      if (usable) {
+      if (card.kind === "consumable") {
         const use = el("button", "btn-primary small");
         use.type = "button";
         use.textContent = "Use";
@@ -696,68 +629,25 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * actions
+   * item actions
    * ------------------------------------------------------------------ */
-  function setBusy(flag) {
-    state.busy = flag;
-    document.body.classList.toggle("is-busy", flag);
-    document.querySelectorAll(".attack, .support, .rail-item, .btn-primary, .btn-ghost").forEach((b) => {
-      if (flag) b.setAttribute("data-was-disabled", b.disabled ? "1" : "0");
-      b.disabled = flag ? true : b.getAttribute("data-was-disabled") === "1";
-    });
-  }
-
-  function logLine(text, kind = "") {
-    const list = $("battle-log");
-    const li = el("li", kind, text);
-    list.prepend(li);
-    while (list.children.length > 14) list.lastChild.remove();
-  }
-
-  async function takeTurn(action) {
-    if (state.busy || !state.player) return;
-    setBusy(true);
-    try {
-      const data = await api("/api/actions", { action });
-      const effects = data.turn.effects || {};
-      const hadHeals = healingItems(state.player).length;
-      render(data.player);
-      logLine(data.turn.summary, effects.victory ? "is-win" : "");
-      await playCombat(action, effects);
-      if (effects.loot?.length) showLoot(effects.loot, data.turn.summary);
-      if (data.turn.narrative) logLine(data.turn.narrative, "is-narrative");
-      maybeRestock(hadHeals);
-    } catch (err) {
-      toast(err.message, "error");
-    } finally {
-      setBusy(false);
-      if (state.player) render(state.player);
-    }
-  }
-
-  async function itemCall(path, body, okKind = "success") {
+  async function itemCall(path, body) {
     if (state.busy) return null;
-    setBusy(true);
+    state.busy = true;
     try {
       const data = await api(path, body);
       const hadHeals = state.player ? healingItems(state.player).length : 0;
       render(data.player);
-      if (data.turn.success) {
-        toast(data.turn.summary, okKind);
-        logLine(data.turn.summary);
-        haptic("success");
-      } else {
-        toast(data.turn.reason || data.turn.summary, "error");
-        haptic("error");
-      }
-      maybeRestock(hadHeals);
+      if (data.turn.success) { toast(data.turn.summary, "success"); haptic("success"); }
+      else { toast(data.turn.reason || data.turn.summary, "error"); haptic("error"); }
+      const now = healingItems(data.player).length;
+      if (hadHeals > 0 && now === 0 && state.screen === "battle") openRestock();
       return data;
     } catch (err) {
       toast(err.message, "error");
       return null;
     } finally {
-      setBusy(false);
-      if (state.player) render(state.player);
+      state.busy = false;
     }
   }
 
@@ -765,61 +655,37 @@
     const before = state.player?.hero.hp ?? 0;
     const data = await itemCall("/api/use", { item_id: card.id });
     if (!data) return;
+    UI.heal();
     const healed = (data.player.hero.hp || 0) - before;
-    if (healed > 0) {
-      burst("hero-fx", "#8ef0a8", "✚", true);
-      floatText("hero-float-layer", `+${healed}`, "heal");
-      pulse($("hero-fighter"), "is-resting", 700);
-      SFX.heal();
+    // a potion drunk before or between rounds also tops up the arena fighter
+    if (healed > 0 && Fight.arena?.player) {
+      const f = Fight.arena.player;
+      f.hp = Math.min(f.maxHp, f.hp + healed * HP_SCALE);
     }
   }
-  const buyItem = (card) => itemCall("/api/buy", { item_id: card.id }).then((d) => d && SFX.coin());
-  const sellItem = (card) => itemCall("/api/sell", { item_id: card.id, quantity: 1 }).then((d) => d && SFX.coin());
-  const upgradeRelic = (card) => itemCall("/api/upgrade", { item_id: card.id }).then((d) => d && SFX.coin());
-  const buyCharacter = (card) =>
-    itemCall("/api/character/buy", { item_id: card.id }).then((d) => {
-      if (d?.turn.success) {
-        SFX.victory();
-        toast(`${card.name} joins your chronicle!`, "success");
-      }
-    });
-  const selectCharacter = (card) =>
-    itemCall("/api/character/select", { item_id: card.id }).then((d) => {
-      if (d?.turn.success) {
-        pulse($("home-char-art"), "is-swap", 700);
-        SFX.special();
-      }
-    });
-
-  /* instant restock prompt: fires the moment the last potion leaves the bag */
-  function maybeRestock(hadHealsBefore) {
-    if (!state.player) return;
-    const now = healingItems(state.player).length;
-    if (hadHealsBefore > 0 && now === 0 && state.screen === "battle") {
-      openRestock();
-    }
-  }
+  const buyItem = (card) => itemCall("/api/buy", { item_id: card.id }).then((d) => { if (d) UI.coin(); return d; });
+  const sellItem = (card) => itemCall("/api/sell", { item_id: card.id, quantity: 1 }).then((d) => { if (d) UI.coin(); return d; });
+  const upgradeRelic = (card) => itemCall("/api/upgrade", { item_id: card.id }).then((d) => { if (d) UI.coin(); return d; });
+  const buyCharacter = (card) => itemCall("/api/character/buy", { item_id: card.id }).then((d) => {
+    if (d?.turn.success) { UI.win(); toast(`${card.name} joins your chronicle!`, "success"); }
+  });
+  const selectCharacter = (card) => itemCall("/api/character/select", { item_id: card.id }).then((d) => {
+    if (d?.turn.success) UI.tap();
+  });
 
   function openRestock() {
     if (!state.player) return;
     const list = $("restock-list");
     list.replaceChildren();
-    const heals = state.player.shop.filter(
-      (card) => card.kind === "consumable" && /heal|hp|vital|revive/i.test(`${card.ability} ${card.desc}`),
-    );
+    const heals = state.player.shop.filter((c) => c.kind === "consumable" && /heal|hp|vital|revive/i.test(`${c.ability} ${c.desc}`));
     (heals.length ? heals : state.player.shop.filter((c) => c.kind === "consumable")).forEach((card) => {
-      list.appendChild(
-        itemNode(card, {
-          actionLabel: `Buy ${card.cost} 🪙`,
-          disabled: state.player.hero.coins < card.cost,
-          onAction: async () => {
-            await buyItem(card);
-            closeModal($("restock-modal"));
-          },
-        }),
-      );
+      list.appendChild(itemNode(card, {
+        actionLabel: `Buy ${card.cost} 🪙`,
+        disabled: state.player.hero.coins < card.cost,
+        onAction: async () => { await buyItem(card); closeModal($("restock-modal")); },
+      }));
     });
-    $("restock-sub").textContent = `You have ${state.player.hero.coins} coins. Restock without leaving the fight:`;
+    $("restock-sub").textContent = `You have ${state.player.hero.coins} coins. Restock without leaving the arena:`;
     openModal($("restock-modal"));
     haptic("warning");
   }
@@ -840,11 +706,11 @@
     });
     $("loot-sub").textContent = sub || "";
     openModal($("loot-modal"));
-    SFX.coin();
+    UI.coin();
   }
 
   /* ------------------------------------------------------------------ *
-   * modals
+   * modals + onboarding
    * ------------------------------------------------------------------ */
   function openModal(node) {
     node.hidden = false;
@@ -863,43 +729,29 @@
     const nav = event.target.closest("[data-goto]");
     if (nav) goto(nav.dataset.goto);
     const tab = event.target.closest("#store-tabs .tab");
-    if (tab) {
-      switchTab(tab.dataset.tab);
-      SFX.tap();
-    }
+    if (tab) { switchTab(tab.dataset.tab); UI.tap(); }
   });
 
-  /* ------------------------------------------------------------------ *
-   * onboarding
-   * ------------------------------------------------------------------ */
   const SLIDES = [
     {
-      kicker: "WELCOME",
-      title: "Fight through the Rift",
-      img: "intro-arena",
-      body: "Each chapter throws one monster at you. Beat it to earn XP, coins and a loot chest. Bosses appear every fifth chapter.",
+      kicker: "THE ARENA", title: "A real fight, not a menu", img: "intro-arena",
+      body: "You and the chapter monster stand in one arena and duel in real time. Damage only lands when your attack physically connects — range and positioning matter.",
     },
     {
-      kicker: "THREE ATTACKS",
-      title: "Strike, Heavy, Special",
-      img: "intro-moves",
-      body: "Every hero has three attacks costing 1, 2 and 3 Energy. The Special carries your element: burn, freeze, double-hit, pierce or lifesteal.",
+      kicker: "CONTROLS", title: "Joystick left, attacks right", img: "intro-moves",
+      body: "Drag the left joystick to move forward, back and along the depth of the arena. The big sword button is your basic attack; the three icons above it are your abilities, each on its own cooldown.",
     },
     {
-      kicker: "READ THE ENEMY",
-      title: "Their next move is shown",
-      img: "camp",
-      body: "The intent card tells you what the monster does next. Guard to blunt it, Scout to expose it for +2 damage, Rest to heal and refuel.",
+      kicker: "ABILITIES", title: "Every hero fights differently", img: "camp",
+      body: "Fire cleaves and burns, Snow smashes and freezes, Wind whirls and blinks, Magic pierces and drains, Shadow reaps and vanishes. Watch your stamina — attacks cost it.",
     },
     {
-      kicker: "HOME BASE",
-      title: "Heroes, store and satchel",
-      img: "intro-market",
-      body: "Recruit elemental heroes, buy potions and forge relics from the Home screen. In battle you only carry healing — and you can restock instantly if you run dry.",
+      kicker: "HOME BASE", title: "Heroes, store and satchel", img: "intro-market",
+      body: "Recruit heroes, buy potions and forge relics from the Home screen. Win a duel to clear the chapter and open a loot chest. Lose and you simply wake at camp, fully healed.",
     },
   ];
   let slideIndex = 0;
-  const TUTORIAL_KEY = "cr_tutorial_v6";
+  const TUTORIAL_KEY = "cr_tutorial_v7";
   function renderSlide() {
     const slide = SLIDES[slideIndex];
     $("onboard-kicker").textContent = slide.kicker;
@@ -921,19 +773,26 @@
    * boot
    * ------------------------------------------------------------------ */
   async function refresh() {
+    const pill = $("connection-status");
     try {
       const data = await api("/api/me");
       state.version = data.version || "";
       render(data.player);
-      const pill = $("connection-status");
       pill.innerHTML = "<i class='dot'></i>Live";
       pill.classList.add("is-live");
     } catch (err) {
-      const pill = $("connection-status");
       pill.innerHTML = "<i class='dot'></i>Offline";
       pill.classList.add("is-off");
       toast(err.message, "error");
     }
+  }
+
+  function syncSoundIcon() {
+    $("sound-on-ic").hidden = !state.settings.sound;
+    $("sound-off-ic").hidden = state.settings.sound;
+    $("fight-sound").setAttribute("aria-pressed", String(state.settings.sound));
+    $("set-sound").checked = state.settings.sound;
+    window.ChronicleArena.setMuted(!state.settings.sound);
   }
 
   function bindSettings() {
@@ -945,16 +804,10 @@
         state.settings[key] = box.checked;
         saveSettings();
         syncSoundIcon();
-        if (key === "sound" && box.checked) SFX.tap();
+        if (key === "sound" && box.checked) UI.tap();
       });
     });
     $("set-tutorial").addEventListener("click", openTutorial);
-  }
-  function syncSoundIcon() {
-    $("sound-on-ic").hidden = !state.settings.sound;
-    $("sound-off-ic").hidden = state.settings.sound;
-    $("sound-btn").setAttribute("aria-pressed", String(state.settings.sound));
-    $("set-sound").checked = state.settings.sound;
   }
 
   function init() {
@@ -964,57 +817,43 @@
       tg?.expand?.();
       tg?.setHeaderColor?.("#05060f");
       tg?.setBackgroundColor?.("#05060f");
-      tg?.enableClosingConfirmation?.();
+      tg?.disableVerticalSwipes?.();
       tg?.BackButton?.onClick?.(() => goto("home"));
-    } catch (_) {
-      /* running outside Telegram */
-    }
+    } catch (_) { /* outside Telegram */ }
 
     bindSettings();
     syncSoundIcon();
 
     $("play-btn").addEventListener("click", () => goto("battle"));
-    $("battle-back").addEventListener("click", () => goto("home"));
-    $("help-btn").addEventListener("click", openTutorial);
-    $("sound-btn").addEventListener("click", () => {
+    $("fight-exit").addEventListener("click", () => goto("home"));
+    $("fight-leave").addEventListener("click", () => goto("home"));
+    $("fight-start").addEventListener("click", () => Fight.begin());
+    $("fight-help").addEventListener("click", openTutorial);
+    $("fight-sound").addEventListener("click", () => {
       state.settings.sound = !state.settings.sound;
       saveSettings();
       syncSoundIcon();
-      if (state.settings.sound) SFX.tap();
+      if (state.settings.sound) UI.tap();
     });
     $("loot-close").addEventListener("click", () => closeModal($("loot-modal")));
     $("onboard-next").addEventListener("click", () => {
       if (slideIndex >= SLIDES.length - 1) {
         closeModal($("onboard"));
-        try {
-          localStorage.setItem(TUTORIAL_KEY, "1");
-        } catch (_) {
-          /* ignore */
-        }
+        try { localStorage.setItem(TUTORIAL_KEY, "1"); } catch (_) { /* ignore */ }
         return;
       }
       slideIndex += 1;
       renderSlide();
-      SFX.tap();
-    });
-    document.querySelectorAll(".support").forEach((btn) => {
-      btn.addEventListener("click", () => takeTurn(btn.dataset.action));
+      UI.tap();
     });
 
     refresh().then(() => {
       let seen = "1";
-      try {
-        seen = localStorage.getItem(TUTORIAL_KEY);
-      } catch (_) {
-        seen = "1";
-      }
+      try { seen = localStorage.getItem(TUTORIAL_KEY); } catch (_) { seen = "1"; }
       if (!seen) openTutorial();
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();

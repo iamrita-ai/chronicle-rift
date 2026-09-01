@@ -1019,3 +1019,51 @@ def build_enemy(chapter: int) -> dict[str, Any]:
 def _next_enemy(chapter: int) -> dict[str, Any]:
     """Backwards-compatible alias used by the victory path."""
     return build_enemy(chapter)
+
+
+def resolve_arena(
+    player: dict[str, Any],
+    outcome: str,
+    hp_left: int | None = None,
+    rng: RandomSource | None = None,
+) -> TurnResolution:
+    """Settle a real-time arena duel against the current chapter monster.
+
+    The arena runs client-side for feel, but rewards stay server-authoritative:
+    a win routes through the very same ``_victory`` path as a turn-based kill,
+    and a loss simply wakes the hero at camp. ``hp_left`` is clamped into the
+    hero's real vitality range so a client can never invent health.
+    """
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    enemy = game["enemy"]
+    effects = _fresh_effects("arena", enemy)
+    if hp_left is not None:
+        game["hp"] = max(1, min(int(game["max_hp"]), int(hp_left)))
+
+    if outcome == "win":
+        fallen_name = enemy["name"]
+        was_boss = bool(enemy.get("boss", False))
+        effects["damage"] = int(enemy["hp"])
+        enemy["hp"] = 0
+        game["energy"] = game["max_energy"]
+        return _victory(updated, "arena", effects, fallen_name, was_boss, rng)
+
+    game["hp"] = game["max_hp"]
+    game["energy"] = game["max_energy"]
+    game["focus"] = 0
+    game["burn"] = 0
+    game["regen"] = 0
+    game["stun"] = 0
+    game["exposed_strikes"] = 0
+    enemy["hp"] = enemy["max_hp"]
+    sync_intent(enemy)
+    effects["defeated"] = True
+    effects["enemy_intent"] = enemy["intent"]
+    summary = (
+        f"The {enemy['name']} stands over you. You wake at camp fully healed — "
+        "nothing is lost, the duel can be fought again."
+    )
+    game["last_narrative"] = summary
+    return TurnResolution(updated, "arena", summary, victory=False, effects=effects)

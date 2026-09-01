@@ -111,6 +111,65 @@ Motion respects `prefers-reduced-motion`, and shake/sound/haptics are toggleable
 
 New endpoints: `POST /api/character/buy` and `POST /api/character/select`.
 
+### The real-time arena (v0.7)
+
+The chapter fight is no longer a menu: it is a **playable 2.5D side-view duel** in one
+continuous arena, built on a custom canvas engine (`webapp/arena.js`). **Nothing in the fight is
+a static image** — both fighters are articulated game objects (torso, head, two arms with
+forearms, two legs with knees, cape and weapon) posed every frame by a procedural animation
+system, simulated with velocity, gravity, depth, body collision, hitboxes and hurtboxes.
+
+**Controls (permanent, mobile-first)**
+
+```
+                              ABILITY 1
+        joystick        ABILITY 2   ABILITY 3
+      (move x + depth)          ATTACK
+```
+
+- Left: a virtual joystick — forward, backward, left and right along the arena's depth lane.
+  Characters always turn to face their opponent when they attack.
+- Right: a large, always-visible basic-attack button with three ability buttons above it. Every
+  button is real: each ability has its own independent cooldown, a circular cooldown overlay,
+  the remaining seconds printed on top, and it re-enables itself the moment the cooldown ends.
+  Abilities also cost stamina, so mashing is punished.
+- Desktop testing: WASD/arrows to move, Space or J to attack, U/I/O for the abilities.
+
+**Per-character kits.** Each element has a name, health, damage, movement speed, attack range,
+attack speed, critical chance, defence, a basic attack and three unique abilities with their own
+cooldowns and visual effects:
+
+| Element | Basic | Ability 1 | Ability 2 | Ability 3 |
+| --- | --- | --- | --- | --- |
+| Fire | Ember Slash | Molten Cleave — heavy, huge knockback | Cinder Wave — projectile, Burn DoT | Ember Dash — i-frame dash that damages |
+| Snow | Rime Jab | Glacier Smash — heavy, slows | Deep Freeze — projectile, freezes solid | Frost Barrier — halves damage 5s |
+| Wind | Twin Slice | Cyclone Kick — 3-hit whirl | Gale Flurry — 3 gusts | Blink — teleport behind, +50% speed |
+| Magic | Rune Bolt | Sigil Burst — heavy AoE | Mind Siphon — unblockable, heals 50% | Rune Ward — ward + stamina |
+| Shadow | Reap | Grave Arc — wide heavy | Soul Harvest — drain + slow | Shadowstep — vanish, next hit empowered |
+
+**Damage is never granted by an animation.** An attack spawns a hitbox only during its active
+frames; damage is applied strictly when that hitbox overlaps the opponent's hurtbox in x, depth
+and height, once per swing. The number that appears is
+`character damage × ability multiplier × variance`, times **1.75 on a critical**, reduced by
+`defence / (defence + 70)` and again by any active shield.
+
+**Hit feedback.** Every connection runs attack animation → hit effect → damage number → hit
+reaction → health drop: slash arcs and sparks on basics; shockwave rings, shards, knockback,
+lift and a strong camera kick on heavies; glowing projectiles with motion trails and an
+explosion of motes on magic. Impacts add hitstop (brief freeze frames), screen shake scaled to
+the blow, a white flash on the struck body and a trailing "ghost" health bar.
+
+**Animation states.** Idle breathing, walk cycle (with a distinct backpedal), basic attack,
+one animation per ability, hit reaction, knockback tumble, defeat collapse and a victory pose,
+all cross-faded through a per-joint interpolation rate for smooth transitions.
+
+**Camera.** Follows the midpoint between the fighters and zooms between 0.62× and 1.32× so both
+are always framed — in tight when they close, out when they separate — with clamped shake.
+
+Outcomes stay server-authoritative: winning posts to `POST /api/arena/finish`, which routes
+through the same victory path as before (gold, coins, points, XP, loot chest, next chapter),
+and losing wakes you at camp fully healed. Reported health is clamped to your real maximum.
+
 ### Preview the Mini App without Telegram
 
 ```bash

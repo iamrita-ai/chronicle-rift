@@ -12,6 +12,7 @@ from .game_engine import (
     PurchaseResolution,
     TurnResolution,
     buy_character,
+    resolve_arena,
     resolve_purchase,
     resolve_turn,
     select_character,
@@ -109,6 +110,37 @@ class GameService:
             return GameTurn(
                 player=saved,
                 action=action,
+                summary=resolution.summary,
+                narrative=narrative,
+                victory=resolution.victory,
+                effects=resolution.effects,
+            )
+        raise GameBusyError(
+            "Your chronicle changed in another window. Please try again."
+        ) from last_conflict
+
+    async def arena_finish(
+        self, identity: TelegramIdentity, outcome: str, hp_left: int | None = None
+    ) -> GameTurn:
+        """Persist the outcome of a real-time arena duel with conflict retries."""
+        last_conflict: ConcurrentUpdateError | None = None
+        for _ in range(self._max_retries):
+            current = await self.dashboard(identity)
+            resolution = resolve_arena(current, outcome, hp_left)
+            narrative = await self._narrator.narrate(
+                player=resolution.player, action="arena", summary=resolution.summary
+            )
+            resolution.player["game"]["last_narrative"] = narrative
+            try:
+                saved = await self._store.save_game(
+                    resolution.player, expected_revision=current["revision"]
+                )
+            except ConcurrentUpdateError as exc:
+                last_conflict = exc
+                continue
+            return GameTurn(
+                player=saved,
+                action="arena",
                 summary=resolution.summary,
                 narrative=narrative,
                 victory=resolution.victory,

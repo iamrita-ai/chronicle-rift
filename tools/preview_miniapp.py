@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from chronicle_rift.game_engine import (  # noqa: E402
     buy_character,
+    resolve_arena,
     resolve_purchase,
     resolve_turn,
     select_character,
@@ -85,6 +86,22 @@ class PreviewHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length) or b"{}")
         path = self.path.split("?", 1)[0]
+        if path == "/api/arena/finish":
+            turn = resolve_arena(PLAYER, payload["outcome"], payload.get("hp_left"))
+            PLAYER = turn.player
+            self._json(
+                {
+                    "player": public_player_view(PLAYER),
+                    "turn": {
+                        "action": turn.action,
+                        "summary": turn.summary,
+                        "narrative": turn.summary,
+                        "victory": turn.victory,
+                        "effects": turn.effects,
+                    },
+                }
+            )
+            return
         if path == "/api/actions":
             turn = resolve_turn(PLAYER, payload["action"])
             PLAYER = turn.player

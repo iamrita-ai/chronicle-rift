@@ -9,6 +9,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237c6cff' d='M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://telegram.org/js/telegram-web-app.js?61"></script>
+    <script defer src="./arena.js"></script>
     <script defer src="./app.js"></script>
   </head>
   <body>
@@ -106,118 +107,110 @@
         <p class="foot-note">Every turn is verified by Telegram and saved server-side.</p>
       </section>
 
-      <!-- ==================== BATTLE ==================== -->
-      <section class="screen" id="screen-battle" data-screen="battle">
-        <div class="battle-top">
-          <button class="icon-btn" id="battle-back" type="button" aria-label="Back to home">
+      <!-- ==================== BATTLE (real-time arena) ==================== -->
+      <section class="screen battle-screen" id="screen-battle" data-screen="battle">
+        <canvas id="arena-canvas"></canvas>
+
+        <div class="fight-hud">
+          <div class="hud-side hud-player">
+            <div class="hud-row">
+              <span class="hud-name" id="hud-p-name">You</span>
+              <span class="hud-hp" id="hud-p-hp">0/0</span>
+            </div>
+            <div class="hud-bar"><i class="ghost" id="hud-p-ghost"></i><i class="fill" id="hud-p-fill"></i></div>
+            <div class="hud-stam"><i id="hud-p-stam"></i></div>
+          </div>
+          <div class="hud-mid">
+            <span class="hud-chapter" id="hud-chapter">CH 1</span>
+            <span class="hud-vs">VS</span>
+          </div>
+          <div class="hud-side hud-enemy">
+            <div class="hud-row">
+              <span class="hud-hp" id="hud-e-hp">0/0</span>
+              <span class="hud-name" id="hud-e-name">Enemy</span>
+            </div>
+            <div class="hud-bar rtl"><i class="ghost" id="hud-e-ghost"></i><i class="fill" id="hud-e-fill"></i></div>
+            <div class="hud-stam rtl"><i id="hud-e-stam"></i></div>
+          </div>
+        </div>
+
+        <div class="fight-topbtns">
+          <button class="icon-btn" id="fight-exit" type="button" aria-label="Leave the arena">
             <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
           </button>
-          <span class="chip chip-chapter" id="chapter-chip">CH 1</span>
-          <div class="battle-top-right">
-            <button class="icon-btn" id="sound-btn" type="button" aria-label="Toggle sound" aria-pressed="true">
-              <svg viewBox="0 0 24 24" id="sound-on-ic"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>
-              <svg viewBox="0 0 24 24" id="sound-off-ic" hidden><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
-            </button>
-            <button class="icon-btn" id="help-btn" type="button" aria-label="How to play">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.2a2.8 2.8 0 1 1 4.1 2.5c-.9.5-1.5 1-1.5 2.1"/><path d="M12 16.9h.01"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <div class="arena" id="arena">
-          <div class="arena-bg" aria-hidden="true"></div>
-          <div class="arena-floor" aria-hidden="true"></div>
-          <div class="arena-vignette" aria-hidden="true"></div>
-
-          <!-- foe nameplate -->
-          <div class="plate plate-foe">
-            <div class="plate-row">
-              <b id="foe-name">Ash Warden</b>
-              <span class="lvl-chip" id="foe-level">LV 1</span>
-              <span class="boss-tag" id="boss-tag" hidden>BOSS</span>
-            </div>
-            <div class="bar bar-enemy"><span id="enemy-hp-bar"></span></div>
-            <div class="plate-caption"><span id="enemy-hp-text">— / —</span><em id="foe-ability"></em></div>
-          </div>
-
-          <!-- fighters -->
-          <div class="fighters">
-            <div class="fighter hero" id="hero-fighter">
-              <div class="fx-layer" id="hero-fx"></div>
-              <img id="hero-sprite" src="./art/char-emberblade.png" alt="Your hero" />
-              <div class="shadow" aria-hidden="true"></div>
-              <div class="float-layer" id="hero-float-layer" aria-hidden="true"></div>
-            </div>
-            <div class="fighter foe" id="foe-fighter">
-              <div class="fx-layer" id="foe-fx"></div>
-              <img id="foe-sprite" src="./art/mob-ash-warden.png" alt="Enemy" />
-              <div class="shadow" aria-hidden="true"></div>
-              <div class="float-layer" id="enemy-float-layer" aria-hidden="true"></div>
-            </div>
-          </div>
-
-          <!-- enemy intent -->
-          <div class="intent" id="intent-card">
-            <span class="intent-ic" id="intent-ic" aria-hidden="true"></span>
-            <div class="intent-copy">
-              <span class="intent-kicker">NEXT ENEMY MOVE</span>
-              <strong id="intent-name">…</strong>
-              <small id="intent-advice"></small>
-            </div>
-            <span class="intent-num" id="intent-num">—</span>
-          </div>
-
-          <div class="arena-banner" id="arena-banner" hidden>
-            <b id="banner-title">VICTORY</b>
-            <span id="banner-sub"></span>
-          </div>
-        </div>
-
-        <!-- hero vitals -->
-        <div class="vitals-bar">
-          <div class="vital">
-            <div class="vital-row"><span>VITALITY</span><b id="hero-hp-text">— / —</b></div>
-            <div class="bar bar-hp"><span id="hero-hp-bar"></span></div>
-          </div>
-          <div class="vital">
-            <div class="vital-row"><span>ENERGY</span><b id="hero-energy-text">— / —</b></div>
-            <div class="bar bar-energy"><span id="hero-energy-bar"></span></div>
-          </div>
-          <div class="focus-row">
-            <span class="focus-label">FOCUS</span>
-            <span class="pips" id="focus-pips"></span>
-          </div>
-          <div class="status-chips" id="status-chips"></div>
-        </div>
-
-        <p class="coach" id="coach"><b>TIP</b><span id="coach-text">Loading…</span></p>
-
-        <!-- healing rail: the only shop-like thing inside a fight -->
-        <div class="heal-rail" id="heal-rail">
-          <span class="rail-label">HEALING</span>
-          <div class="rail-strip" id="rail-strip"></div>
-        </div>
-
-        <div class="attacks" id="attack-controls"></div>
-        <div class="supports">
-          <button class="support guard" type="button" data-action="guard">
-            <svg viewBox="0 0 24 24"><path d="M12 3 5 5.8v5.4c0 4.4 2.9 7.6 7 9.8 4.1-2.2 7-5.4 7-9.8V5.8z"/></svg>
-            <b>Guard</b><small>Block · +1 EN</small>
+          <button class="icon-btn" id="fight-sound" type="button" aria-label="Toggle sound" aria-pressed="true">
+            <svg viewBox="0 0 24 24" id="sound-on-ic"><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>
+            <svg viewBox="0 0 24 24" id="sound-off-ic" hidden><path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
           </button>
-          <button class="support scout" type="button" data-action="scout">
-            <svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg>
-            <b>Scout</b><small>Expose · +1 EN</small>
-          </button>
-          <button class="support rest" type="button" data-action="rest">
-            <svg viewBox="0 0 24 24"><path d="M12 3c.8 4-3 5.4-3 9a5 5 0 0 0 10 0c0-1.5-.6-2.7-1.4-3.7-.3 1.2-1 2.1-2.1 2.7.7-2.7-.6-6-3.5-8z"/></svg>
-            <b>Rest</b><small>Heal · +2 EN</small>
+          <button class="icon-btn" id="fight-help" type="button" aria-label="How to play">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/><path d="M9.4 9.2a2.8 2.8 0 1 1 4.1 2.5c-.9.5-1.5 1-1.5 2.1"/><path d="M12 16.9h.01"/></svg>
           </button>
         </div>
 
-        <section class="panel log-panel">
-          <span class="eyebrow">BATTLE LOG</span>
-          <ul class="log" id="battle-log"></ul>
-        </section>
+        <!-- LEFT: movement joystick (forward / back / left / right) -->
+        <div class="joystick" id="joystick">
+          <div class="stick-base">
+            <span class="stick-hint stick-up">▲</span>
+            <span class="stick-hint stick-down">▼</span>
+            <span class="stick-hint stick-left">◀</span>
+            <span class="stick-hint stick-right">▶</span>
+          </div>
+          <div class="stick-knob" id="stick-knob"></div>
+        </div>
+
+        <!-- RIGHT: permanent attack + three ability buttons -->
+        <div class="pad" id="pad">
+          <button class="ability-btn slot-1" id="ab-0" type="button">
+            <img alt="" id="ab-0-img" />
+            <span class="cd-arc" id="ab-0-arc"></span>
+            <b class="cd-num" id="ab-0-num"></b>
+            <small class="ab-label" id="ab-0-label"></small>
+          </button>
+          <button class="ability-btn slot-2" id="ab-1" type="button">
+            <img alt="" id="ab-1-img" />
+            <span class="cd-arc" id="ab-1-arc"></span>
+            <b class="cd-num" id="ab-1-num"></b>
+            <small class="ab-label" id="ab-1-label"></small>
+          </button>
+          <button class="ability-btn slot-3" id="ab-2" type="button">
+            <img alt="" id="ab-2-img" />
+            <span class="cd-arc" id="ab-2-arc"></span>
+            <b class="cd-num" id="ab-2-num"></b>
+            <small class="ab-label" id="ab-2-label"></small>
+          </button>
+          <button class="attack-btn" id="btn-attack" type="button">
+            <img src="./art/icon-attack.png" alt="Basic attack" />
+            <span class="atk-ring"></span>
+          </button>
+        </div>
+
+        <!-- pre-fight / post-fight overlay -->
+        <div class="fight-overlay" id="fight-overlay">
+          <div class="matchup">
+            <div class="mu-side">
+              <img id="mu-hero-art" src="./art/char-emberblade.png" alt="" />
+              <b id="mu-hero-name">Emberblade</b>
+              <small id="mu-hero-stats"></small>
+            </div>
+            <span class="mu-vs">VS</span>
+            <div class="mu-side">
+              <img id="mu-foe-art" src="./art/mob-ash-warden.png" alt="" />
+              <b id="mu-foe-name">Ash Warden</b>
+              <small id="mu-foe-stats"></small>
+            </div>
+          </div>
+          <p class="mu-note" id="mu-note">Move with the joystick, tap the sword to attack, use abilities when they are off cooldown.</p>
+          <div class="heal-rail" id="heal-rail">
+            <span class="rail-label">HEALING</span>
+            <div class="rail-strip" id="rail-strip"></div>
+          </div>
+          <button class="play-btn" id="fight-start" type="button">
+            <span class="play-glow" aria-hidden="true"></span>
+            <b id="fight-start-label">FIGHT</b>
+            <small id="fight-start-sub">Chapter 1</small>
+          </button>
+          <button class="wide-btn" id="fight-leave" type="button">Back to home</button>
+        </div>
       </section>
 
       <!-- ==================== STORE ==================== -->
