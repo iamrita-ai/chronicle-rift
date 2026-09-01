@@ -46,18 +46,24 @@ from random import SystemRandom
 from typing import Any, Protocol
 
 from .models import (
+    CHARACTERS,
     DEFAULT_ENEMY,
+    ELEMENTS,
     ITEMS,
     LOOT_TABLE,
     MAX_RELIC_LEVEL,
+    MONSTERS,
     add_item,
     apply_relic_bonuses,
+    character_of,
     ensure_game_defaults,
+    monster_for_chapter,
     relic_cost,
     remove_item,
 )
 
-VALID_ACTIONS = frozenset({"strike", "guard", "scout", "rest"})
+ATTACK_ACTIONS = frozenset({"strike", "heavy", "special"})
+VALID_ACTIONS = frozenset({"strike", "heavy", "special", "guard", "scout", "rest"})
 
 STRIKE_MIN, STRIKE_MAX = 4, 8
 CRIT_MULTIPLIER = 1.5
@@ -170,6 +176,9 @@ class PurchaseResolution:
 # Enemy intent helpers
 # --------------------------------------------------------------------------- #
 def enemy_pattern(enemy: dict[str, Any]) -> tuple[str, ...]:
+    monster = MONSTERS.get(str(enemy.get("id", "")))
+    if monster:
+        return tuple(monster["pattern"])
     return ENEMY_PATTERNS.get(str(enemy.get("name")), DEFAULT_PATTERN)
 
 
@@ -368,23 +377,30 @@ def resolve_turn(
             )
 
     # --- your move -----------------------------------------------------------
-    if action == "strike":
-        if game["energy"] <= 0:
+    if action in ATTACK_ACTIONS:
+        character = character_of(game)
+        spec = character["attacks"][action]
+        element = character["element"]
+        cost = int(spec["cost"])
+        if game["energy"] < cost:
             summary = (
-                "Your blade is ready, but your Rift Energy is spent. "
-                "Guard, Scout, or Rest to recover it (they are all free)."
+                f"{spec['name']} needs {cost} Rift Energy and you have {game['energy']}. "
+                "Guard, Scout or Rest to recover it (they are all free)."
             )
             game["last_narrative"] = summary
             effects["enemy_intent"] = enemy["intent"]
+            effects["blocked_action"] = True
             return TurnResolution(updated, action, summary, victory=False, effects=effects)
-        game["energy"] -= 1
-        roll = random_source.randint(STRIKE_MIN, STRIKE_MAX)
-        damage = roll + game["level"] + game.get("attack_bonus", 0)
-        if roll == STRIKE_MAX:
+
+        game["energy"] -= cost
+        roll = random_source.randint(int(spec["min"]), int(spec["max"]))
+        damage = roll + game["level"] + game.get("attack_bonus", 0) + int(game.get("power", 0))
+        if roll == int(spec["max"]):
             damage = int(round(damage * CRIT_MULTIPLIER))
             effects["crit"] = True
-            game["burn"] = BURN_TURNS
-            effects["burn_applied"] = BURN_TURNS
+            if action != "special":
+                game["burn"] = BURN_TURNS
+                effects["burn_applied"] = BURN_TURNS
         if game.get("exposed_strikes", 0) > 0:
             game["exposed_strikes"] -= 1
             damage += EXPOSED_BONUS
@@ -393,23 +409,57 @@ def resolve_turn(
             damage += focus_before * FOCUS_DAMAGE
             effects["focus_spent"] = focus_before
             game["focus"] = 0
+
+        effects["attack_name"] = spec["name"]
+        effects["element"] = element
+        extra_lines: list[str] = []
+
+        if action == "special":
+            effects["special"] = element
+            if element == "fire":
+                game["burn"] = 3
+                effects["burn_applied"] = 3
+                extra_lines.append("Cinder clings to it: BURNING for 3 turns.")
+            elif element == "ice":
+                game["stun"] = int(game.get("stun", 0)) + 1
+                effects["stun"] = game["stun"]
+                extra_lines.append("It is FROZEN and will miss its next move.")
+            elif element == "wind":
+                second = max(1, damage // 2)
+                damage += second
+                game["energy"] = min(game["max_energy"], game["energy"] + 2)
+                effects["second_hit"] = second
+                extra_lines.append(
+                    f"The gale strikes a second time for {second} and returns 2 Energy."
+                )
+            elif element == "arcane":
+                effects["pierce"] = True
+                drain = max(1, damage // 2)
+                healed = min(game["max_hp"] - game["hp"], drain)
+                game["hp"] += healed
+                effects["healed"] = healed
+                extra_lines.append(f"The siphon pierces every ward and returns {healed} Vitality.")
+            elif element == "shadow":
+                drain = max(1, int(damage * 0.4))
+                healed = min(game["max_hp"] - game["hp"], drain)
+                game["hp"] += healed
+                game["focus"] = min(MAX_FOCUS, int(game.get("focus", 0)) + 2)
+                effects["healed"] = healed
+                extra_lines.append(
+                    f"You harvest {healed} Vitality and surge to {game['focus']} Focus."
+                )
+
         enemy["hp"] = max(0, enemy["hp"] - damage)
         effects["damage"] = damage
         if effects["crit"]:
-            lines.append(
-                f"CRITICAL HIT! Your strike tears through for {damage} damage "
-                f"and leaves the {enemy['name']} burning."
-            )
-        elif effects["focus_spent"] and effects["exposed_used"]:
-            lines.append(
-                f"You spend {effects['focus_spent']} Focus on the exposed foe: {damage} damage."
-            )
+            lines.append(f"CRITICAL {spec['name']}! {damage} damage tears through.")
         elif effects["focus_spent"]:
-            lines.append(f"You unleash {effects['focus_spent']} Focus for {damage} damage.")
-        elif effects["exposed_used"]:
-            lines.append(f"You exploit the enemy's exposure and strike for {damage} damage.")
+            lines.append(
+                f"{spec['name']} spends {effects['focus_spent']} Focus for {damage} damage."
+            )
         else:
-            lines.append(f"You strike for {damage} rift damage.")
+            lines.append(f"{spec['name']} lands for {damage} damage.")
+        lines.extend(extra_lines)
     elif action == "guard":
         ward_roll = random_source.randint(GUARD_MIN, GUARD_MAX)
         ward_strength = ward_roll + game.get("ward_bonus", 0)
@@ -574,9 +624,7 @@ def resolve_purchase(player: dict[str, Any], item_id: str) -> PurchaseResolution
         relics[item_id] = level + 1
         apply_relic_bonuses(game)
         verb = "forge" if level == 0 else "reforge"
-        summary = (
-            f"You {verb} the {item['name']} to level {relics[item_id]}. {item['ability']}."
-        )
+        summary = f"You {verb} the {item['name']} to level {relics[item_id]}. {item['ability']}."
         game["last_narrative"] = summary
         return PurchaseResolution(updated, item_id, item["name"], summary, success=True)
 
@@ -639,9 +687,7 @@ def upgrade_relic(player: dict[str, Any], item_id: str) -> ItemResolution:
     game["coins"] -= price
     game["relics"][item_id] = level + 1
     apply_relic_bonuses(game)
-    summary = (
-        f"The {item['name']} is reforged to level {level + 1}. {item['ability']}."
-    )
+    summary = f"The {item['name']} is reforged to level {level + 1}. {item['ability']}."
     game["last_narrative"] = summary
     return ItemResolution(
         updated,
@@ -778,6 +824,77 @@ def use_item(player: dict[str, Any], item_id: str) -> ItemResolution:
     return ItemResolution(updated, item_id, item["name"], summary, True, effects=effects)
 
 
+def buy_character(player: dict[str, Any], character_id: str) -> ItemResolution:
+    """Purchase a playable character with coins."""
+    character = CHARACTERS.get(character_id)
+    if character is None:
+        return ItemResolution(
+            player, character_id, "Unknown", "No such hero exists.", False, reason="unknown_item"
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    if character_id in game["owned_characters"]:
+        return ItemResolution(
+            updated,
+            character_id,
+            character["name"],
+            f"You already command {character['name']}.",
+            False,
+            reason="already_owned",
+        )
+    price = int(character["cost"])
+    if game["coins"] < price:
+        return ItemResolution(
+            updated,
+            character_id,
+            character["name"],
+            f"{character['name']} costs {price} coins, but you have {game['coins']}.",
+            False,
+            reason="insufficient_coins",
+        )
+    game["coins"] -= price
+    game["owned_characters"].append(character_id)
+    game["character"] = character_id
+    apply_relic_bonuses(game)
+    game["hp"] = game["max_hp"]
+    game["energy"] = game["max_energy"]
+    element = ELEMENTS[character["element"]]["name"]
+    summary = f"{character['name']} joins your Chronicle. Element: {element}."
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, character_id, character["name"], summary, True, effects={"character": character_id}
+    )
+
+
+def select_character(player: dict[str, Any], character_id: str) -> ItemResolution:
+    """Switch to an owned character; stats are rebuilt from that hero."""
+    character = CHARACTERS.get(character_id)
+    if character is None:
+        return ItemResolution(
+            player, character_id, "Unknown", "No such hero exists.", False, reason="unknown_item"
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    if character_id not in game["owned_characters"]:
+        return ItemResolution(
+            updated,
+            character_id,
+            character["name"],
+            f"You do not own {character['name']} yet.",
+            False,
+            reason="not_owned",
+        )
+    game["character"] = character_id
+    apply_relic_bonuses(game)
+    summary = f"{character['name']} steps into the arena."
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, character_id, character["name"], summary, True, effects={"character": character_id}
+    )
+
+
 def roll_loot(chapter: int, boss: bool, rng: RandomSource) -> list[str]:
     """Roll the reward chest for a cleared chapter."""
     rolls = BOSS_LOOT_ROLLS if boss else LOOT_ROLLS
@@ -806,11 +923,13 @@ HOW_TO_PLAY = (
     "One monster blocks each chapter. Empty its HP bar and you clear the chapter, "
     "collect Gold, Coins and Points, and a stronger monster appears.\n\n"
     "THE ONE RULE\n"
-    "Each turn you tap ONE of four buttons. Then the enemy does exactly the move "
+    "Each turn you tap ONE button. Then the enemy does exactly the move "
     "it warned you about (look for the ‘Next:’ line). That is the whole game.\n\n"
-    "YOUR FOUR MOVES\n"
-    "⚔️ Strike — costs 1 Energy. Damage = roll 4–8 + your Level + gear + Focus. "
-    "A perfect roll is a CRITICAL (x1.5) and sets the enemy on fire.\n"
+    "YOUR SIX MOVES\n"
+    "⚔️ Strike — 1 Energy. Your quick attack; a perfect roll is a CRITICAL (x1.5).\n"
+    "💥 Heavy — 2 Energy. Slower, much bigger damage.\n"
+    "✨ Special — 3 Energy. Your hero's elemental move: burn, freeze, double-hit, "
+    "pierce or lifesteal, depending on which hero you play.\n"
     "🛡 Guard — free. Blocks 2–5 of the incoming hit, +1 Energy, +1 Focus. "
     "Use it on the turn the enemy telegraphs Heavy Blow or Rift Quake.\n"
     "🔮 Scout — free. +1–3 XP, +1 Energy, +1 Focus, and EXPOSES the enemy "
@@ -841,11 +960,12 @@ RULES = (
     "⚖️ ChronicleRift — Rules & Regulations\n\n"
     "1. Start with /start or /play. Your hero is saved to the Chronicle and only "
     "you can change it.\n"
-    "2. One move per turn — Strike, Guard, Scout, or Rest. Strikes spend Rift "
-    "Energy; the other three are free and refill it.\n"
+    "2. One move per turn — Strike (1 EN), Heavy (2 EN), Special (3 EN), Guard, "
+    "Scout, or Rest. Attacks spend Rift Energy; the other three are free and "
+    "refill it. Without the Energy the attack is refused and the turn is kept.\n"
     "3. The enemy always telegraphs its next move. It will perform exactly that "
     "move after yours — no hidden dice on its side.\n"
-    "4. Focus builds 1 per non-Strike move (max 3) and is fully spent by your "
+    "4. Focus builds 1 per non-attack move (max 3) and is fully spent by your "
     "next Strike for +2 damage each.\n"
     "5. Critical hits apply Burn: 3 damage at the start of each of your next "
     "2 turns.\n"
@@ -861,33 +981,41 @@ RULES = (
     "table. Nothing is ever taken from your satchel without your input.\n"
     "11. Relics upgrade to level 5. Each level costs more coins and adds the "
     "same bonus again.\n"
-    "12. One hero per account, verified server-side. Automation, spoofing, or "
+    "12. Heroes are bought with coins in the Mini App; each has its own element, "
+    "stats and three attacks. Monsters carry their own ability and scale in "
+    "toughness with the chapter.\n"
+    "13. One account per player, verified server-side. Automation, spoofing, or "
     "abuse costs you access. Play fair and keep the realm honourable.\n"
 )
 
 
-def _next_enemy(chapter: int) -> dict[str, Any]:
-    scale = max(chapter - 1, 0)
-    if chapter % BOSS_EVERY == 0:
-        hp = int((DEFAULT_ENEMY["max_hp"] + scale * 5) * BOSS_HP_FACTOR)
-        enemy = {
-            "name": "Ebon Colossus",
-            "hp": hp,
-            "max_hp": hp,
-            "attack": DEFAULT_ENEMY["attack"] + scale + BOSS_ATTACK_BONUS,
-            "art": "🌑",
-            "boss": True,
-            "intent_index": 0,
-        }
-    else:
-        enemy = {
-            "name": "Rift Stalker" if chapter % 2 == 0 else "Obsidian Herald",
-            "hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
-            "max_hp": DEFAULT_ENEMY["max_hp"] + scale * 5,
-            "attack": DEFAULT_ENEMY["attack"] + scale,
-            "art": "🜂" if chapter % 2 == 0 else "🗿",
-            "boss": False,
-            "intent_index": 0,
-        }
+def build_enemy(chapter: int) -> dict[str, Any]:
+    """Spawn the monster that guards ``chapter``, scaled to its toughness curve."""
+    monster_id = monster_for_chapter(chapter)
+    spec = MONSTERS[monster_id]
+    tier = max(0, chapter - 1)
+    boss = bool(spec.get("boss"))
+    hp = int(spec["hp"] + spec["hp_growth"] * tier)
+    if boss:
+        hp = int(hp * 1.25)
+    enemy = {
+        "id": monster_id,
+        "name": spec["name"],
+        "hp": hp,
+        "max_hp": hp,
+        "attack": int(spec["attack"] + spec["attack_growth"] * tier),
+        "art": spec["emoji"],
+        "sprite": spec["art"],
+        "element": spec["element"],
+        "ability": spec["ability"],
+        "level": chapter,
+        "boss": boss,
+        "intent_index": 0,
+    }
     sync_intent(enemy)
     return enemy
+
+
+def _next_enemy(chapter: int) -> dict[str, Any]:
+    """Backwards-compatible alias used by the victory path."""
+    return build_enemy(chapter)

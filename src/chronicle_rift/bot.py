@@ -95,10 +95,10 @@ def build_telegram_application(
             chat.id,
             settings,
             "intro-moves",
-            "⚔️ Strike · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
+            "⚔️ Three attacks · 🛡 Guard · 🔮 Scout · 🔥 Rest — one move per turn.",
         )
         await chat.send_message(
-            HOW_TO_PLAY,
+            "The full guide lives inside the app — open it and tap the ? button.",
             reply_markup=_home_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
@@ -110,7 +110,7 @@ def build_telegram_application(
         if not chat:
             return
         await chat.send_message(
-            RULES,
+            "Rules, items and elements are explained inside the app. Open it below.",
             reply_markup=_home_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
@@ -428,29 +428,13 @@ async def _show_dashboard(
                 "One enemy blocks each chapter. Empty its HP bar and the chapter is yours.",
             )
             intro = (
-                "# Welcome to ChronicleRift\n\n"
-                "**What is this?** A turn-based fantasy RPG inside Telegram. "
-                "One monster guards each chapter — empty its HP bar to clear it "
-                "and earn Gold, Coins and Points.\n\n"
-                "**How do I play?** Each turn you tap ONE of the four buttons "
-                "below. The enemy always shows its next move in the `Next:` "
-                "line, then does exactly that. Guard the big hits, Scout to set "
-                "up, Strike to cash in.\n\n"
-                "**Can I lose?** Never permanently — at 0 HP you wake at camp "
-                "fully healed and keep everything. Tap 📖 How to Play or send "
-                "/help for the 60-second guide.\n\n"
+                "# ChronicleRift\n\n"
+                "Tap **✨ Open ChronicleRift** below — heroes, store, satchel "
+                "and the animated battle stage all live inside the app.\n\n"
             )
             plain_intro = (
-                "👋 Welcome to ChronicleRift — a turn-based RPG inside Telegram.\n\n"
-                "WHAT IS IT: one monster guards each chapter. Empty its HP bar "
-                "to clear the chapter and earn Gold, Coins and Points.\n"
-                "HOW TO PLAY: each turn tap ONE of the four buttons below. The "
-                "enemy tells you its next move on the 'Next:' line, then does "
-                "exactly that — Guard the big hits, Scout to set up, Strike to "
-                "cash in.\n"
-                "NO PERMADEATH: at 0 HP you wake at camp fully healed.\n\n"
-                "Tap 📖 How to Play (or send /help) for the full 60-second "
-                "guide.\n\n"
+                "ChronicleRift — tap 'Open ChronicleRift' below.\n"
+                "Heroes, store, satchel and the animated battles are in the app.\n\n"
             )
             rich = intro + rich
             plain = plain_intro + plain
@@ -534,9 +518,7 @@ def action_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inli
     """Build a compact shared keyboard for rich and ordinary Telegram messages."""
     rows: list[list[InlineKeyboardButton]] = []
     if mini_app_url and include_mini_app:
-        rows.append(
-            [InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))]
-        )
+        rows.append([InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))])
     rows += [
         [
             _styled_button(_ACTION_LABELS["strike"], "act:strike", _ACTION_STYLES["strike"]),
@@ -617,8 +599,7 @@ def bag_message(player: dict[str, Any]) -> str:
             lines.append(f"{item['emoji']} {item['name']} — level {level}/{MAX_RELIC_LEVEL}")
     lines.append("")
     lines.append(
-        "Using, selling and upgrading items happens in the Rift Arena Mini App — "
-        "tap ▶️ PLAY below."
+        "Using, selling and upgrading items happens in the Rift Arena Mini App — tap ▶️ PLAY below."
     )
     return "\n".join(lines)
 
@@ -627,9 +608,7 @@ def _home_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inlin
     """A minimal navigation keyboard for the rules / about surfaces."""
     rows: list[list[InlineKeyboardButton]] = []
     if mini_app_url and include_mini_app:
-        rows.append(
-            [InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))]
-        )
+        rows.append([InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))])
     rows += [
         [_styled_button("🏟 Dashboard", "dashboard", _STYLE_PRIMARY)],
         [

@@ -11,8 +11,10 @@ from .game_engine import (
     ItemResolution,
     PurchaseResolution,
     TurnResolution,
+    buy_character,
     resolve_purchase,
     resolve_turn,
+    select_character,
     sell_item,
     upgrade_relic,
     use_item,
@@ -149,7 +151,6 @@ class GameService:
             "Your chronicle changed in another window. Please try again."
         ) from last_conflict
 
-
     async def use_item(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
         """Consume a satchel item (free action) and persist the result."""
         return await self._apply_item_op(identity, item_id, lambda p: use_item(p, item_id))
@@ -165,6 +166,20 @@ class GameService:
     async def upgrade_relic(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
         """Spend coins to raise a relic's level and persist the result."""
         return await self._apply_item_op(identity, item_id, lambda p: upgrade_relic(p, item_id))
+
+    async def buy_character(self, identity: TelegramIdentity, character_id: str) -> PurchaseResult:
+        """Buy a playable character with coins."""
+        return await self._apply_item_op(
+            identity, character_id, lambda p: buy_character(p, character_id)
+        )
+
+    async def select_character(
+        self, identity: TelegramIdentity, character_id: str
+    ) -> PurchaseResult:
+        """Switch the active character."""
+        return await self._apply_item_op(
+            identity, character_id, lambda p: select_character(p, character_id)
+        )
 
     async def _apply_item_op(
         self,

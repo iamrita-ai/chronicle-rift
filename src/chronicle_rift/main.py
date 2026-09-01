@@ -38,7 +38,7 @@ class ActionRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["strike", "guard", "scout", "rest"]
+    action: Literal["strike", "heavy", "special", "guard", "scout", "rest"]
 
 
 class BuyRequest(BaseModel):
@@ -313,6 +313,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return await _item_endpoint(
             request, request.app.state.game_service.upgrade_relic(identity, payload.item_id)
+        )
+
+    @app.post("/api/character/buy", tags=["mini-app"])
+    async def buy_character_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request, request.app.state.game_service.buy_character(identity, payload.item_id)
+        )
+
+    @app.post("/api/character/select", tags=["mini-app"])
+    async def select_character_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request, request.app.state.game_service.select_character(identity, payload.item_id)
         )
 
     @app.post(runtime_settings.webhook_path, include_in_schema=False)

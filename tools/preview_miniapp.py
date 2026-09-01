@@ -21,8 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from chronicle_rift.game_engine import (  # noqa: E402
+    buy_character,
     resolve_purchase,
     resolve_turn,
+    select_character,
     sell_item,
     upgrade_relic,
     use_item,
@@ -99,12 +101,22 @@ class PreviewHandler(BaseHTTPRequestHandler):
                 }
             )
             return
-        if path in {"/api/use", "/api/sell", "/api/upgrade"}:
+        if path in {
+            "/api/use",
+            "/api/sell",
+            "/api/upgrade",
+            "/api/character/buy",
+            "/api/character/select",
+        }:
             item_id = payload["item_id"]
             if path == "/api/use":
                 result = use_item(PLAYER, item_id)
             elif path == "/api/sell":
                 result = sell_item(PLAYER, item_id, int(payload.get("quantity", 1)))
+            elif path == "/api/character/buy":
+                result = buy_character(PLAYER, item_id)
+            elif path == "/api/character/select":
+                result = select_character(PLAYER, item_id)
             else:
                 result = upgrade_relic(PLAYER, item_id)
             if result.success:

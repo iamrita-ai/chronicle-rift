@@ -93,9 +93,10 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
     enemy = view["enemy"]
     battle = view.get("battle", {})
     intent = enemy.get("intent") or {}
-    inventory = ", ".join(
-        f"{_safe_text(card['name'])} x{card['quantity']}" for card in view["inventory"]
-    ) or "empty"
+    inventory = (
+        ", ".join(f"{_safe_text(card['name'])} x{card['quantity']}" for card in view["inventory"])
+        or "empty"
+    )
     narrative = _safe_text(view["narrative"])
     progress_text = _progress_bar(hero["progress"])
     inventory_bullets = inventory.replace(", ", "\n- ")
@@ -167,8 +168,7 @@ def shop_messages(player: dict[str, Any]) -> tuple[str, str]:
     plain_lines = []
     for item in view["shop"]:
         plain_lines.append(
-            f"{item['emoji']} {item['name']} - {_price_of(item)} Coins\n"
-            f"{_itemize(item['ability'])}"
+            f"{item['emoji']} {item['name']} - {_price_of(item)} Coins\n{_itemize(item['ability'])}"
         )
     plain = (
         f"🏪 The Marketplace\n"

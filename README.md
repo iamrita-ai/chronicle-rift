@@ -53,7 +53,7 @@ then a stronger monster steps up.
 
 ### Items, loot and the Forge (v0.5)
 
-The Mini App is now the main way to play; the bot is the launcher.
+The Mini App is the main way to play; the bot is the launcher.
 
 | Category | Items |
 | --- | --- |
@@ -74,6 +74,42 @@ The Mini App is now the main way to play; the bot is the launcher.
   impact flashes and ward rings. Mute from the speaker button in the header.
 - API: `POST /api/use`, `POST /api/sell`, `POST /api/upgrade` alongside `/api/actions` and
   `/api/buy`. All of them are server-authoritative and Telegram-authenticated.
+
+### Heroes, three attacks and the animated stage (v0.6)
+
+The Mini App is now a **multi-screen game**. The bot is only the launcher.
+
+**Home screen** — your hero portrait, wallet, quest card with the next monster, and tiles for
+**Store**, **Satchel**, **Heroes** and **Settings**. A bottom tab bar switches screens.
+**Battle screen** — nothing but combat: the animated stage, your three attacks, Guard/Scout/Rest,
+a **healing-only quick rail**, and an **instant restock prompt the moment your last potion is
+used**, so you never have to leave a fight to shop.
+
+**Playable heroes** — each has its own element, stats and three attacks (1 / 2 / 3 Energy):
+
+| Hero | Element | Cost | HP / EN / PWR | Special |
+| --- | --- | --- | --- | --- |
+| **Emberblade** | Fire | free | 24 / 5 / +1 | *Cinder Wave* — sets Burning for 3 turns |
+| **Frostward** | Snow (Ice) | 260🪙 | 30 / 4 / +0 | *Deep Freeze* — stuns, skipping the counterattack |
+| **Stormcaller** | Wind | 420🪙 | 22 / 6 / +1 | *Gale Flurry* — second hit at 50%, refunds 2 Energy |
+| **Arcanist** | Magic (Arcane) | 640🪙 | 22 / 6 / +2 | *Mind Siphon* — unblockable, heals 50% of damage |
+| **Voidreaper** | Shadow | 950🪙 | 26 / 5 / +3 | *Soul Harvest* — heals 40% and grants 2 Focus |
+
+Damage = `roll + Level + gear + Power (+2 exposed, +2 per Focus)`; a maximum roll is a
+**critical ×1.5**. Attacks cost Energy — with none left the turn is refused, not wasted.
+
+**Monsters have their own ability and toughness per level.** Ash Warden (Fire · Cinder Aura),
+Obsidian Herald (Arcane · Rift Drain), Rift Stalker (Shadow · Mend), Frost Revenant (Ice ·
+Rime Grip) rotate by chapter and gain HP and attack each tier; the **Ebon Colossus** (Shadow ·
+Rift Quake, +25% HP) is the boss every 5th chapter.
+
+**Animation.** Both fighters are full-body 2D sprites — hero facing right, monster facing left —
+composited with `mix-blend-mode: screen`. They idle-bob, lunge on attack, wind up and glow on a
+special, recoil and flash white when hit, and dissolve on defeat, with element-tinted slashes,
+impact bursts, shockwave rings, floating damage/heal numbers and a camera shake on heavy hits.
+Motion respects `prefers-reduced-motion`, and shake/sound/haptics are toggleable in Settings.
+
+New endpoints: `POST /api/character/buy` and `POST /api/character/select`.
 
 ### Preview the Mini App without Telegram
 

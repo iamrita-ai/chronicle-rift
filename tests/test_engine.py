@@ -40,7 +40,7 @@ def test_strike_is_immutable_and_applies_both_sides() -> None:
 
     assert player == original
     assert result.player["game"]["energy"] == 4
-    assert result.player["game"]["enemy"]["hp"] == 12
+    assert result.player["game"]["enemy"]["hp"] == 11  # 5 roll + level 1 + power 1
     assert result.player["game"]["hp"] == 19
     assert result.victory is False
 
@@ -57,7 +57,7 @@ def test_victory_advances_chapter_and_persists_rewards() -> None:
     assert game["chapter"] == 2
     assert game["gold"] == 38
     assert game["level"] == 2
-    assert game["enemy"]["name"] == "Rift Stalker"
+    assert game["enemy"]["name"] == "Obsidian Herald"
 
 
 def test_guard_reduces_incoming_damage_and_restores_energy() -> None:
@@ -126,10 +126,10 @@ def test_perfect_strike_roll_is_a_critical_hit() -> None:
     result = resolve_turn(player, "strike", QueuedRandom([8, 2]))
     game = result.player["game"]
 
-    # Damage: round((8 + level 1) * 1.5) = 14; enemy 18 - 14 = 4.
+    # Damage: round((8 + level 1 + power 1) * 1.5) = 15; enemy 18 - 15 = 3.
     assert result.effects["crit"] is True
-    assert result.effects["damage"] == 14
-    assert game["enemy"]["hp"] == 4
+    assert result.effects["damage"] == 15
+    assert game["enemy"]["hp"] == 3
     assert "CRITICAL" in result.summary
 
 
@@ -142,10 +142,10 @@ def test_scout_exposes_enemy_and_buffs_next_strike() -> None:
     assert scouted.player["game"]["exposed_strikes"] == 1
 
     struck = resolve_turn(scouted.player, "strike", QueuedRandom([4, 2]))
-    # Damage: 4 + level 1 + 2 exposure bonus + 1 Focus x2 = 9.
+    # Damage: 4 + level 1 + power 1 + 2 exposure + 1 Focus x2 = 10.
     assert struck.effects["exposed_used"] is True
     assert struck.effects["focus_spent"] == 1
-    assert struck.effects["damage"] == 9
+    assert struck.effects["damage"] == 10
     assert struck.player["game"]["exposed_strikes"] == 0
 
 
@@ -231,14 +231,16 @@ def test_focus_builds_on_setup_moves_and_is_spent_by_strike() -> None:
     assert guarded.player["game"]["focus"] == 2
 
     struck = resolve_turn(guarded.player, "strike", FixedRandom(4))
-    # 4 roll + level 1 + 2 Focus x2 = 9 damage, and the meter empties.
+    # 4 roll + level 1 + power 1 + 2 Focus x2 = 10 damage, and the meter empties.
     assert struck.effects["focus_spent"] == 2
-    assert struck.effects["damage"] == 9
+    assert struck.effects["damage"] == 10
     assert struck.player["game"]["focus"] == 0
 
 
 def test_critical_hit_applies_burn_that_ticks_next_turn() -> None:
     player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["enemy"]["hp"] = 60  # survive the crit so burn can tick
+    player["game"]["enemy"]["max_hp"] = 60
 
     crit = resolve_turn(player, "strike", FixedRandom(8))
     assert crit.player["game"]["burn"] == 2
@@ -372,3 +374,83 @@ def test_legacy_documents_migrate_to_the_new_inventory() -> None:
     assert legacy["game"]["relics"] == {"blade": 1, "ward": 1}
     assert legacy["game"]["attack_bonus"] == 2
     assert legacy["game"]["ward_bonus"] == 2
+
+
+def test_each_character_has_three_distinct_attacks() -> None:
+    from chronicle_rift.models import CHARACTERS
+
+    for character in CHARACTERS.values():
+        assert set(character["attacks"]) == {"strike", "heavy", "special"}
+        costs = [attack["cost"] for attack in character["attacks"].values()]
+        assert costs == [1, 2, 3]
+
+
+def test_heavy_attack_costs_two_energy_and_hits_harder() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+
+    result = resolve_turn(player, "heavy", FixedRandom(10))
+
+    assert result.player["game"]["energy"] == 3
+    assert result.effects["damage"] == 12  # 10 + level 1 + power 1
+    assert "Molten Cleave" in result.summary
+
+
+def test_fire_special_burns_and_ice_special_freezes() -> None:
+    from chronicle_rift.models import ensure_game_defaults
+
+    fire = new_player(user_id=7, first_name="Rita", username=None)
+    burned = resolve_turn(fire, "special", FixedRandom(6))
+    assert burned.player["game"]["burn"] == 3
+    assert burned.effects["special"] == "fire"
+
+    ice = new_player(user_id=8, first_name="Rita", username=None)
+    ice["game"]["character"] = "frostward"
+    ice["game"]["owned_characters"] = ["emberblade", "frostward"]
+    ensure_game_defaults(ice)
+    assert ice["game"]["max_hp"] == 30
+
+    # The freeze eats the counterattack that would have landed this turn.
+    frozen = resolve_turn(ice, "special", FixedRandom(5))
+    assert frozen.effects["stunned"] is True
+    assert frozen.effects["enemy_damage"] == 0
+
+
+def test_arcane_special_pierces_wards_and_heals() -> None:
+    from chronicle_rift.models import ensure_game_defaults
+
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["character"] = "arcanist"
+    player["game"]["owned_characters"] = ["emberblade", "arcanist"]
+    player["game"]["hp"] = 5
+    ensure_game_defaults(player)
+
+    result = resolve_turn(player, "special", FixedRandom(7))
+
+    assert result.effects["pierce"] is True
+    assert result.effects["healed"] > 0
+
+
+def test_attacks_are_refused_without_enough_energy() -> None:
+    player = new_player(user_id=7, first_name="Rita", username=None)
+    player["game"]["energy"] = 2
+
+    result = resolve_turn(player, "special", FixedRandom(6))
+
+    assert result.effects["blocked_action"] is True
+    assert result.player["game"]["energy"] == 2
+    assert result.player["game"]["enemy"]["hp"] == 18
+
+
+def test_monsters_scale_and_carry_their_own_ability() -> None:
+    from chronicle_rift.game_engine import build_enemy
+
+    early = build_enemy(1)
+    late = build_enemy(9)
+    boss = build_enemy(5)
+
+    assert early["name"] == "Ash Warden"
+    assert late["max_hp"] > early["max_hp"]
+    assert late["attack"] > early["attack"]
+    assert boss["boss"] is True
+    assert boss["ability"]
+    assert early["sprite"] == "mob-ash-warden"

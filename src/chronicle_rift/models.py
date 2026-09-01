@@ -12,6 +12,10 @@ DEFAULT_ENEMY = {
     "max_hp": 18,
     "attack": 5,
     "art": "🔥",
+    "sprite": "mob-ash-warden",
+    "element": "fire",
+    "ability": "Cinder Aura",
+    "level": 1,
     "boss": False,
     # Index into the enemy's fixed, telegraphed attack rotation.
     "intent_index": 0,
@@ -343,6 +347,8 @@ def new_player(*, user_id: int, first_name: str, username: str | None) -> dict[s
             "chapter": 1,
             "quest_title": "The Ember Gate",
             "quest_objective": "Empty the Ash Warden's HP bar to open Chapter 2.",
+            "character": DEFAULT_CHARACTER,
+            "owned_characters": [DEFAULT_CHARACTER],
             "enemy": deepcopy(DEFAULT_ENEMY),
             # Satchel: {item_id: quantity}
             "inventory": {"salve": 2, "elixir": 1},
@@ -360,6 +366,14 @@ def new_player(*, user_id: int, first_name: str, username: str | None) -> dict[s
 def ensure_game_defaults(player: dict[str, Any]) -> None:
     """Add defaults for missing fields and migrate older documents in place."""
     game = player.setdefault("game", {})
+    if game.get("character") not in CHARACTERS:
+        game["character"] = DEFAULT_CHARACTER
+    owned = game.get("owned_characters")
+    if not isinstance(owned, list) or not owned:
+        owned = [DEFAULT_CHARACTER]
+    game["owned_characters"] = [c for c in dict.fromkeys(owned) if c in CHARACTERS]
+    if game["character"] not in game["owned_characters"]:
+        game["owned_characters"].append(game["character"])
     for key, value in GAME_DEFAULTS.items():
         if key not in game:
             game[key] = deepcopy(value)
@@ -385,9 +399,7 @@ def ensure_game_defaults(player: dict[str, Any]) -> None:
         inventory = migrated
     if not isinstance(inventory, dict):
         inventory = {}
-    game["inventory"] = {
-        k: int(v) for k, v in inventory.items() if k in ITEMS and int(v) > 0
-    }
+    game["inventory"] = {k: int(v) for k, v in inventory.items() if k in ITEMS and int(v) > 0}
 
     game.setdefault("purchased", [])
     enemy = game.setdefault("enemy", deepcopy(DEFAULT_ENEMY))
@@ -409,8 +421,12 @@ def apply_relic_bonuses(game: dict[str, Any]) -> None:
     game["ward_bonus"] = totals["ward"]
     game["luck_bonus"] = totals["luck"]
     game["luck"] = totals["luck"] > 0
-    game["max_hp"] = int(game.get("base_max_hp", BASE_MAX_HP)) + totals["max_hp"]
-    game["max_energy"] = BASE_MAX_ENERGY + totals["max_energy"]
+    character = character_of(game)
+    hero_level = max(1, int(game.get("level", 1)))
+    game["power"] = int(character["power"])
+    game["base_max_hp"] = int(character["hp"]) + LEVEL_HP_GAIN * (hero_level - 1)
+    game["max_hp"] = game["base_max_hp"] + totals["max_hp"]
+    game["max_energy"] = int(character["energy"]) + totals["max_energy"]
     game["hp"] = min(int(game.get("hp", game["max_hp"])), game["max_hp"])
     game["energy"] = min(int(game.get("energy", game["max_energy"])), game["max_energy"])
 
@@ -501,10 +517,15 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     enemy = game["enemy"]
     intent = sync_intent(enemy)
     threshold = level_threshold(game)
-    shop = [item_card(item_id, level=int((game.get("relics") or {}).get(item_id, 0)))
-            for item_id in BUYABLE_IDS]
+    shop = [
+        item_card(item_id, level=int((game.get("relics") or {}).get(item_id, 0)))
+        for item_id in BUYABLE_IDS
+    ]
     inventory = inventory_view(game)
+    character = character_card(game["character"], game)
     return {
+        "character": character,
+        "roster": [character_card(cid, game) for cid in CHARACTERS],
         "hero": {
             "name": player["profile"]["hero_name"],
             "level": game["level"],
@@ -524,6 +545,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "luck_bonus": game.get("luck_bonus", 0),
             "focus": int(game.get("focus", 0)),
             "max_focus": MAX_FOCUS,
+            "power": int(game.get("power", 0)),
         },
         "quest": {
             "chapter": game["chapter"],
@@ -536,6 +558,11 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "max_hp": enemy["max_hp"],
             "attack": enemy.get("attack", DEFAULT_ENEMY["attack"]),
             "art": enemy["art"],
+            "sprite": enemy.get("sprite", "mob-ash-warden"),
+            "element": enemy.get("element", "fire"),
+            "element_color": ELEMENTS.get(enemy.get("element", "fire"), ELEMENTS["fire"])["color"],
+            "ability": enemy.get("ability", ""),
+            "level": enemy.get("level", game["chapter"]),
             "boss": bool(enemy.get("boss", False)),
             "intent": intent,
         },
@@ -585,3 +612,310 @@ def _relic_bonus_text(item_id: str, level: int) -> str:
 
 def _clean_name(value: str) -> str:
     return " ".join(value.split())[:32]
+
+
+# --------------------------------------------------------------------------- #
+# PLAYABLE CHARACTERS
+#
+# Every hero has an element, three distinct attacks and its own base stats.
+# The starter is free; the rest are bought with coins and kept forever.
+# --------------------------------------------------------------------------- #
+ELEMENTS: dict[str, dict[str, str]] = {
+    "fire": {"name": "Fire", "color": "#ff8a3c", "status": "Burn"},
+    "ice": {"name": "Snow", "color": "#7fd8ff", "status": "Freeze"},
+    "wind": {"name": "Wind", "color": "#8ef0a8", "status": "Gale"},
+    "arcane": {"name": "Magic", "color": "#b48bff", "status": "Siphon"},
+    "shadow": {"name": "Shadow", "color": "#ff6ac1", "status": "Drain"},
+}
+
+CHARACTERS: dict[str, dict[str, Any]] = {
+    "emberblade": {
+        "name": "Emberblade",
+        "title": "Ash-Sworn Vanguard",
+        "element": "fire",
+        "art": "char-emberblade",
+        "cost": 0,
+        "hp": 24,
+        "energy": 5,
+        "power": 1,
+        "blurb": "A balanced brawler whose specials set the enemy alight.",
+        "attacks": {
+            "strike": {
+                "name": "Ember Slash",
+                "cost": 1,
+                "min": 4,
+                "max": 8,
+                "desc": "Quick, reliable cut.",
+            },
+            "heavy": {
+                "name": "Molten Cleave",
+                "cost": 2,
+                "min": 7,
+                "max": 13,
+                "desc": "Slow, heavy, and loud.",
+            },
+            "special": {
+                "name": "Cinder Wave",
+                "cost": 3,
+                "min": 5,
+                "max": 10,
+                "desc": "Sets the enemy BURNING for 3 turns.",
+            },
+        },
+    },
+    "frostward": {
+        "name": "Frostward",
+        "title": "Warden of the Still Cold",
+        "element": "ice",
+        "art": "char-frostward",
+        "cost": 260,
+        "hp": 30,
+        "energy": 4,
+        "power": 0,
+        "blurb": "Tanky. Her special freezes the enemy so it loses a whole turn.",
+        "attacks": {
+            "strike": {
+                "name": "Rime Jab",
+                "cost": 1,
+                "min": 3,
+                "max": 7,
+                "desc": "Chilling quick hit.",
+            },
+            "heavy": {
+                "name": "Glacier Smash",
+                "cost": 2,
+                "min": 8,
+                "max": 14,
+                "desc": "Crushing overhead blow.",
+            },
+            "special": {
+                "name": "Deep Freeze",
+                "cost": 3,
+                "min": 4,
+                "max": 8,
+                "desc": "FREEZES the enemy: it misses its next move.",
+            },
+        },
+    },
+    "stormcaller": {
+        "name": "Stormcaller",
+        "title": "Dancer on the Gale",
+        "element": "wind",
+        "art": "char-stormcaller",
+        "cost": 420,
+        "hp": 22,
+        "energy": 6,
+        "power": 1,
+        "blurb": "Fast and cheap to run: the special strikes twice and gives Energy back.",
+        "attacks": {
+            "strike": {
+                "name": "Twin Slice",
+                "cost": 1,
+                "min": 4,
+                "max": 9,
+                "desc": "Two quick daggers.",
+            },
+            "heavy": {
+                "name": "Cyclone Kick",
+                "cost": 2,
+                "min": 6,
+                "max": 12,
+                "desc": "Spinning wind blow.",
+            },
+            "special": {
+                "name": "Gale Flurry",
+                "cost": 3,
+                "min": 4,
+                "max": 8,
+                "desc": "Hits twice and refunds 2 Rift Energy.",
+            },
+        },
+    },
+    "arcanist": {
+        "name": "Arcanist",
+        "title": "Reader of the Rift",
+        "element": "arcane",
+        "art": "char-arcanist",
+        "cost": 640,
+        "hp": 22,
+        "energy": 6,
+        "power": 2,
+        "blurb": "Glass cannon. Her special pierces wards and heals her for half the damage.",
+        "attacks": {
+            "strike": {
+                "name": "Rune Bolt",
+                "cost": 1,
+                "min": 5,
+                "max": 9,
+                "desc": "Focused arcane dart.",
+            },
+            "heavy": {
+                "name": "Sigil Burst",
+                "cost": 2,
+                "min": 7,
+                "max": 14,
+                "desc": "Detonating glyph.",
+            },
+            "special": {
+                "name": "Mind Siphon",
+                "cost": 3,
+                "min": 6,
+                "max": 11,
+                "desc": "Unblockable, and heals you for half the damage dealt.",
+            },
+        },
+    },
+    "voidreaper": {
+        "name": "Voidreaper",
+        "title": "The Last Quiet Thing",
+        "element": "shadow",
+        "art": "char-voidreaper",
+        "cost": 950,
+        "hp": 26,
+        "energy": 5,
+        "power": 3,
+        "blurb": "Late-game monster: the special drains life and charges Focus instantly.",
+        "attacks": {
+            "strike": {
+                "name": "Reap",
+                "cost": 1,
+                "min": 5,
+                "max": 10,
+                "desc": "A clean scythe pull.",
+            },
+            "heavy": {
+                "name": "Grave Arc",
+                "cost": 2,
+                "min": 8,
+                "max": 15,
+                "desc": "A wide, brutal sweep.",
+            },
+            "special": {
+                "name": "Soul Harvest",
+                "cost": 3,
+                "min": 6,
+                "max": 12,
+                "desc": "Drains 40% of the damage as health and fills 2 Focus.",
+            },
+        },
+    },
+}
+
+DEFAULT_CHARACTER = "emberblade"
+
+# --------------------------------------------------------------------------- #
+# ENEMY ROSTER — each monster has an element, its own toughness curve and a
+# signature ability that appears in its telegraphed rotation.
+# --------------------------------------------------------------------------- #
+MONSTERS: dict[str, dict[str, Any]] = {
+    "ash_warden": {
+        "name": "Ash Warden",
+        "element": "fire",
+        "art": "mob-ash-warden",
+        "emoji": "🔥",
+        "hp": 18,
+        "attack": 5,
+        "hp_growth": 6,
+        "attack_growth": 1,
+        "ability": "Cinder Aura — its Heavy Blow leaves you scorched.",
+        "pattern": ("slash", "slash", "heavy"),
+    },
+    "obsidian_herald": {
+        "name": "Obsidian Herald",
+        "element": "arcane",
+        "art": "mob-obsidian-herald",
+        "emoji": "🗿",
+        "hp": 20,
+        "attack": 5,
+        "hp_growth": 6,
+        "attack_growth": 1,
+        "ability": "Rift Drain — siphons your Energy so you cannot swing.",
+        "pattern": ("slash", "drain", "heavy"),
+    },
+    "rift_stalker": {
+        "name": "Rift Stalker",
+        "element": "shadow",
+        "art": "mob-rift-stalker",
+        "emoji": "🜂",
+        "hp": 22,
+        "attack": 6,
+        "hp_growth": 7,
+        "attack_growth": 1,
+        "ability": "Mend — it knits itself back together if you let it.",
+        "pattern": ("slash", "heavy", "mend"),
+    },
+    "frost_revenant": {
+        "name": "Frost Revenant",
+        "element": "ice",
+        "art": "mob-frost-revenant",
+        "emoji": "❄️",
+        "hp": 26,
+        "attack": 6,
+        "hp_growth": 7,
+        "attack_growth": 2,
+        "ability": "Rime Grip — heavy, slow, and it drains Energy too.",
+        "pattern": ("heavy", "slash", "drain"),
+    },
+    "ebon_colossus": {
+        "name": "Ebon Colossus",
+        "element": "shadow",
+        "art": "mob-ebon-colossus",
+        "emoji": "🌑",
+        "hp": 40,
+        "attack": 8,
+        "hp_growth": 11,
+        "attack_growth": 2,
+        "boss": True,
+        "ability": "Rift Quake — a boss slam that flattens an unguarded hero.",
+        "pattern": ("slash", "heavy", "drain", "quake"),
+    },
+}
+
+# Which monster guards which chapter (bosses every 5th).
+CHAPTER_MONSTERS = ("ash_warden", "obsidian_herald", "rift_stalker", "frost_revenant")
+
+
+def monster_for_chapter(chapter: int) -> str:
+    if chapter % 5 == 0:
+        return "ebon_colossus"
+    return CHAPTER_MONSTERS[(chapter - 1) % len(CHAPTER_MONSTERS)]
+
+
+def character_of(game: dict[str, Any]) -> dict[str, Any]:
+    return CHARACTERS.get(
+        str(game.get("character", DEFAULT_CHARACTER)), CHARACTERS[DEFAULT_CHARACTER]
+    )
+
+
+def character_card(character_id: str, game: dict[str, Any]) -> dict[str, Any]:
+    character = CHARACTERS[character_id]
+    owned = character_id in (game.get("owned_characters") or [DEFAULT_CHARACTER])
+    element = ELEMENTS[character["element"]]
+    return {
+        "id": character_id,
+        "name": character["name"],
+        "title": character["title"],
+        "element": character["element"],
+        "element_name": element["name"],
+        "element_color": element["color"],
+        "status": element["status"],
+        "art": character["art"],
+        "cost": character["cost"],
+        "hp": character["hp"],
+        "energy": character["energy"],
+        "power": character["power"],
+        "blurb": character["blurb"],
+        "owned": owned,
+        "active": character_id == game.get("character", DEFAULT_CHARACTER),
+        "attacks": [
+            {
+                "id": attack_id,
+                "name": spec["name"],
+                "cost": spec["cost"],
+                "min": spec["min"],
+                "max": spec["max"],
+                "desc": spec["desc"],
+            }
+            for attack_id, spec in character["attacks"].items()
+        ],
+    }
