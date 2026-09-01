@@ -7,9 +7,9 @@ from typing import Any
 
 from pymongo import AsyncMongoClient, ReturnDocument
 from pymongo.asynchronous.collection import AsyncCollection
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from .models import new_player
+from .models import ensure_game_defaults, new_player
 
 
 class DatabaseUnavailable(RuntimeError):
@@ -48,24 +48,55 @@ class PlayerRepository:
         players = self._collection()
         document = new_player(user_id=user_id, first_name=first_name, username=username)
         try:
-            player = await players.find_one_and_update(
+            # Upsert the full document on insert only. We deliberately do NOT combine
+            # $setOnInsert with a nested $set on the same path: MongoDB rejects mixes of
+            # $setOnInsert (whole "profile") and $set (profile.first_name) with
+            # ConflictingUpdateOperators (code 40). The profile is refreshed in a
+            # separate, conflict-free operation below.
+            result = await players.update_one(
                 {"_id": user_id},
-                {
-                    "$setOnInsert": document,
-                    "$set": {
-                        "profile.first_name": document["profile"]["first_name"],
-                        "profile.username": document["profile"]["username"],
-                        "updated_at": datetime.now(UTC),
-                    },
-                },
+                {"$setOnInsert": document},
                 upsert=True,
-                return_document=ReturnDocument.AFTER,
             )
+            if result.upserted_id is not None:
+                player = await players.find_one({"_id": user_id})
+            else:
+                player = await players.find_one_and_update(
+                    {"_id": user_id},
+                    {
+                        "$set": {
+                            "profile.first_name": document["profile"]["first_name"],
+                            "profile.username": document["profile"]["username"],
+                            "updated_at": datetime.now(UTC),
+                        }
+                    },
+                    return_document=ReturnDocument.AFTER,
+                )
+        except DuplicateKeyError:
+            # A concurrent request inserted the profile between our lookup and write.
+            player = await players.find_one({"_id": user_id})
         except PyMongoError as exc:
             raise DatabaseUnavailable("Could not load the player profile.") from exc
         if not player:
             raise DatabaseUnavailable("MongoDB did not return the player profile.")
+        await self._migrate_defaults(player)
         return player
+
+    async def _migrate_defaults(self, player: dict[str, Any]) -> None:
+        """Add newer game fields to older documents, persisting them once if changed."""
+        game = player["game"]
+        before = set(game.keys())
+        ensure_game_defaults(player)
+        if set(game.keys()) == before:
+            return
+        try:
+            await self._collection().update_one(
+                {"_id": player["_id"]},
+                {"$set": {"game": player["game"], "updated_at": datetime.now(UTC)}},
+            )
+        except PyMongoError:
+            # Migration is best-effort; the next saved turn will carry the full state.
+            return
 
     async def save_game(self, player: dict[str, Any], *, expected_revision: int) -> dict[str, Any]:
         """Persist game state with optimistic concurrency protection."""

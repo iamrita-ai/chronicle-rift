@@ -4,7 +4,12 @@ import pytest
 
 from chronicle_rift.config import Settings
 from chronicle_rift.models import new_player
-from chronicle_rift.rich_messages import RichMessageClient, dashboard_messages
+from chronicle_rift.rich_messages import (
+    RichMessageClient,
+    about_message,
+    dashboard_messages,
+    shop_messages,
+)
 
 
 class FakeBot:
@@ -22,6 +27,20 @@ def test_dashboard_has_rich_table_and_plain_fallback() -> None:
     assert "<details>" in rich
     assert "Ash Warden" in plain
     assert "Inventory:" in plain
+    assert "Coins" in plain
+    assert "Points" in plain
+    assert "XP" in plain
+
+
+def test_shop_and_about_messages_render() -> None:
+    player = new_player(user_id=1, first_name="Rita", username=None)
+    rich, plain = shop_messages(player)
+    assert "The Marketplace" in plain
+    assert "Coins" in plain
+
+    rich, plain = about_message(version="0.2.0")
+    assert "0.2.0" in plain
+    assert "ChronicleRift" in plain
 
 
 @pytest.mark.asyncio

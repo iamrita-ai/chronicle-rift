@@ -14,10 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from telegram import Update
 
+from . import __version__
 from .bot import build_telegram_application
 from .config import Settings
 from .database import DatabaseUnavailable, PlayerRepository
-from .game_service import GameBusyError, GameService
+from .game_service import GameBusyError, GameService, PurchaseError
 from .identity import TelegramIdentity
 from .models import public_player_view
 from .narrator import GroqNarrator
@@ -38,6 +39,14 @@ class ActionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     action: Literal["strike", "guard", "scout", "rest"]
+
+
+class BuyRequest(BaseModel):
+    """Mini App Marketplace purchase payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -180,7 +189,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
             ) from None
-        return {"player": player}
+        return {"player": player, "version": __version__}
 
     @app.post("/api/actions", tags=["mini-app"])
     async def play_action(
@@ -206,6 +215,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "summary": turn.summary,
                 "narrative": turn.narrative,
                 "victory": turn.victory,
+            },
+        }
+
+    @app.post("/api/buy", tags=["mini-app"])
+    async def buy_item(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        try:
+            result = await request.app.state.game_service.buy_item(identity, payload.item_id)
+        except GameBusyError:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Game state changed; retry the purchase.",
+            ) from None
+        except (DatabaseUnavailable, PurchaseError):
+            LOGGER.warning("Database unavailable while completing Mini App purchase")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
+            ) from None
+        return {
+            "player": public_player_view(result.player),
+            "turn": {
+                "item_id": result.item_id,
+                "item_name": result.item_name,
+                "summary": result.summary,
+                "success": result.success,
+                "reason": result.reason,
             },
         }
 

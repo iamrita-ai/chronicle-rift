@@ -59,3 +59,30 @@ async def test_turn_retries_once_after_a_concurrent_update() -> None:
 
     assert turn.action == "rest"
     assert store.player["revision"] == 3
+
+
+@pytest.mark.asyncio
+async def test_purchase_spends_coins_and_saves() -> None:
+    store = MemoryStore()
+    store.player["game"]["coins"] = 100
+    service = GameService(store, TestNarrator())
+
+    result = await service.buy_item(TelegramIdentity(11, "Rita", "rift"), "blade")
+
+    assert result.success is True
+    assert result.player["game"]["coins"] == store.player["game"]["coins"]
+    assert store.player["game"]["coins"] == 100 - 60
+    assert store.player["revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_purchase_returns_failure_without_saving_when_unaffordable() -> None:
+    store = MemoryStore()
+    store.player["game"]["coins"] = 0
+    service = GameService(store, TestNarrator())
+
+    result = await service.buy_item(TelegramIdentity(11, "Rita", "rift"), "blade")
+
+    assert result.success is False
+    assert result.reason == "insufficient_coins"
+    assert store.player["revision"] == 1

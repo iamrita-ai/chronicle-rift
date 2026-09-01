@@ -93,16 +93,21 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
     enemy = view["enemy"]
     inventory = ", ".join(_safe_text(item) for item in view["inventory"])
     narrative = _safe_text(view["narrative"])
-
+    progress_text = _progress_bar(hero["progress"])
     inventory_bullets = inventory.replace(", ", "\n- ")
 
     rich = (
         f"# ⚔️ {_safe_text(hero['name'])}'s Chronicle\n\n"
         f"> **Chapter {quest['chapter']} · {_safe_text(quest['title'])}**\n\n"
+        f"## 📈 Progression · Level {hero['level']}\n"
+        f"{progress_text} `{hero['xp']} / {hero['xp_to_next']} XP`\n\n"
         "| Hero | Value |\n| --- | ---: |\n"
-        f"| Level | {hero['level']} |\n| HP | {hero['hp']} / {hero['max_hp']} |\n"
+        f"| HP | {hero['hp']} / {hero['max_hp']} |\n"
         f"| Energy | {hero['energy']} / {hero['max_energy']} |\n"
-        f"| XP | {hero['xp']} |\n| Gold | {hero['gold']} |\n\n"
+        f"| XP | {hero['xp']} |\n"
+        f"| Gold | {hero['gold']} |\n"
+        f"| 🪙 Coins | {hero['coins']} |\n"
+        f"| ✨ Points | {hero['points']} |\n\n"
         f"## {enemy['art']} Enemy: {_safe_text(enemy['name'])}\n"
         f"**HP:** {enemy['hp']} / {enemy['max_hp']}\n\n"
         f"## Quest\n{_safe_text(quest['objective'])}\n\n"
@@ -112,12 +117,39 @@ def dashboard_messages(player: dict[str, Any]) -> tuple[str, str]:
     plain = (
         f"⚔️ {hero['name']}'s Chronicle\n"
         f"Chapter {quest['chapter']}: {quest['title']}\n\n"
-        f"Level {hero['level']} | HP {hero['hp']}/{hero['max_hp']} | "
-        f"Energy {hero['energy']}/{hero['max_energy']}\n"
-        f"XP {hero['xp']} | Gold {hero['gold']}\n\n"
+        f"Level {hero['level']} — {progress_text} {hero['xp']}/{hero['xp_to_next']} XP\n\n"
+        f"HP {hero['hp']}/{hero['max_hp']} | Energy {hero['energy']}/{hero['max_energy']}\n"
+        f"Gold {hero['gold']} | Coins {hero['coins']} | Points {hero['points']}\n\n"
         f"{enemy['art']} {enemy['name']}: {enemy['hp']}/{enemy['max_hp']} HP\n"
         f"Quest: {quest['objective']}\n"
-        f"Inventory: {inventory}\n\n{narrative}"
+        f"Inventory: {inventory}\n\n{narrative}\n\n"
+        f"Tip: spend coins with /shop for helpful upgrades."
+    )
+    return rich, plain
+
+
+def shop_messages(player: dict[str, Any]) -> tuple[str, str]:
+    """Build the Marketplace rich markdown and plain-text fallback."""
+    view = public_player_view(player)
+    hero = view["hero"]
+    lines = []
+    for item in view["shop"]:
+        lines.append(
+            f"{item['emoji']} **{_safe_text(item['name'])}** \\- {item['cost']} Coins\n"
+            f"{_safe_text(item['desc'])}"
+        )
+    rich_shop = "\n\n".join(lines)
+    rich = f"# 🏪 The Marketplace\n\n> **Your balance:** 🪙 {hero['coins']} Coins\n\n{rich_shop}"
+    plain_lines = []
+    for item in view["shop"]:
+        plain_lines.append(
+            f"{item['emoji']} {item['name']} - {item['cost']} Coins\n{_itemize(item['desc'])}"
+        )
+    plain = (
+        f"🏪 The Marketplace\n"
+        f"Balance: {hero['coins']} Coins\n\n"
+        + "\n\n".join(plain_lines)
+        + "\n\nTap an item to buy it."
     )
     return rich, plain
 
@@ -127,6 +159,35 @@ def turn_messages(player: dict[str, Any], narrative: str) -> tuple[str, str]:
     rich, plain = dashboard_messages(player)
     safe_narrative = _safe_text(narrative)
     return f"{rich}\n\n## ✨ Chronicle Update\n{safe_narrative}", f"{plain}\n\n✨ {safe_narrative}"
+
+
+def about_message(*, version: str) -> tuple[str, str]:
+    """Return game version and feature information (rich, plain)."""
+    rich = (
+        f"# ℹ️ About ChronicleRift\n\n"
+        f"> **Version** `{_safe_text(version)}`\n\n"
+        "A turn-based tactical fantasy adventure for Telegram. Defeat enemies, earn "
+        "Gold, Coins and Points, level up, and shop for upgrades. Rules are resolved "
+        "server-side and every turn is saved to your Chronicle.\n\n"
+        "Commands: `/play`, `/shop`, `/rules`, `/about`, `/app`."
+    )
+    plain = (
+        f"ℹ️ ChronicleRift v{version}\n\n"
+        "A turn-based tactical fantasy adventure for Telegram. Defeat enemies, earn "
+        "Gold, Coins and Points, level up, and shop for upgrades.\n\n"
+        "Commands: /play, /shop, /rules, /about, /app."
+    )
+    return rich, plain
+
+
+def _progress_bar(fraction: float, width: int = 10) -> str:
+    """Render a small monospaced progress bar (e.g. ████░░░░░░)."""
+    blocks = max(0, min(width, int(round(fraction * width))))
+    return "█" * blocks + "░" * (width - blocks)
+
+
+def _itemize(value: str) -> str:
+    return "  • " + value
 
 
 def _safe_text(value: object) -> str:

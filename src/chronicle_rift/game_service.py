@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .database import ConcurrentUpdateError
-from .game_engine import TurnResolution, resolve_turn
+from .game_engine import PurchaseResolution, TurnResolution, resolve_purchase, resolve_turn
 from .identity import TelegramIdentity
 from .models import public_player_view
 
@@ -29,6 +29,10 @@ class GameBusyError(RuntimeError):
     """Raised after concurrent action retries are exhausted."""
 
 
+class PurchaseError(RuntimeError):
+    """Raised when a shop purchase cannot be completed."""
+
+
 @dataclass(frozen=True, slots=True)
 class GameTurn:
     """Authoritative result from one persisted game action."""
@@ -38,6 +42,18 @@ class GameTurn:
     summary: str
     narrative: str
     victory: bool
+
+
+@dataclass(frozen=True, slots=True)
+class PurchaseResult:
+    """Authoritative result from one persisted shop purchase."""
+
+    player: dict[str, Any]
+    item_id: str
+    item_name: str
+    summary: str
+    success: bool
+    reason: str | None = None
 
 
 class GameService:
@@ -82,6 +98,39 @@ class GameService:
                 summary=resolution.summary,
                 narrative=narrative,
                 victory=resolution.victory,
+            )
+        raise GameBusyError(
+            "Your chronicle changed in another window. Please try again."
+        ) from last_conflict
+
+    async def buy_item(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
+        """Spend coins on a shop item and atomically save with conflict retries."""
+        last_conflict: ConcurrentUpdateError | None = None
+        for _ in range(self._max_retries):
+            current = await self.dashboard(identity)
+            resolution: PurchaseResolution = resolve_purchase(current, item_id)
+            if not resolution.success:
+                return PurchaseResult(
+                    player=current,
+                    item_id=resolution.item_id,
+                    item_name=resolution.item_name,
+                    summary=resolution.summary,
+                    success=False,
+                    reason=resolution.reason,
+                )
+            try:
+                saved = await self._store.save_game(
+                    resolution.player, expected_revision=current["revision"]
+                )
+            except ConcurrentUpdateError as exc:
+                last_conflict = exc
+                continue
+            return PurchaseResult(
+                player=saved,
+                item_id=resolution.item_id,
+                item_name=resolution.item_name,
+                summary=resolution.summary,
+                success=True,
             )
         raise GameBusyError(
             "Your chronicle changed in another window. Please try again."

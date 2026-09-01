@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from chronicle_rift.config import Settings
-from chronicle_rift.game_service import GameTurn
+from chronicle_rift.game_service import GameTurn, PurchaseResult
 from chronicle_rift.main import create_app
 from chronicle_rift.models import new_player, public_player_view
 
@@ -68,6 +68,26 @@ class StubGameService:
             victory=False,
         )
 
+    async def buy_item(self, identity, item_id):
+        assert identity.user_id == 77
+        if item_id != "heal":
+            return PurchaseResult(
+                player=self.player,
+                item_id=item_id,
+                item_name="Unknown",
+                summary="No such item exists.",
+                success=False,
+                reason="unknown_item",
+            )
+        self.player["game"]["coins"] -= 25
+        return PurchaseResult(
+            player=self.player,
+            item_id=item_id,
+            item_name="Healing Draught",
+            summary="Stub purchase.",
+            success=True,
+        )
+
 
 @pytest.mark.asyncio
 async def test_signed_mini_app_header_reaches_only_server_owned_game_service(monkeypatch) -> None:
@@ -95,9 +115,34 @@ async def test_signed_mini_app_header_reaches_only_server_owned_game_service(mon
 
     assert profile.status_code == 200
     assert profile.json()["player"]["hero"]["name"] == "Verified"
+    assert profile.json()["version"]
     assert action.status_code == 200
     assert action.json()["turn"]["narrative"] == "A verified turn is written."
     assert forged.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_signed_buy_route_spends_coins(monkeypatch) -> None:
+    bot_token = "123:test"
+    settings = Settings(
+        bot_token=bot_token,
+        mongodb_uri="mongodb://localhost:27017",
+        groq_api_key="test",
+        bot_mode="polling",
+    )
+    app = create_app(settings)
+    app.state.game_service = StubGameService()
+    monkeypatch.setattr("chronicle_rift.security.time.time", lambda: 1_800_000_000)
+    transport = httpx.ASGITransport(app=app)
+    headers = {"X-Telegram-Init-Data": _signed_header(bot_token)}
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
+        buy = await client.post("/api/buy", headers=headers, json={"item_id": "heal"})
+        bad_item = await client.post("/api/buy", headers=headers, json={"item_id": "nope"})
+
+    assert buy.status_code == 200
+    assert buy.json()["turn"]["success"] is True
+    assert bad_item.status_code == 200
+    assert bad_item.json()["turn"]["success"] is False
 
 
 @pytest.mark.asyncio

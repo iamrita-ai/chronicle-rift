@@ -9,8 +9,9 @@
   let busy = false;
 
   function setText(selector, value) {
-    const element = document.querySelector(`[data-bind="${selector}"]`);
-    if (element) element.textContent = String(value ?? "—");
+    const elements = document.querySelectorAll(`[data-bind="${selector}"]`);
+    const text = String(value ?? "—");
+    elements.forEach((element) => { element.textContent = text; });
   }
 
   function percentage(value, total) {
@@ -60,8 +61,12 @@
     setText("hero-level", hero.level);
     setText("hero-xp", hero.xp);
     setText("hero-gold", hero.gold);
+    setText("hero-gold2", hero.gold);
+    setText("hero-coins", hero.coins);
+    setText("hero-points", hero.points);
     setText("hero-hp", `${hero.hp} / ${hero.max_hp}`);
     setText("hero-energy", `${hero.energy} / ${hero.max_energy}`);
+    setText("progress-caption", `${hero.xp} / ${hero.xp_to_next} XP`);
     setText("quest-title", `Chapter ${quest.chapter}: ${quest.title}`);
     setText("quest-objective", quest.objective);
     setText("enemy-art", enemy.art);
@@ -71,6 +76,8 @@
     setMeter("#hero-hp-bar", hero.hp, hero.max_hp);
     setMeter("#hero-energy-bar", hero.energy, hero.max_energy);
     setMeter("#enemy-hp-bar", enemy.hp, enemy.max_hp);
+    const progressBar = document.querySelector("#level-progress-bar");
+    if (progressBar) progressBar.style.width = percentage(hero.progress || 0, 1);
 
     const list = document.querySelector("#inventory-list");
     list.replaceChildren();
@@ -83,6 +90,74 @@
       const element = document.createElement("li");
       element.textContent = "No relics found";
       list.append(element);
+    }
+
+    renderShop(player.shop, hero.coins);
+  }
+
+  function renderShop(shop, coins) {
+    const container = document.querySelector("#shop-list");
+    if (!container) return;
+    container.replaceChildren();
+    if (!shop || !shop.length) {
+      const element = document.createElement("p");
+      element.className = "muted";
+      element.textContent = "The Marketplace is empty today.";
+      container.append(element);
+      return;
+    }
+    shop.forEach((item) => {
+      const affordable = coins >= item.cost;
+      const card = document.createElement("div");
+      card.className = "shop-card";
+
+      const info = document.createElement("div");
+      info.className = "shop-info";
+      const title = document.createElement("strong");
+      title.textContent = `${item.emoji} ${item.name}`;
+      const price = document.createElement("span");
+      price.className = "shop-price";
+      price.textContent = `${item.cost} 🪙`;
+      const desc = document.createElement("small");
+      desc.textContent = item.desc;
+      info.append(title, price, desc);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `shop-buy ${affordable ? "affordable" : "locked"}`;
+      button.textContent = affordable ? "Buy" : "Locked";
+      button.disabled = !affordable;
+      button.dataset.item = item.id;
+      button.addEventListener("click", () => buyItem(item.id));
+
+      card.append(info, button);
+      container.append(card);
+    });
+  }
+
+  async function buyItem(itemId) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (telegram && telegram.HapticFeedback) telegram.HapticFeedback.impactOccurred("soft");
+      displayStatus("Purchasing…");
+      const data = await request("/api/buy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: itemId }),
+      });
+      renderPlayer(data.player);
+      displayStatus("Verified ◈");
+      showToast(data.turn ? data.turn.summary : "Purchase complete.");
+      if (telegram && telegram.HapticFeedback) {
+        telegram.HapticFeedback.notificationOccurred("success");
+      }
+    } catch (error) {
+      displayStatus("Reconnect needed", true);
+      showToast(error instanceof Error ? error.message : "The Marketplace briefly lost its signal.");
+      if (telegram && telegram.HapticFeedback) telegram.HapticFeedback.notificationOccurred("error");
+    } finally {
+      setBusy(false);
     }
   }
 

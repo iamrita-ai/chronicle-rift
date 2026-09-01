@@ -18,7 +18,12 @@ The rules are deterministic and server-side. Groq adds concise atmosphere; it ne
 
 | Capability | Implementation |
 | --- | --- |
-| Telegram bot | Current `python-telegram-bot` handlers for `/start`, `/play`, `/status`, `/app`, and `/help` |
+| Telegram bot | Current `python-telegram-bot` handlers for `/start`, `/play`, `/status`, `/shop`, `/rules`, `/about`, `/app`, and `/help` |
+| Colored buttons | Native Bot API button styles (primary/success/danger) via PTB `InlineKeyboardButton(style=...)` |
+| Player economy | XP, **Coins**, **Points**, and **Gold** tracked server-side and exposed in the dashboard and Mini App |
+| Marketplace | Coin-purchasable consumables and permanent upgrades via `/shop` and `/api/buy` |
+| Level progress | XP progress bar toward the next level on the dashboard and Mini App |
+| Rules & version | `/rules` (Chronicle regulations) and `/about` (game version and info) commands |
 | Native Rich Messages | Explicit raw Bot API `sendRichMessage` adapter using `rich_message: {"markdown": ...}` |
 | Graceful fallback | If Rich Messages are disabled, unavailable, or rejected, an equivalent ordinary Telegram message is sent with the same controls |
 | Mini App | Responsive tactical UI served from the **same FastAPI service** at `/app/` |
@@ -32,9 +37,10 @@ The rules are deterministic and server-side. Groq adds concise atmosphere; it ne
 **Rich Message surface**
 
 1. A hero uses `/start` or `/play`.
-2. The bot shows Chapter, HP, Energy, XP, Gold, enemy essence, quest objective, inventory, and action buttons.
+2. The bot shows Chapter, HP, Energy, XP, Gold, **Coins**, **Points**, a **level-progress bar**, enemy essence, quest objective, inventory, and colored action buttons.
 3. Choosing **Strike**, **Guard**, **Scout**, or **Rest** resolves the turn on the server, saves it in MongoDB, and posts an AI-flavored update.
-4. Native Rich Message support is attempted first; clients or Bot API deployments without it still receive a normal, readable dashboard.
+4. `/shop` opens the Marketplace to spend Coins on healing, energy, and permanent upgrades; `/rules` lists the Chronicle's regulations; `/about` shows the game version.
+5. Native Rich Message support is attempted first; clients or Bot API deployments without it still receive a normal, readable dashboard.
 
 **Mini App surface**
 
@@ -169,8 +175,9 @@ All game API routes are same-origin and authenticated. The Mini App sends the si
 | --- | --- | --- | --- |
 | `/healthz` | `GET` | none | Deployment health response |
 | `/app/` | `GET` | Telegram UI handles launch | Tactical Mini App assets |
-| `/api/me` | `GET` | `X-Telegram-Init-Data: <signed initData>` | Authoritative player view |
+| `/api/me` | `GET` | `X-Telegram-Init-Data: <signed initData>` | Authoritative player view (includes `shop` and `version`) |
 | `/api/actions` | `POST` | same header | Accepts only `{ "action": "strike\|guard\|scout\|rest" }` |
+| `/api/buy` | `POST` | same header | Accepts only `{ "item_id": "heal\|elixir\|blade\|ward\|charm" }` |
 | `/telegram/webhook` | `POST` | Telegram webhook secret header | Internal bot update endpoint |
 
 The browser can also use `Authorization: tma <signed initData>`. No endpoint accepts a frontend `user_id`, profile object, arbitrary game state, or `initDataUnsafe`.
@@ -180,7 +187,7 @@ The browser can also use `Authorization: tma <signed initData>`. No endpoint acc
 - **Mini App HMAC:** `security.py` implements Telegram's documented `WebAppData` HMAC verification and rejects malformed, duplicate, tampered, future-dated, and expired payloads.
 - **Freshness:** signed `auth_date` is checked with a configurable maximum age (one hour by default).
 - **Webhook verification:** every webhook request must match Telegram's `X-Telegram-Bot-Api-Secret-Token` using constant-time comparison.
-- **Server authority:** stats, rewards, enemy damage, inventory, and progression live only in MongoDB. The Mini App submits a validated identity plus one action.
+- **Server authority:** stats, rewards, enemy damage, coins, points, inventory, shop purchases, and progression live only in MongoDB. The Mini App submits a validated identity plus one action or item purchase.
 - **Race handling:** MongoDB `revision` values provide optimistic concurrency; a simultaneous turn is retried against the latest authoritative state.
 - **AI boundary:** Groq receives only a short, server-generated game summary. Its text is cleaned for the Rich Message renderer, and mechanics remain deterministic.
 - **Secret hygiene:** fields are hidden from settings reprs, `.env*` is ignored except the placeholder example, and no credential is present in this repository.
