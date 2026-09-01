@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .database import ConcurrentUpdateError
@@ -42,6 +42,7 @@ class GameTurn:
     summary: str
     narrative: str
     victory: bool
+    effects: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,7 @@ class GameService:
                 summary=resolution.summary,
                 narrative=narrative,
                 victory=resolution.victory,
+                effects=resolution.effects,
             )
         raise GameBusyError(
             "Your chronicle changed in another window. Please try again."

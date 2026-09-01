@@ -12,6 +12,7 @@ DEFAULT_ENEMY = {
     "max_hp": 18,
     "attack": 5,
     "art": "🔥",
+    "boss": False,
 }
 
 # Fields that newer versions expect on every player document. Keeping them here
@@ -23,6 +24,7 @@ GAME_DEFAULTS: dict[str, Any] = {
     "attack_bonus": 0,
     "ward_bonus": 0,
     "luck": False,
+    "exposed_strikes": 0,
 }
 
 LEVEL_XP_FACTOR = 20
@@ -173,7 +175,12 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "name": enemy["name"],
             "hp": enemy["hp"],
             "max_hp": enemy["max_hp"],
+            "attack": enemy.get("attack", DEFAULT_ENEMY["attack"]),
             "art": enemy["art"],
+            "boss": bool(enemy.get("boss", False)),
+        },
+        "battle": {
+            "exposed": bool(game.get("exposed_strikes", 0)),
         },
         "inventory": list(game["inventory"]),
         "shop": shop,

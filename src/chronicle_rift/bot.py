@@ -12,7 +12,7 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 from . import __version__
 from .config import Settings
 from .database import DatabaseUnavailable
-from .game_engine import RULES, SHOP_ITEMS, VALID_ACTIONS
+from .game_engine import HOW_TO_PLAY, RULES, SHOP_ITEMS, VALID_ACTIONS
 from .game_service import GameBusyError, GameService, PurchaseError
 from .identity import TelegramIdentity
 from .rich_messages import (
@@ -67,17 +67,14 @@ def build_telegram_application(
 
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         del context
-        if not update.effective_chat:
+        chat = update.effective_chat
+        if not chat:
             return
-        await update.effective_chat.send_message(
-            "ChronicleRift is a turn-based fantasy adventure.\n\n"
-            "Commands:\n"
-            "/play - your dashboard\n"
-            "/shop - the Marketplace (spend coins)\n"
-            "/rules - the Chronicle's rules & regulations\n"
-            "/about - version and game information\n"
-            "/app - open the tactical Mini App\n\n"
-            "Choose Strike, Guard, Scout, or Rest. Every game action is saved."
+        await chat.send_message(
+            HOW_TO_PLAY,
+            reply_markup=_home_keyboard(
+                mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
+            ),
         )
 
     async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -116,12 +113,13 @@ def build_telegram_application(
             return
         try:
             player = await game_service.dashboard(_identity_from_update(user))
+            rich, plain = shop_messages(player)
             await rich_messages.send_or_fallback(
                 bot=update.get_bot(),
                 chat_id=chat.id,
-                rich_markdown=shop_messages(player)[0],
-                fallback_text=shop_messages(player)[1],
-                reply_markup=shop_keyboard(player, private_chat=chat.type == "private"),
+                rich_markdown=rich,
+                fallback_text=plain,
+                reply_markup=shop_keyboard(player=player, private_chat=chat.type == "private"),
             )
         except (DatabaseUnavailable, RichMessageError):
             LOGGER.exception("Unable to send Telegram shop")
@@ -280,7 +278,7 @@ def build_telegram_application(
                 rich_markdown=rich,
                 fallback_text=plain,
                 reply_markup=shop_keyboard(
-                    result.player, private_chat=query.message.chat.type == "private"
+                    player=result.player, private_chat=query.message.chat.type == "private"
                 ),
             )
             await _notify_purchase(context.bot, query.message.chat_id, result.summary)
@@ -327,8 +325,20 @@ async def _show_dashboard(
         player = await game_service.dashboard(_identity_from_update(user))
         rich, plain = dashboard_messages(player)
         if welcome:
-            rich = "# Welcome to ChronicleRift\n\n" + rich
-            plain = "Welcome to ChronicleRift\n\n" + plain
+            intro = (
+                "# Welcome to ChronicleRift\n\n"
+                "A turn-based RPG right here in Telegram. Defeat the enemy below, "
+                "chapter by chapter. Each turn, pick ONE move — the four buttons "
+                "under your dashboard. New here? /help explains every move in a "
+                "minute.\n\n"
+            )
+            plain_intro = (
+                "Welcome to ChronicleRift — a turn-based RPG in Telegram.\n"
+                "Pick ONE move per turn (the buttons below) and drop the enemy's "
+                "HP to 0 to clear each chapter. /help explains every move.\n\n"
+            )
+            rich = intro + rich
+            plain = plain_intro + plain
         await rich_messages.send_or_fallback(
             bot=update.get_bot(),
             chat_id=chat.id,
@@ -388,7 +398,7 @@ async def _send_shop_to(
             chat_id=chat_id,
             rich_markdown=rich,
             fallback_text=plain,
-            reply_markup=shop_keyboard(player, private_chat=True),
+            reply_markup=shop_keyboard(player=player, private_chat=True),
         )
     except (DatabaseUnavailable, RichMessageError):
         LOGGER.exception("Unable to send Telegram shop")

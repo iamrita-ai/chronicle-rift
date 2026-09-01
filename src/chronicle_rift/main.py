@@ -215,6 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "summary": turn.summary,
                 "narrative": turn.narrative,
                 "victory": turn.victory,
+                "effects": turn.effects or {},
             },
         }
 

@@ -14,6 +14,25 @@ ChronicleRift is deliberately split between two complementary Telegram experienc
 
 The rules are deterministic and server-side. Groq adds concise atmosphere; it never decides combat rewards or player state.
 
+## How to play
+
+ChronicleRift is a **turn-based RPG inside Telegram**. You face one enemy at a time and
+pick **ONE move per turn**. Drop the enemy's HP to zero to clear the chapter and earn
+Gold, Coins, and Points.
+
+| Move | Cost | What it does |
+| --- | --- | --- |
+| ⚔️ **Strike** | 1 Energy | Deals `4–8 + Level + gear` damage. A perfect roll (8) is a **CRITICAL hit ×1.5**. |
+| 🛡 **Guard** | — | Blocks `2–5` of the enemy's counterattack and restores 1 Energy. A perfect ward **reflects 2 damage**. |
+| 🔮 **Scout** | — | `+1–3 XP` and `+1 Energy`. Also **exposes the enemy**: your next Strike deals `+2`. |
+| 🔥 **Rest** | — | Recovers `4–7 HP` and `2 Energy` beside the ember shrine. |
+
+- **Energy loop:** Strikes spend Energy; the other three moves refill it.
+- **Death is safe:** at 0 HP you wake at camp fully healed and keep everything.
+- **Bosses:** every 5th chapter the **Ebon Colossus** appears with bonus stats and **double rewards**.
+- **Marketplace:** spend Coins on potions, Energy, and permanent relics (`/shop` or the Mini App).
+- The full guide lives in `/help`, and the Mini App shows the same guide on first launch.
+
 ## What it ships
 
 | Capability | Implementation |
@@ -44,10 +63,11 @@ The rules are deterministic and server-side. Groq adds concise atmosphere; it ne
 
 **Mini App surface**
 
-1. From a private chat, the player opens **Tactical Mini App**.
+1. From a private chat, the player opens **Tactical Mini App** — first launch shows a three-slide "How to Play" guide (always reopenable from the ? button).
 2. The browser sends only `Telegram.WebApp.initData` to `/api/me` and `/api/actions`.
 3. FastAPI verifies Telegram's signature and timestamp before using the authenticated Telegram identity.
-4. The UI displays the authoritative server response. It never sends or controls HP, gold, inventory, revision, or another user's ID.
+4. The **Rift Arena** view renders AI-generated artwork for the hero, the realm, and every enemy, animated health/energy/XP bars, floating damage numbers, critical-hit flashes, victory banners with reward breakdowns, a live battle log, and the illustrated Marketplace.
+5. The API returns a structured `turn.effects` payload (damage, crits, healing, wards, rewards) so clients can render combat unambiguously. The UI never sends or controls HP, gold, inventory, revision, or another user's ID.
 
 ## Architecture
 
