@@ -26,7 +26,7 @@
         <button class="topbar-chip" id="topbar-profile" type="button" aria-label="Open your profile">
           <img id="topbar-avatar" src="./art/char-emberblade.png" alt="" />
           <span class="topbar-chip-copy">
-            <b id="topbar-name">Riftwalker</b>
+            <b><span id="topbar-name">Riftwalker</span><i class="owner-crown" id="topbar-owner" hidden title="Owner — test mode">👑</i></b>
             <small><span id="topbar-level">Lv 1</span> · <span id="topbar-coins">—</span> 🪙</small>
           </span>
           <svg class="topbar-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
@@ -315,6 +315,19 @@
               <small id="pf-xp-cap">— XP</small>
             </div>
           </div>
+        </div>
+        <div class="owner-banner" id="pf-owner" hidden>
+          <b>👑 OWNER · TEST MODE</b>
+          <small>Everything is unlocked on this account so every hero, relic and item can be tested freely.</small>
+        </div>
+        <div class="tg-account" id="pf-tg-row" hidden>
+          <img id="pf-tg-avatar" src="" alt="" hidden />
+          <div class="tg-account-copy">
+            <small>TELEGRAM ACCOUNT</small>
+            <b id="pf-tg-name"></b>
+            <span id="pf-tg-handle" class="muted"></span>
+          </div>
+          <button class="btn-ghost" id="pf-tg-open" type="button" hidden>Open profile</button>
         </div>
         <div class="pstat-grid">
           <div class="pstat"><b id="pf-wins">0</b><small>DUELS WON</small></div>

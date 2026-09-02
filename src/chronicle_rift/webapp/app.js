@@ -531,6 +531,7 @@
     $("topbar-name").textContent = view.profile?.hero_name || view.hero.name;
     $("topbar-level").textContent = `Lv ${view.hero.level}`;
     $("topbar-coins").textContent = view.hero.coins;
+    $("topbar-owner").hidden = !view.owner;
     chip.style.setProperty("--element", view.character.element_color);
   }
 
@@ -558,6 +559,31 @@
     set("pf-relics", view.relics.length ? view.relics.map((r) => `${r.name} L${r.level}`).join(" · ") : "None forged yet");
     setBar("pf-xp", hero.progress);
     set("pf-xp-cap", `${hero.xp} XP · ${hero.xp_to_next} to level ${hero.level + 1}`);
+
+    $("pf-owner").hidden = !view.owner;
+    const tgUser = telegramUser();
+    const tgRow = $("pf-tg-row");
+    if (tgRow) {
+      if (tgUser) {
+        tgRow.hidden = false;
+        const av = $("pf-tg-avatar");
+        if (tgUser.photo_url) { av.src = tgUser.photo_url; av.hidden = false; }
+        else av.hidden = true;
+        set("pf-tg-name", [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || tgUser.username || "Telegram player");
+        set("pf-tg-handle", tgUser.username ? `@${tgUser.username}` : `ID ${tgUser.id}`);
+        const open = $("pf-tg-open");
+        open.hidden = !tgUser.username;
+        open.onclick = () => {
+          try { tg?.openTelegramLink?.(`https://t.me/${tgUser.username}`); } catch (_) { /* ignore */ }
+        };
+      } else {
+        tgRow.hidden = true;
+      }
+    }
+  }
+
+  function telegramUser() {
+    try { return tg?.initDataUnsafe?.user || null; } catch (_) { return null; }
   }
 
   const HEAL_IDS = ["salve", "draught", "greater_draught", "regen_balm", "phoenix_tear", "elixir"];
@@ -619,14 +645,15 @@
       stats.appendChild(el("span", null, `+${card.power} PWR`));
       body.appendChild(stats);
       const moves = el("ul", "hero-moves");
+      const baseDmg = heroBaseDamage(view);
       const basic = el("li");
       basic.appendChild(el("b", null, kit.basic.name));
-      basic.appendChild(el("span", null, "basic attack"));
+      basic.appendChild(el("span", null, `≈${Math.round(baseDmg * kit.basic.mul * (kit.basic.hits || 1))} DMG · basic`));
       moves.appendChild(basic);
       kit.abilities.forEach((a) => {
         const li = el("li");
         li.appendChild(el("b", null, a.name));
-        li.appendChild(el("span", null, `${a.cd}s CD`));
+        li.appendChild(el("span", null, `≈${Math.round(baseDmg * a.mul * (a.hits || 1))} DMG · ${abilityEffect(a)}`));
         moves.appendChild(li);
       });
       body.appendChild(moves);
@@ -640,6 +667,35 @@
       node.appendChild(body);
       grid.appendChild(node);
     });
+  }
+
+  /* Per-hero damage estimate — the same formula the arena fighter uses. */
+  function heroBaseDamage(view) {
+    const h = view.hero;
+    return 7 + h.power * 2.2 + h.level * 1.4 + h.attack_bonus * 1.6;
+  }
+
+  /* A short, readable effect line for a hero ability (shown in the shop). */
+  function abilityEffect(a) {
+    const bits = [];
+    if (a.hits > 1) bits.push(`${a.hits} hits`);
+    if (a.volley > 1) bits.push(`${a.volley} shots`);
+    if (a.burn) bits.push(`Burn ${a.burn}s`);
+    if (a.freeze) bits.push(`Freeze ${a.freeze}s`);
+    if (a.slow) bits.push(`Slow ${a.slow}s`);
+    if (a.lifesteal) bits.push(`heals ${Math.round(a.lifesteal * 100)}%`);
+    if (a.shield) bits.push(`−${Math.round(a.shield * 100)}% dmg ${a.buffTime}s`);
+    if (a.regen) bits.push(`+${a.regen} stamina`);
+    if (a.haste) bits.push(`+${Math.round((a.haste - 1) * 100)}% speed`);
+    if (a.empower) bits.push(`next hit +${Math.round((a.empower - 1) * 100)}%`);
+    if (a.pierceDef) bits.push("unblockable");
+    if (a.knock >= 400) bits.push("huge knockback");
+    else if (a.knock >= 250) bits.push("knockback");
+    if (a.lift >= 150) bits.push("launches");
+    if (a.type === "blink") bits.push("teleport");
+    if (a.type === "dash") bits.push("dash");
+    if (a.iframes) bits.push("untouchable");
+    return bits.length ? bits.join(", ") : (a.desc || "ability");
   }
 
   function itemNode(card, { actionLabel, onAction, disabled, caption }) {

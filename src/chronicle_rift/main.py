@@ -84,7 +84,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         polling_started = False
         try:
             await repository.connect()
-            game_service = GameService(repository, narrator)
+            game_service = GameService(
+                repository, narrator, owner_user_id=runtime_settings.owner_user_id
+            )
             telegram_application = build_telegram_application(
                 settings=runtime_settings,
                 game_service=game_service,
@@ -145,7 +147,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "default-src 'self'; "
             "script-src 'self' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: https://t.me https://*.t.me https://*.telesco.pe; "
             "connect-src 'self'; "
             "base-uri 'self'; form-action 'self'",
         )

@@ -86,3 +86,47 @@ async def test_purchase_returns_failure_without_saving_when_unaffordable() -> No
     assert result.success is False
     assert result.reason == "insufficient_coins"
     assert store.player["revision"] == 1
+
+
+class AnyUserStore:
+    """A store that accepts any identity, for owner-mode tests."""
+
+    def __init__(self) -> None:
+        self.players: dict[int, dict] = {}
+
+    async def get_or_create(self, *, user_id: int, first_name: str, username: str | None):
+        if user_id not in self.players:
+            self.players[user_id] = new_player(
+                user_id=user_id, first_name=first_name, username=username
+            )
+        return deepcopy(self.players[user_id])
+
+    async def save_game(self, player, *, expected_revision: int):
+        self.players[player["user_id"]] = deepcopy(player)
+        return deepcopy(player)
+
+
+@pytest.mark.asyncio
+async def test_owner_unlocks_everything_for_testing() -> None:
+    import chronicle_rift.models as models_module
+    from chronicle_rift.models import public_player_view
+
+    service = GameService(AnyUserStore(), TestNarrator(), owner_user_id=42)
+    player = await service.dashboard(TelegramIdentity(42, "Owner"))
+    game = player["game"]
+    assert game["owner_mode"] is True
+    assert game["coins"] >= 100_000
+    assert set(game["owned_characters"]) == set(models_module.CHARACTERS)
+    for relic_id in models_module.RELIC_IDS:
+        assert game["relics"][relic_id] == 5
+    assert public_player_view(player)["owner"] is True
+
+
+@pytest.mark.asyncio
+async def test_regular_player_is_not_in_owner_mode() -> None:
+    from chronicle_rift.models import public_player_view
+
+    service = GameService(AnyUserStore(), TestNarrator(), owner_user_id=42)
+    player = await service.dashboard(TelegramIdentity(99, "Player"))
+    assert "owner_mode" not in player["game"] or not player["game"].get("owner_mode")
+    assert public_player_view(player)["owner"] is False

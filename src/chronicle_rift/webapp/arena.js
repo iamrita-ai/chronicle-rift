@@ -192,10 +192,10 @@
       basic: { name: "Ember Slash", mul: 1.0, range: 104, knock: 130, type: "slash", stamina: 9 },
       abilities: [
         { id: "a1", name: "Molten Cleave", icon: "icon-fire-1", cd: 6, stamina: 26, type: "heavy",
-          mul: 2.35, range: 124, knock: 470, lift: 210, windup: 0.32, active: 0.14, recover: 0.36,
+          mul: 2.35, range: 124, knock: 470, lift: 210, windup: 0.26, active: 0.14, recover: 0.3,
           shake: 16, desc: "Overhead cleave, huge knockback" },
         { id: "a2", name: "Cinder Wave", icon: "icon-fire-2", cd: 8, stamina: 22, type: "magic",
-          mul: 1.55, speed: 540, burn: 4, windup: 0.26, recover: 0.3, shake: 8,
+          mul: 1.55, speed: 540, burn: 4, windup: 0.22, recover: 0.26, shake: 8,
           desc: "Fire projectile that sets Burning" },
         { id: "a3", name: "Ember Dash", icon: "icon-fire-3", cd: 7, stamina: 18, type: "dash",
           mul: 1.15, dashSpeed: 940, dashTime: 0.26, iframes: 0.3, burn: 2, knock: 190,
@@ -207,13 +207,13 @@
       basic: { name: "Rime Jab", mul: 0.92, range: 100, knock: 110, type: "slash", stamina: 8 },
       abilities: [
         { id: "a1", name: "Glacier Smash", icon: "icon-ice-1", cd: 6.5, stamina: 28, type: "heavy",
-          mul: 2.5, range: 118, knock: 430, lift: 170, windup: 0.38, active: 0.14, recover: 0.4,
+          mul: 2.5, range: 118, knock: 430, lift: 170, windup: 0.3, active: 0.14, recover: 0.32,
           shake: 18, slow: 2.5, desc: "Ground-shattering smash that slows" },
         { id: "a2", name: "Deep Freeze", icon: "icon-ice-2", cd: 10, stamina: 24, type: "magic",
-          mul: 1.25, speed: 450, freeze: 1.4, windup: 0.3, recover: 0.32, shake: 6,
+          mul: 1.25, speed: 450, freeze: 1.4, windup: 0.25, recover: 0.27, shake: 6,
           desc: "Freezes the enemy solid" },
         { id: "a3", name: "Frost Barrier", icon: "icon-ice-3", cd: 12, stamina: 20, type: "buff",
-          shield: 0.55, buffTime: 5, windup: 0.22, recover: 0.28, desc: "Halves incoming damage for 5s" },
+          shield: 0.55, buffTime: 5, windup: 0.18, recover: 0.24, desc: "Halves incoming damage for 5s" },
       ],
     },
     wind: {
@@ -221,10 +221,10 @@
       basic: { name: "Twin Slice", mul: 0.85, range: 98, knock: 100, type: "slash", stamina: 7, hits: 2 },
       abilities: [
         { id: "a1", name: "Cyclone Kick", icon: "icon-wind-1", cd: 5.5, stamina: 24, type: "heavy",
-          mul: 0.95, hits: 3, range: 112, knock: 270, lift: 120, windup: 0.2, active: 0.34,
-          recover: 0.28, shake: 10, desc: "Spinning three-hit whirl" },
+          mul: 0.95, hits: 3, range: 112, knock: 270, lift: 120, windup: 0.17, active: 0.34,
+          recover: 0.24, shake: 10, desc: "Spinning three-hit whirl" },
         { id: "a2", name: "Gale Flurry", icon: "icon-wind-2", cd: 7.5, stamina: 21, type: "magic",
-          mul: 0.75, volley: 3, speed: 720, windup: 0.18, recover: 0.26, shake: 5, desc: "Three razor gusts" },
+          mul: 0.75, volley: 3, speed: 720, windup: 0.15, recover: 0.22, shake: 5, desc: "Three razor gusts" },
         { id: "a3", name: "Blink", icon: "icon-wind-3", cd: 6, stamina: 14, type: "blink",
           iframes: 0.35, hasteTime: 4, haste: 1.5, desc: "Teleport behind the enemy, +50% speed" },
       ],
@@ -234,13 +234,13 @@
       basic: { name: "Rune Bolt", mul: 1.05, range: 108, knock: 120, type: "slash", stamina: 9 },
       abilities: [
         { id: "a1", name: "Sigil Burst", icon: "icon-arcane-1", cd: 7, stamina: 27, type: "heavy",
-          mul: 2.15, range: 138, knock: 390, lift: 190, windup: 0.34, active: 0.16, recover: 0.38,
+          mul: 2.15, range: 138, knock: 390, lift: 190, windup: 0.27, active: 0.16, recover: 0.32,
           shake: 15, desc: "Detonates a sigil around you" },
         { id: "a2", name: "Mind Siphon", icon: "icon-arcane-2", cd: 8.5, stamina: 23, type: "magic",
-          mul: 1.6, speed: 490, lifesteal: 0.5, pierceDef: true, windup: 0.28, recover: 0.32,
+          mul: 1.6, speed: 490, lifesteal: 0.5, pierceDef: true, windup: 0.23, recover: 0.27,
           shake: 7, desc: "Unblockable bolt, heals 50%" },
         { id: "a3", name: "Rune Ward", icon: "icon-arcane-3", cd: 11, stamina: 18, type: "buff",
-          shield: 0.62, buffTime: 4.5, regen: 22, windup: 0.22, recover: 0.26, desc: "Ward + fast stamina regen" },
+          shield: 0.62, buffTime: 4.5, regen: 22, windup: 0.18, recover: 0.22, desc: "Ward + fast stamina regen" },
       ],
     },
     shadow: {
@@ -248,10 +248,10 @@
       basic: { name: "Reap", mul: 1.1, range: 112, knock: 130, type: "slash", stamina: 10 },
       abilities: [
         { id: "a1", name: "Grave Arc", icon: "icon-shadow-1", cd: 6.5, stamina: 29, type: "heavy",
-          mul: 2.45, range: 142, knock: 440, lift: 180, windup: 0.34, active: 0.16, recover: 0.38,
+          mul: 2.45, range: 142, knock: 440, lift: 180, windup: 0.27, active: 0.16, recover: 0.32,
           shake: 17, desc: "Wide reaping arc" },
         { id: "a2", name: "Soul Harvest", icon: "icon-shadow-2", cd: 9, stamina: 25, type: "magic",
-          mul: 1.7, speed: 480, lifesteal: 0.4, slow: 2, windup: 0.3, recover: 0.32, shake: 9,
+          mul: 1.7, speed: 480, lifesteal: 0.4, slow: 2, windup: 0.24, recover: 0.27, shake: 9,
           desc: "Drains life and slows" },
         { id: "a3", name: "Shadowstep", icon: "icon-shadow-3", cd: 8, stamina: 16, type: "blink",
           iframes: 0.45, empower: 1.9, empowerTime: 5, desc: "Vanish, reappear behind, next hit empowered" },
@@ -306,6 +306,8 @@
       this.comboT = 0;
       this.stepT = 0;
       this.ghosts = [];
+      this.squash = 0; // landing squash-and-stretch
+      this.wasAir = false;
       // skeletal pose (radians, except bob/dip in world units and breath as a scale)
       this.pose = { head: 0, torso: 0, armF: 0, armB: 0, legF: 0, legB: 0, bob: 0, rot: 0, dip: 0, breath: 1 };
       this.target = { ...this.pose };
@@ -399,6 +401,10 @@
       this.rigs = new Map();
       this.sceneName = null;
       this.tmp = new T.Vector3();
+      this.dprLevels = [1.75, 1.4, 1.15, 1];
+      this.dprLevel = 0;
+      this.frameEma = 16.7;
+      this.frameHot = 0;
       this.charge = new WeakMap();
       this.chargeSprites = [];
       this.trailArc = new WeakMap();
@@ -436,12 +442,15 @@
       const T = window.THREE;
       const env = new T.Group();
 
-      const ground = new T.Mesh(
-        new T.CircleGeometry(1500, 48),
-        new T.MeshStandardMaterial({ color: 0x181009, roughness: 1, metalness: 0 })
-      );
+      // sky dome (gradient painted per scene)
+      this.skyMat = new T.MeshBasicMaterial({ side: T.BackSide, fog: false });
+      this.sky = new T.Mesh(new T.SphereGeometry(2600, 24, 12), this.skyMat);
+      this.scene.add(this.sky);
+
+      // ground disc with painted battle rings
+      this.groundMat = new T.MeshStandardMaterial({ roughness: 1, metalness: 0 });
+      const ground = new T.Mesh(new T.CircleGeometry(1500, 48), this.groundMat);
       ground.rotation.x = -Math.PI / 2;
-      this.groundMat = ground.material;
       env.add(ground);
 
       const ringMat = new T.MeshBasicMaterial({
@@ -477,28 +486,73 @@
       gridGeo.setAttribute("position", new T.Float32BufferAttribute(pts, 3));
       const grid = new T.LineSegments(
         gridGeo,
-        new T.LineBasicMaterial({ color: 0x3a4062, transparent: true, opacity: 0.35 })
+        new T.LineBasicMaterial({ color: 0x3a4062, transparent: true, opacity: 0.28 })
       );
       grid.position.y = 0.3;
       env.add(grid);
 
+      // standing rune pillars ringing the arena
+      this.stoneMat = new T.MeshStandardMaterial({ color: 0x262c48, roughness: 0.85, metalness: 0.1 });
+      this.pillarGlowMat = new T.MeshBasicMaterial({ color: 0xff8a3c });
+      this.pillarGroup = new T.Group();
+      for (let i = 0; i < 10; i += 1) {
+        const a = (i / 10) * Math.PI * 2;
+        const slab = new T.Mesh(new T.BoxGeometry(14, rand(46, 64), 5), this.stoneMat);
+        slab.position.set(Math.cos(a) * 430, 26, Math.sin(a) * 430);
+        slab.rotation.y = -a + Math.PI / 2;
+        slab.rotation.x = rand(-0.05, 0.05);
+        const glyph = new T.Mesh(new T.BoxGeometry(7, 38, 2), this.pillarGlowMat);
+        glyph.position.set(0, 2, 3);
+        slab.add(glyph);
+        this.pillarGroup.add(slab);
+      }
+      env.add(this.pillarGroup);
+
+      // floating rift rocks, slowly orbiting the arena
+      this.rockMat = new T.MeshStandardMaterial({ color: 0x1c2340, roughness: 1 });
+      this.rockList = [];
+      for (let i = 0; i < 9; i += 1) {
+        const m = new T.Mesh(new T.IcosahedronGeometry(rand(16, 46), 0), this.rockMat);
+        this.rockList.push({
+          m, r: rand(400, 900), a: rand(0, Math.PI * 2), y: rand(120, 440),
+          sp: rand(0.02, 0.08) * (Math.random() < 0.5 ? -1 : 1),
+          wob: rand(0, 6), amp: rand(8, 30),
+        });
+        env.add(m);
+      }
+
+      // twin braziers with live firelight
+      this.brazierMat = new T.MeshBasicMaterial({ color: 0xffb066 });
+      this.braziers = [];
+      [[-470, -170], [470, -170]].forEach(([x, z]) => {
+        const stand = new T.Mesh(new T.CylinderGeometry(6, 13, 74, 8), this.stoneMat);
+        stand.position.set(x, 37, z);
+        env.add(stand);
+        const flame = new T.Mesh(new T.SphereGeometry(13, 10, 8), this.brazierMat);
+        flame.position.set(x, 82, z);
+        env.add(flame);
+        const light = new T.PointLight(0xffb066, 1.1, 760, 1.8);
+        light.position.set(x, 100, z);
+        this.scene.add(light);
+        this.braziers.push({ light, flame });
+      });
+
       // distant monoliths and peaks (parallax silhouettes)
-      const rockMat = new T.MeshStandardMaterial({ color: 0x141828, roughness: 1 });
       for (let i = 0; i < 9; i += 1) {
         const a = rand(0, Math.PI * 2);
-        const r = rand(520, 980);
+        const r = rand(1050, 1600);
         const w = rand(34, 90);
         const h = rand(180, 460);
-        const rock = new T.Mesh(new T.BoxGeometry(w, h, w * 0.7), rockMat);
+        const rock = new T.Mesh(new T.BoxGeometry(w, h, w * 0.7), this.stoneMat);
         rock.position.set(Math.cos(a) * r, h / 2 - 8, Math.sin(a) * r);
         rock.rotation.y = rand(0, Math.PI);
         env.add(rock);
       }
       for (let i = 0; i < 6; i += 1) {
         const a = rand(0, Math.PI * 2);
-        const r = rand(1050, 1450);
+        const r = rand(1700, 2300);
         const h = rand(380, 720);
-        const peak = new T.Mesh(new T.ConeGeometry(rand(180, 340), h, 5), rockMat);
+        const peak = new T.Mesh(new T.ConeGeometry(rand(180, 340), h, 5), this.stoneMat);
         peak.position.set(Math.cos(a) * r, h / 2 - 30, Math.sin(a) * r);
         env.add(peak);
       }
@@ -530,18 +584,115 @@
       this.scene.add(env);
     }
 
+    /* painted sky gradient — the dome reads as atmosphere, not flat colour */
+    makeSkyTexture(env) {
+      const c = makeCanvas(64, 512);
+      const g = c.getContext("2d");
+      const hex = (n) => `#${n.toString(16).padStart(6, "0")}`;
+      const top = hex(env.sky);
+      const fog = hex(env.fog);
+      const glowC = hex(env.hemiSky);
+      const grad = g.createLinearGradient(0, 0, 0, 512);
+      grad.addColorStop(0, "#04050c");
+      grad.addColorStop(0.34, top);
+      grad.addColorStop(0.5, glowC);
+      grad.addColorStop(0.58, fog);
+      grad.addColorStop(1, "#05060d");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 64, 512);
+      // stars in the upper sky
+      for (let i = 0; i < 90; i += 1) {
+        const y = Math.pow(Math.random(), 1.4) * 200;
+        g.fillStyle = `rgba(255,255,255,${rand(0.1, 0.55)})`;
+        g.fillRect(Math.random() * 64, y, 1.3, 1.3);
+      }
+      const tex = new window.THREE.CanvasTexture(c);
+      return tex;
+    }
+
+    /* painted arena floor — rings, spokes and an elemental glow circle */
+    makeGroundTexture(env) {
+      const c = makeCanvas(512, 512);
+      const g = c.getContext("2d");
+      const grad = g.createRadialGradient(256, 256, 20, 256, 256, 256);
+      grad.addColorStop(0, "#414762");
+      grad.addColorStop(0.5, "#272c41");
+      grad.addColorStop(1, "#0b0d17");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, 512, 512);
+      g.strokeStyle = "rgba(255,255,255,0.14)";
+      [70, 128, 196, 246].forEach((r, i) => {
+        g.lineWidth = i === 2 ? 3 : 1.4;
+        g.beginPath();
+        g.arc(256, 256, r, 0, Math.PI * 2);
+        g.stroke();
+      });
+      g.strokeStyle = "rgba(255,255,255,0.06)";
+      for (let i = 0; i < 24; i += 1) {
+        const a = (i / 24) * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(256 + Math.cos(a) * 42, 256 + Math.sin(a) * 42);
+        g.lineTo(256 + Math.cos(a) * 250, 256 + Math.sin(a) * 250);
+        g.stroke();
+      }
+      const acc = `#${env.accent.toString(16).padStart(6, "0")}`;
+      g.strokeStyle = acc;
+      g.globalAlpha = 0.5;
+      g.lineWidth = 4;
+      g.beginPath(); g.arc(256, 256, 152, 0, Math.PI * 2); g.stroke();
+      g.globalAlpha = 0.2;
+      g.lineWidth = 12;
+      g.beginPath(); g.arc(256, 256, 162, 0, Math.PI * 2); g.stroke();
+      g.globalAlpha = 1;
+      for (let i = 0; i < 900; i += 1) {
+        g.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`;
+        g.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+      }
+      return new window.THREE.CanvasTexture(c);
+    }
+
     setScene(name) {
       if (this.sceneName === name) return;
       this.sceneName = name;
       const env = ENV3D[name] || ENV3D["bg-ember"];
       this.scene.background = new window.THREE.Color(env.sky);
       this.scene.fog.color.set(env.fog);
-      this.groundMat.color.set(env.ground);
+      if (this.skyMat.map) this.skyMat.map.dispose();
+      this.skyMat.map = this.makeSkyTexture(env);
+      this.skyMat.needsUpdate = true;
+      if (this.groundMat.map) this.groundMat.map.dispose();
+      this.groundMat.map = this.makeGroundTexture(env);
+      this.groundMat.color.set(0xffffff);
+      this.groundMat.needsUpdate = true;
       this.ringMat.color.set(env.accent);
       this.ring2Mat.color.set(env.accent);
       this.accentLight.color.set(env.accent);
       this.moteMat.color.set(env.mote);
       this.hemi.color.set(env.hemiSky);
+      this.pillarGlowMat.color.set(env.accent);
+      this.brazierMat.color.set(env.mote);
+      this.braziers.forEach((b) => b.light.color.set(env.mote));
+    }
+
+    /* living environment: orbiting rocks, flickering braziers, pulsing runes */
+    stepEnv(dt, t) {
+      const d = dt || 1 / 60;
+      this.pillarGroup.rotation.y += d * 0.02;
+      for (let i = 0; i < this.rockList.length; i += 1) {
+        const r = this.rockList[i];
+        r.a += r.sp * d * 2;
+        r.m.position.set(Math.cos(r.a) * r.r, r.y + Math.sin(t * 0.5 + r.wob) * r.amp, Math.sin(r.a) * r.r);
+        r.m.rotation.y += d * 0.1;
+      }
+      for (let i = 0; i < this.braziers.length; i += 1) {
+        const b = this.braziers[i];
+        b.light.intensity = 1.0 + Math.sin(t * 11 + i * 2.4) * 0.28 + Math.random() * 0.12;
+        const s = 1 + Math.sin(t * 9 + i) * 0.12;
+        b.flame.scale.set(s, 1.25 - s * 0.15, s);
+      }
+      const pulse = 0.42 + Math.sin(t * 2.2) * 0.14;
+      this.ringMat.opacity = pulse;
+      this.ring2Mat.opacity = pulse * 0.55;
     }
 
     /* ---------------- fx pools ---------------- */
@@ -736,346 +887,640 @@
     }
 
     /* ---------------- fighter rigs ---------------- */
+    /* Each fighter is assembled from a shared armature (pelvis, torso, head,
+     * two arms, two legs) and then dressed per identity: five hero kits with
+     * their own weapons and armour, and five monster archetypes (stalker,
+     * warden, herald, revenant, colossus) with their own silhouettes. */
     buildRig(f) {
       const T = window.THREE;
       const H = FIGHTER_H * f.scale;
       const S = skinFor(f.element);
       const acc = f.kit.color;
-      const bulk = f.build === "brute" ? 1.34 : f.build === "beast" ? 1.14 : 1;
-      const monster = f.build !== "hero";
+      const glowC = f.kit.glow;
+      const isHero = f.build === "hero";
+      const MONSTER_ARCH = {
+        "Rift Stalker": "stalker",
+        "Ash Warden": "warden",
+        "Obsidian Herald": "herald",
+        "Frost Revenant": "revenant",
+        "Ebon Colossus": "colossus",
+      };
+      const arch = isHero ? "hero" : (MONSTER_ARCH[f.name] || (f.build === "beast" ? "stalker" : "warden"));
+      const BULK = { warden: 1.3, colossus: 1.52, herald: 1.26, revenant: 1.04, stalker: 1.02 }[arch] || 1;
+      const HUNCH = { stalker: 0.92, warden: 0.26, colossus: 0.32, herald: 0.18, revenant: 0.1 }[arch] || 0;
+      const bulk = isHero ? 1 : BULK;
+      const heroEl = f.element;
 
       const mats = {
         body: new T.MeshStandardMaterial({ color: S.armor, roughness: 0.55, metalness: 0.35 }),
-        hi: new T.MeshStandardMaterial({ color: S.armorHi, roughness: 0.4, metalness: 0.5 }),
+        hi: new T.MeshStandardMaterial({ color: S.armorHi, roughness: 0.38, metalness: 0.55 }),
         lo: new T.MeshStandardMaterial({ color: S.armorLo, roughness: 0.7, metalness: 0.3 }),
-        cloth: new T.MeshStandardMaterial({ color: S.cloth, roughness: 0.95, side: T.DoubleSide }),
-        steel: new T.MeshStandardMaterial({ color: S.steel, roughness: 0.3, metalness: 0.85 }),
-        eye: new T.MeshStandardMaterial({ color: 0x050508, emissive: acc, emissiveIntensity: 2.4 }),
-        accent: new T.MeshStandardMaterial({
-          color: acc, emissive: acc, emissiveIntensity: 1.0, roughness: 0.5, metalness: 0.2,
-        }),
+        cloth: new T.MeshStandardMaterial({ color: S.cloth, roughness: 0.95, metalness: 0, side: T.DoubleSide }),
+        steel: new T.MeshStandardMaterial({ color: S.steel, roughness: 0.28, metalness: 0.85 }),
+        dark: new T.MeshStandardMaterial({ color: 0x101322, roughness: 0.55, metalness: 0.5 }),
+        hide: new T.MeshStandardMaterial({ color: S.armorLo, roughness: 0.85, metalness: 0.05 }),
+        eye: new T.MeshBasicMaterial({ color: acc }),
+        accent: new T.MeshStandardMaterial({ color: acc, emissive: acc, emissiveIntensity: 1.15, roughness: 0.5 }),
+        glow: new T.MeshBasicMaterial({ color: glowC }),
       };
       const geo = [];
+      const track = (g) => { geo.push(g); return g; };
+      const box = (w, h, d) => track(new T.BoxGeometry(w, h, d));
+      const cap = (r, l) => track(new T.CapsuleGeometry(r, l, 3, 8));
+      const sph = (r, w = 12, h = 9) => track(new T.SphereGeometry(r, w, h));
+      const cyl = (rt, rb, h) => track(new T.CylinderGeometry(rt, rb, h, 10));
+      const cone = (r, h) => track(new T.ConeGeometry(r, h, 8));
+      const torus = (r, t, arc) => track(new T.TorusGeometry(r, t, 6, 18, arc === undefined ? Math.PI * 2 : arc));
+      const M = (g, m) => new T.Mesh(g, m);
 
       const root = new T.Group();
+      const rig = {
+        f, H, bulk, arch, hunch: HUNCH, mats, geo, root,
+        tail: [], orbiters: null, halo: null, orb: null, orbRing: null,
+        hover: arch === "revenant" ? 12 : 0, weaponLen: 0.72, emitters: [],
+      };
 
-      // pelvis
-      const pelvisG = new T.BoxGeometry(0.19 * H * bulk, 0.1 * H, 0.15 * H * bulk);
-      geo.push(pelvisG);
-      const pelvis = new T.Mesh(pelvisG, mats.body);
-      pelvis.position.set(0, 0.47 * H, 0);
+      /* ============ pelvis + belt + tassets ============ */
+      const pelvis = M(box(0.2 * H * bulk, 0.11 * H, 0.16 * H * bulk), mats.body);
       root.add(pelvis);
+      const belt = M(box(0.235 * H * bulk, 0.05 * H, 0.185 * H * bulk), mats.lo);
+      belt.position.y = 0.028 * H;
+      root.add(belt);
+      const buckle = M(box(0.05 * H, 0.05 * H, 0.02 * H), mats.accent);
+      buckle.position.set(0, 0.028 * H, 0.095 * H * bulk);
+      root.add(buckle);
+      [-1, 1].forEach((s) => {
+        const tas = M(box(0.075 * H, 0.17 * H, 0.022 * H), isHero ? mats.hi : mats.hide);
+        tas.position.set(s * 0.1 * H * bulk, -0.07 * H, 0.01 * H);
+        tas.rotation.z = s * -0.22;
+        root.add(tas);
+      });
 
-      // legs (front limb on the camera side: local -x)
+      /* ============ legs (revenant floats instead) ============ */
       const buildLeg = (side) => {
         const hipG = new T.Group();
-        hipG.position.set(side * 0.04 * H * bulk, 0.47 * H, 0);
+        hipG.position.set(side * 0.055 * H * bulk, 0.45 * H, 0);
         root.add(hipG);
-        const thighG = new T.CapsuleGeometry(0.075 * H * bulk, 0.12 * H, 3, 10);
-        geo.push(thighG);
-        const thigh = new T.Mesh(thighG, side < 0 ? mats.body : mats.lo);
+        if (arch === "revenant") return { hipG, kneeG: hipG };
+        const digitigrade = arch === "stalker";
+        const thigh = M(cap(0.075 * H * bulk, 0.12 * H), side < 0 ? mats.body : mats.lo);
         thigh.position.set(0, -0.115 * H, 0);
         hipG.add(thigh);
         const kneeG = new T.Group();
         kneeG.position.set(0, -0.225 * H, 0);
         hipG.add(kneeG);
-        const shinG = new T.CapsuleGeometry(0.055 * H * bulk, 0.11 * H, 3, 10);
-        geo.push(shinG);
-        const shin = new T.Mesh(shinG, side < 0 ? mats.body : mats.lo);
-        shin.position.set(0, -0.1 * H, 0);
+        const knee = M(sph(0.052 * H * bulk), mats.hi);
+        kneeG.add(knee);
+        const shin = M(cap(0.055 * H * bulk, 0.11 * H), side < 0 ? mats.body : mats.lo);
+        shin.position.set(0, -0.1 * H, digitigrade ? -0.02 * H : 0);
         kneeG.add(shin);
-        const footG = new T.BoxGeometry(0.085 * H, 0.05 * H, 0.15 * H);
-        geo.push(footG);
-        const foot = new T.Mesh(footG, mats.lo);
+        const greave = M(box(0.075 * H * bulk, 0.13 * H, 0.085 * H * bulk), side < 0 ? mats.hi : mats.lo);
+        greave.position.set(0, -0.11 * H, 0.012 * H);
+        kneeG.add(greave);
+        const foot = M(box(0.085 * H, 0.05 * H, 0.16 * H), mats.dark);
         foot.position.set(0, -0.208 * H, 0.035 * H);
         kneeG.add(foot);
+        if (digitigrade) {
+          for (let i = -1; i <= 1; i += 1) {
+            const claw = M(cone(0.014 * H, 0.07 * H), mats.steel);
+            claw.position.set(i * 0.026 * H, -0.222 * H, 0.1 * H);
+            claw.rotation.x = Math.PI * 0.92;
+            kneeG.add(claw);
+          }
+        } else {
+          const toe = M(box(0.085 * H, 0.035 * H, 0.05 * H), mats.hi);
+          toe.position.set(0, -0.215 * H, 0.1 * H);
+          kneeG.add(toe);
+        }
         return { hipG, kneeG };
       };
       const legF = buildLeg(-1);
       const legB = buildLeg(1);
 
-      // torso
+      /* ============ torso ============ */
       const torsoG = new T.Group();
       torsoG.position.set(0, 0.5 * H, 0);
       root.add(torsoG);
-      const chestG = new T.CapsuleGeometry(0.1 * H * bulk, 0.1 * H, 4, 14);
-      geo.push(chestG);
-      const chest = new T.Mesh(chestG, mats.body);
+      const chest = M(cap(0.105 * H * bulk, 0.11 * H), mats.body);
       chest.position.set(0, 0.125 * H, 0);
       torsoG.add(chest);
-      const plateG = new T.BoxGeometry(0.16 * H * bulk, 0.1 * H, 0.05 * H);
-      geo.push(plateG);
-      const plate = new T.Mesh(plateG, mats.hi);
-      plate.position.set(0, 0.15 * H, 0.062 * H);
+      const plate = M(box(0.17 * H * bulk, 0.13 * H, 0.05 * H), mats.hi);
+      plate.position.set(0, 0.15 * H, 0.055 * H * bulk);
       torsoG.add(plate);
-      const beltG = new T.BoxGeometry(0.21 * H * bulk, 0.035 * H, 0.16 * H * bulk);
-      geo.push(beltG);
-      const belt = new T.Mesh(beltG, mats.lo);
-      belt.position.set(0, 0.015 * H, 0);
-      torsoG.add(belt);
-      const sigilG = new T.BoxGeometry(0.045 * H, 0.045 * H, 0.02 * H);
-      geo.push(sigilG);
-      const sigil = new T.Mesh(sigilG, mats.accent);
-      sigil.position.set(0, 0.14 * H, 0.092 * H);
+      const backplate = M(box(0.16 * H * bulk, 0.12 * H, 0.04 * H), mats.lo);
+      backplate.position.set(0, 0.145 * H, -0.055 * H * bulk);
+      torsoG.add(backplate);
+      const gorget = M(cyl(0.062 * H, 0.07 * H, 0.045 * H), mats.hi);
+      gorget.position.set(0, 0.225 * H, 0);
+      torsoG.add(gorget);
+      const sigil = M(box(0.05 * H, 0.05 * H, 0.02 * H), mats.accent);
+      sigil.position.set(0, 0.145 * H, 0.085 * H * bulk);
       torsoG.add(sigil);
-      const neckG = new T.CapsuleGeometry(0.028 * H, 0.03 * H, 3, 8);
-      geo.push(neckG);
-      const neck = new T.Mesh(neckG, mats.lo);
-      neck.position.set(0, 0.235 * H, 0);
-      torsoG.add(neck);
+      if (!isHero) {
+        // molten cracks / rune channels down the monster's chest
+        [-1, 1].forEach((s) => {
+          const crack = M(box(0.016 * H, 0.16 * H, 0.012 * H), mats.glow);
+          crack.position.set(s * 0.045 * H * bulk, 0.13 * H, 0.083 * H * bulk);
+          crack.rotation.z = s * 0.18;
+          torsoG.add(crack);
+        });
+        if (arch === "colossus") {
+          const core = M(sph(0.075 * H), mats.accent);
+          core.position.set(0, 0.12 * H, 0.1 * H);
+          torsoG.add(core);
+          rig.orbiters = this.makeOrbiters(4, H * 0.42, mats.hide, 0x2a2f45);
+        }
+        if (arch === "herald") rig.orbiters = this.makeOrbiters(5, H * 0.4, mats.accent, null);
+      }
 
-      // head
+      /* ============ head ============ */
       const headG = new T.Group();
       headG.position.set(0, 0.27 * H, 0);
       torsoG.add(headG);
-      const skullG = new T.SphereGeometry(0.09 * H, 18, 14);
-      geo.push(skullG);
-      const skull = new T.Mesh(skullG, mats.body);
-      skull.scale.set(0.95, 1.1, 1);
+      const skull = M(sph(0.09 * H, 14, 11), isHero ? mats.body : mats.hide);
+      skull.scale.set(0.95, 1.08, 1);
       headG.add(skull);
-      const faceG = new T.BoxGeometry(0.1 * H, 0.075 * H, 0.05 * H);
-      geo.push(faceG);
-      const face = new T.Mesh(faceG, mats.hi);
-      face.position.set(0, -0.012 * H, 0.068 * H);
-      headG.add(face);
-      const eyeG = new T.BoxGeometry(0.07 * H, 0.016 * H, 0.02 * H);
-      geo.push(eyeG);
-      const eye = new T.Mesh(eyeG, mats.eye);
-      eye.position.set(0, 0.008 * H, 0.098 * H);
-      headG.add(eye);
-
       const ornaments = [];
-      if (monster) {
-        // horns
-        const hornG = new T.ConeGeometry(0.028 * H, 0.14 * H, 8);
-        geo.push(hornG);
+      if (isHero) {
+        const dome = M(sph(0.096 * H, 14, 10), mats.hi);
+        dome.scale.set(1, 0.92, 1);
+        dome.position.y = 0.018 * H;
+        headG.add(dome);
+        const face = M(box(0.105 * H, 0.08 * H, 0.05 * H), mats.lo);
+        face.position.set(0, -0.012 * H, 0.062 * H);
+        headG.add(face);
         [-1, 1].forEach((s) => {
-          const horn = new T.Mesh(hornG, mats.lo);
-          horn.position.set(s * 0.055 * H, 0.1 * H, -0.03 * H);
-          horn.rotation.set(-0.7, 0, -s * 0.55);
-          headG.add(horn);
-          ornaments.push(horn);
+          const cheek = M(box(0.02 * H, 0.09 * H, 0.09 * H), mats.hi);
+          cheek.position.set(s * 0.082 * H, -0.005 * H, 0.03 * H);
+          headG.add(cheek);
         });
-      } else {
-        // hero crest / per-element identity
-        if (f.element === "fire") {
-          const flameG = new T.ConeGeometry(0.022 * H, 0.13 * H, 7);
-          geo.push(flameG);
-          [-0.03, 0, 0.03].forEach((x, i) => {
-            const fl = new T.Mesh(flameG, mats.accent);
-            fl.position.set(x * H, 0.1 + (i === 1 ? 0.02 : 0) * H, -0.02 * H);
+        const eye = M(box(0.075 * H, 0.017 * H, 0.02 * H), mats.eye);
+        eye.position.set(0, 0.008 * H, 0.092 * H);
+        headG.add(eye);
+        // crest per element
+        if (heroEl === "fire") {
+          [-0.032, 0, 0.032].forEach((x, i) => {
+            const fl = M(cone(0.02 * H, (0.12 + (i === 1 ? 0.05 : 0)) * H), mats.accent);
+            fl.position.set(x * H, 0.1 * H, -0.02 * H);
+            fl.rotation.x = -0.35;
             headG.add(fl);
             ornaments.push(fl);
           });
-        } else if (f.element === "arcane") {
-          const gemG = new T.OctahedronGeometry(0.03 * H, 0);
-          geo.push(gemG);
-          const gem = new T.Mesh(gemG, mats.accent);
-          gem.position.set(0, 0.05 * H, 0.085 * H);
-          headG.add(gem);
-          ornaments.push(gem);
-        } else if (f.element === "shadow") {
-          const crestG = new T.ConeGeometry(0.02 * H, 0.16 * H, 6);
-          geo.push(crestG);
+        } else if (heroEl === "ice") {
+          [-1, 0, 1].forEach((s, i) => {
+            const spike = M(cone(0.018 * H, (i === 1 ? 0.14 : 0.1) * H), mats.steel);
+            spike.position.set(s * 0.045 * H, 0.1 * H, -0.01 * H);
+            spike.rotation.x = -0.2;
+            headG.add(spike);
+          });
+        } else if (heroEl === "wind") {
+          const fin = M(box(0.02 * H, 0.09 * H, 0.16 * H), mats.hi);
+          fin.position.set(0, 0.075 * H, -0.06 * H);
+          fin.rotation.x = 0.45;
+          headG.add(fin);
+        } else if (heroEl === "arcane") {
+          const halo = M(torus(0.085 * H, 0.008 * H), mats.glow);
+          halo.position.set(0, 0.02 * H, -0.075 * H);
+          headG.add(halo);
+          rig.halo = halo;
+        } else if (heroEl === "shadow") {
           [-1, 1].forEach((s) => {
-            const cr = new T.Mesh(crestG, mats.accent);
-            cr.position.set(s * 0.04 * H, 0.12 * H, -0.01 * H);
-            cr.rotation.z = s * 0.5;
-            headG.add(cr);
-            ornaments.push(cr);
+            const horn = M(cone(0.022 * H, 0.15 * H), mats.dark);
+            horn.position.set(s * 0.06 * H, 0.085 * H, -0.02 * H);
+            horn.rotation.set(-0.5, 0, s * -0.6);
+            headG.add(horn);
+          });
+          const hood = M(cone(0.105 * H, 0.16 * H), mats.cloth);
+          hood.position.set(0, 0.055 * H, -0.035 * H);
+          hood.rotation.x = -0.28;
+          headG.add(hood);
+        }
+      } else {
+        // monster head: muzzle, jaw, twin glowing eyes, horns
+        const muzzle = M(box(0.09 * H * bulk, 0.06 * H, 0.12 * H), mats.hide);
+        muzzle.position.set(0, -0.02 * H, 0.11 * H);
+        headG.add(muzzle);
+        const jaw = M(box(0.085 * H * bulk, 0.03 * H, 0.1 * H), mats.dark);
+        jaw.position.set(0, -0.06 * H, 0.1 * H);
+        headG.add(jaw);
+        for (let i = 0; i < 3; i += 1) {
+          const fang = M(cone(0.012 * H, 0.035 * H), mats.steel);
+          fang.position.set((i - 1) * 0.03 * H, -0.045 * H, 0.155 * H);
+          fang.rotation.x = Math.PI;
+          headG.add(fang);
+        }
+        [-1, 1].forEach((s) => {
+          const eye = M(sph(0.019 * H, 8, 6), mats.eye);
+          eye.position.set(s * 0.042 * H, 0.028 * H, 0.095 * H);
+          headG.add(eye);
+          const brow = M(box(0.045 * H, 0.014 * H, 0.02 * H), mats.lo);
+          brow.position.set(s * 0.042 * H, 0.052 * H, 0.092 * H);
+          brow.rotation.z = s * -0.25;
+          headG.add(brow);
+          const horn = M(cone(arch === "colossus" ? 0.035 * H : 0.024 * H, (arch === "colossus" ? 0.26 : 0.18) * H), mats.lo);
+          horn.position.set(s * 0.07 * H * bulk, 0.09 * H, -0.02 * H);
+          horn.rotation.set(-0.55 - (arch === "colossus" ? 0.25 : 0), 0, s * -0.5);
+          headG.add(horn);
+          if (arch === "colossus" || arch === "warden") {
+            const horn2 = M(cone(0.016 * H, 0.1 * H), mats.lo);
+            horn2.position.set(s * 0.105 * H * bulk, 0.03 * H, -0.03 * H);
+            horn2.rotation.set(-0.2, 0, s * -0.95);
+            headG.add(horn2);
+          }
+        });
+        if (arch === "revenant") {
+          [-1, 0, 1].forEach((s, i) => {
+            const ice = M(cone(0.017 * H, (i === 1 ? 0.15 : 0.1) * H), mats.steel);
+            ice.position.set(s * 0.05 * H, 0.1 * H, -0.01 * H);
+            ice.rotation.x = -0.25;
+            headG.add(ice);
+          });
+        }
+        if (arch === "stalker") {
+          [-1, 1].forEach((s) => {
+            const ear = M(cone(0.02 * H, 0.11 * H), mats.hide);
+            ear.position.set(s * 0.055 * H, 0.09 * H, -0.03 * H);
+            ear.rotation.x = -0.4;
+            headG.add(ear);
           });
         }
       }
 
-      // arms (front = -x, camera side)
+      /* ============ arms ============ */
       const buildArm = (side) => {
         const shG = new T.Group();
-        shG.position.set(side * 0.078 * H * bulk, 0.2 * H, 0);
+        shG.position.set(side * 0.088 * H * bulk, 0.205 * H, 0);
         torsoG.add(shG);
-        const padG = new T.SphereGeometry(0.062 * H * bulk, 12, 10);
-        geo.push(padG);
-        const pad = new T.Mesh(padG, side < 0 ? mats.hi : mats.lo);
-        pad.scale.set(1, 0.8, 1);
+        const padScale = arch === "warden" || arch === "colossus" ? 1.5 : arch === "herald" ? 1.3 : arch === "stalker" ? 0.85 : 1;
+        const pad = M(sph(0.066 * H * bulk * padScale), side < 0 ? mats.hi : mats.lo);
+        pad.scale.set(1, 0.78, 1);
+        pad.position.y = 0.012 * H;
         shG.add(pad);
-        const upperG = new T.CapsuleGeometry(0.05 * H * bulk, 0.09 * H, 3, 10);
-        geo.push(upperG);
-        const upper = new T.Mesh(upperG, side < 0 ? mats.body : mats.lo);
+        const padRim = M(torus(0.062 * H * bulk * padScale, 0.012 * H), side < 0 ? mats.accent : mats.dark);
+        padRim.rotation.x = Math.PI / 2;
+        padRim.position.y = -0.012 * H;
+        shG.add(padRim);
+        if (!isHero && arch !== "revenant" && arch !== "stalker") {
+          [-0.5, 0, 0.5].forEach((a, i) => {
+            const spike = M(cone(0.02 * H, 0.1 * H), mats.lo);
+            spike.position.set(Math.sin(a) * 0.06 * H * bulk, 0.045 * H, Math.cos(a) * 0.04 * H);
+            spike.rotation.z = a * 0.9;
+            if (i === 1) shG.add(spike);
+          });
+        }
+        const upper = M(cap(0.05 * H * bulk, 0.09 * H), side < 0 ? mats.body : mats.lo);
         upper.position.set(0, -0.09 * H, 0);
         shG.add(upper);
         const elG = new T.Group();
         elG.position.set(0, -0.17 * H, 0);
         shG.add(elG);
-        const foreG = new T.CapsuleGeometry(0.042 * H * bulk, 0.09 * H, 3, 10);
-        geo.push(foreG);
-        const fore = new T.Mesh(foreG, side < 0 ? mats.body : mats.lo);
+        const cop = M(sph(0.045 * H * bulk), mats.hi);
+        elG.add(cop);
+        const fore = M(cap(0.044 * H * bulk, 0.085 * H), side < 0 ? mats.body : mats.lo);
         fore.position.set(0, -0.08 * H, 0);
         elG.add(fore);
+        const bracer = M(box(0.072 * H * bulk, 0.1 * H, 0.075 * H * bulk), side < 0 ? mats.hi : mats.lo);
+        bracer.position.set(0, -0.1 * H, 0.008 * H);
+        elG.add(bracer);
         const handG = new T.Group();
         handG.position.set(0, -0.16 * H, 0);
         elG.add(handG);
-        const handMeshG = new T.SphereGeometry(0.04 * H, 10, 8);
-        geo.push(handMeshG);
-        const handMesh = new T.Mesh(handMeshG, mats.lo);
+        const handMesh = M(sph(0.042 * H, 10, 8), mats.dark);
         handG.add(handMesh);
         return { shG, elG, handG };
       };
       const armF = buildArm(-1);
       const armB = buildArm(1);
 
-      // weapons
+      /* ============ weapons ============ */
       const weapon = new T.Group();
-      if (f.build === "beast") {
-        const clawG = new T.ConeGeometry(0.02 * H, 0.13 * H, 7);
-        geo.push(clawG);
-        [-0.3, 0, 0.3].forEach((a, i) => {
-          const claw = new T.Mesh(clawG, i === 1 ? mats.accent : mats.lo);
-          claw.position.set(Math.sin(a) * 0.05 * H, -0.09 * H, Math.cos(a) * 0.05 * H);
-          claw.rotation.x = Math.PI + 0.35;
+      let tipMarker = null;
+      const addEmitter = (obj, color) => rig.emitters.push({ obj, color });
+      if (!isHero && arch === "stalker") {
+        // claws instead of a weapon
+        [-0.32, 0, 0.32].forEach((a, i) => {
+          const claw = M(cone(0.024 * H, 0.17 * H), i === 1 ? mats.accent : mats.steel);
+          claw.position.set(Math.sin(a) * 0.05 * H, -0.1 * H, Math.cos(a) * 0.05 * H);
+          claw.rotation.x = Math.PI + 0.3;
           claw.rotation.z = a;
           weapon.add(claw);
         });
+        rig.weaponLen = 0.6;
+        // spine spikes along the hunched back
+        for (let i = 0; i < 5; i += 1) {
+          const spike = M(cone(0.02 * H, 0.09 * H), mats.lo);
+          spike.position.set(0, (0.24 - i * 0.045) * H, -0.075 * H);
+          spike.rotation.x = -2.6;
+          torsoG.add(spike);
+        }
+        // tail
+        let parent = root;
+        for (let i = 0; i < 4; i += 1) {
+          const seg = new T.Group();
+          seg.position.set(0, i === 0 ? 0.42 * H : 0, i === 0 ? -0.1 * H : -0.11 * H * (1 - i * 0.12));
+          const bone = M(cap(0.028 * H * (1 - i * 0.16), 0.09 * H), mats.hide);
+          bone.rotation.x = Math.PI / 2;
+          bone.position.z = -0.05 * H;
+          seg.add(bone);
+          if (i === 3) {
+            const stinger = M(cone(0.02 * H, 0.09 * H), mats.accent);
+            stinger.rotation.x = -Math.PI / 2;
+            stinger.position.z = -0.11 * H;
+            seg.add(stinger);
+          }
+          parent.add(seg);
+          rig.tail.push(seg);
+          parent = seg;
+        }
       } else {
-        const brutal = f.build === "brute";
-        const ws = brutal ? 1.45 : 1;
-        const sword = new T.Group();
-        sword.rotation.x = 1.15;
-        sword.scale.setScalar(ws);
-        weapon.add(sword);
-        const gripG = new T.CylinderGeometry(0.016 * H, 0.018 * H, 0.08 * H, 8);
-        geo.push(gripG);
-        const grip = new T.Mesh(gripG, mats.lo);
-        grip.position.set(0, 0.02 * H, 0);
-        sword.add(grip);
-        const pomG = new T.SphereGeometry(0.024 * H, 10, 8);
-        geo.push(pomG);
-        const pom = new T.Mesh(pomG, mats.accent);
-        pom.position.set(0, 0.068 * H, 0);
-        sword.add(pom);
-        const guardG = new T.BoxGeometry(0.1 * H, 0.022 * H, 0.034 * H);
-        geo.push(guardG);
-        const guard = new T.Mesh(guardG, mats.hi);
-        guard.position.set(0, 0.052 * H, 0);
-        sword.add(guard);
-        const bladeG = new T.BoxGeometry(0.034 * H, 0.4 * H, 0.011 * H);
-        geo.push(bladeG);
-        const blade = new T.Mesh(bladeG, mats.steel);
-        blade.position.set(0, -0.24 * H, 0);
-        sword.add(blade);
-        const edgeG = new T.BoxGeometry(0.01 * H, 0.39 * H, 0.018 * H);
-        geo.push(edgeG);
-        const edge = new T.Mesh(edgeG, mats.accent);
-        edge.position.set(0, -0.24 * H, 0);
-        sword.add(edge);
-        const tipG = new T.ConeGeometry(0.017 * H, 0.07 * H, 4);
-        geo.push(tipG);
-        const tip = new T.Mesh(tipG, mats.steel);
-        tip.position.set(0, -0.485 * H, 0);
-        tip.rotation.x = Math.PI;
-        sword.add(tip);
+        const heroKit = {
+          fire: "greatsword", ice: "warhammer", wind: "saber", arcane: "staff", shadow: "scythe",
+        }[heroEl] || "greatsword";
+        const monsterKit = { warden: "cleaver", herald: "greatsword", revenant: "mace", colossus: "colossushammer" }[arch];
+        const kind = isHero ? heroKit : (monsterKit || "cleaver");
+        const heavy = !isHero;
+        const ws = heavy ? 1.5 : 1;
+
+        if (kind === "greatsword") {
+          rig.weaponLen = 1.0;
+          const sword = new T.Group();
+          sword.rotation.x = 1.15;
+          sword.scale.setScalar(ws);
+          weapon.add(sword);
+          const grip = M(cyl(0.015 * H, 0.017 * H, 0.09 * H), mats.dark);
+          grip.position.y = 0.03 * H;
+          sword.add(grip);
+          const pom = M(sph(0.026 * H), mats.accent);
+          pom.position.y = 0.082 * H;
+          sword.add(pom);
+          const guard = M(box(0.13 * H, 0.022 * H, 0.034 * H), mats.hi);
+          guard.position.y = 0.062 * H;
+          sword.add(guard);
+          [-1, 1].forEach((s) => {
+            const quillon = M(box(0.02 * H, 0.06 * H, 0.02 * H), mats.hi);
+            quillon.position.set(s * 0.055 * H, 0.09 * H, 0);
+            quillon.rotation.z = s * 0.35;
+            sword.add(quillon);
+          });
+          const blade = M(box(0.04 * H, 0.44 * H, 0.012 * H), mats.steel);
+          blade.position.y = -0.26 * H;
+          sword.add(blade);
+          const fuller = M(box(0.014 * H, 0.42 * H, 0.018 * H), mats.glow);
+          fuller.position.y = -0.26 * H;
+          sword.add(fuller);
+          const tip = M(cone(0.021 * H, 0.08 * H, 4), mats.steel);
+          tip.position.y = -0.52 * H;
+          tip.rotation.x = Math.PI;
+          sword.add(tip);
+          tipMarker = tip;
+          if (isHero && heroEl === "fire") {
+            [-0.4, 0, 0.4].forEach((a, i) => {
+              const fl = M(cone(0.016 * H, (i === 1 ? 0.11 : 0.07) * H), mats.accent);
+              fl.position.set(Math.sin(a) * 0.03 * H, -0.4 - i * 0.03 * H, 0);
+              fl.rotation.x = Math.PI * 0.98;
+              sword.add(fl);
+              ornaments.push(fl);
+            });
+          }
+        } else if (kind === "warhammer" || kind === "colossushammer") {
+          rig.weaponLen = 0.95;
+          const ws2 = kind === "colossushammer" ? 1.7 : 1.15;
+          const hammer = new T.Group();
+          hammer.rotation.x = 1.15;
+          hammer.scale.setScalar(ws * ws2);
+          weapon.add(hammer);
+          const haft = M(cyl(0.017 * H, 0.019 * H, 0.52 * H), mats.dark);
+          haft.position.y = -0.1 * H;
+          hammer.add(haft);
+          const head = M(box(0.15 * H, 0.13 * H, 0.13 * H), mats.steel);
+          head.position.y = -0.34 * H;
+          hammer.add(head);
+          const face1 = M(box(0.05 * H, 0.14 * H, 0.14 * H), mats.hi);
+          face1.position.set(0.09 * H, -0.34 * H, 0);
+          hammer.add(face1);
+          [-1, 1].forEach((s) => {
+            const pick = M(cone(0.035 * H, 0.11 * H), mats.hi);
+            pick.position.set(s * 0.12 * H, -0.34 * H, 0);
+            pick.rotation.z = s * -Math.PI / 2;
+            hammer.add(pick);
+          });
+          const rune = M(box(0.11 * H, 0.02 * H, 0.135 * H), mats.glow);
+          rune.position.y = -0.275 * H;
+          hammer.add(rune);
+          const buttcap = M(sph(0.024 * H), mats.accent);
+          buttcap.position.y = 0.16 * H;
+          hammer.add(buttcap);
+          tipMarker = head;
+        } else if (kind === "saber") {
+          rig.weaponLen = 0.78;
+          const saber = () => {
+            const g = new T.Group();
+            g.rotation.x = 1.05;
+            const grip = M(cyl(0.014 * H, 0.015 * H, 0.08 * H), mats.dark);
+            grip.position.y = 0.028 * H;
+            g.add(grip);
+            const guard = M(box(0.07 * H, 0.018 * H, 0.028 * H), mats.hi);
+            guard.position.y = 0.058 * H;
+            g.add(guard);
+            const blade = M(box(0.03 * H, 0.34 * H, 0.01 * H), mats.steel);
+            blade.position.y = -0.2 * H;
+            g.add(blade);
+            const edge = M(box(0.01 * H, 0.33 * H, 0.016 * H), mats.glow);
+            edge.position.y = -0.2 * H;
+            g.add(edge);
+            const tip = M(cone(0.016 * H, 0.06 * H, 4), mats.steel);
+            tip.position.y = -0.4 * H;
+            tip.rotation.x = Math.PI;
+            g.add(tip);
+            return g;
+          };
+          weapon.add(saber());
+          armB.handG.add((() => { const w2 = saber(); w2.rotation.y = Math.PI; return w2; })());
+          tipMarker = weapon.children[0];
+        } else if (kind === "staff") {
+          rig.weaponLen = 0.9;
+          const staff = new T.Group();
+          staff.rotation.x = 1.05;
+          weapon.add(staff);
+          const haft = M(cyl(0.015 * H, 0.017 * H, 0.62 * H), mats.dark);
+          haft.position.y = -0.06 * H;
+          staff.add(haft);
+          [-1, 1].forEach((s) => {
+            const prong = M(cyl(0.009 * H, 0.011 * H, 0.13 * H), mats.steel);
+            prong.position.set(s * 0.035 * H, -0.36 * H, 0);
+            prong.rotation.z = s * 0.35;
+            staff.add(prong);
+          });
+          const gem = M(track(new T.OctahedronGeometry(0.045 * H, 0)), mats.accent);
+          gem.position.y = -0.4 * H;
+          staff.add(gem);
+          ornaments.push(gem);
+          tipMarker = gem;
+          const orb = M(sph(0.055 * H, 14, 12), mats.accent);
+          orb.position.set(0, -0.1 * H, 0.12 * H);
+          armB.handG.add(orb);
+          rig.orb = orb;
+          const orbRing = M(torus(0.085 * H, 0.007 * H), mats.glow);
+          orbRing.position.copy(orb.position);
+          armB.handG.add(orbRing);
+          rig.orbRing = orbRing;
+        } else if (kind === "scythe") {
+          rig.weaponLen = 1.05;
+          const scythe = new T.Group();
+          scythe.rotation.x = 1.1;
+          scythe.scale.setScalar(ws);
+          weapon.add(scythe);
+          const haft = M(cyl(0.016 * H, 0.018 * H, 0.58 * H), mats.dark);
+          haft.position.y = -0.08 * H;
+          scythe.add(haft);
+          const bladeMount = M(sph(0.024 * H), mats.hi);
+          bladeMount.position.y = -0.37 * H;
+          scythe.add(bladeMount);
+          const blade = M(torus(0.16 * H, 0.02 * H, 2.1), mats.steel);
+          blade.position.set(0.05 * H, -0.36 * H, 0);
+          blade.rotation.set(0, Math.PI / 2, 1.9);
+          scythe.add(blade);
+          const bladeEdge = M(torus(0.16 * H, 0.009 * H, 2.1), mats.glow);
+          bladeEdge.position.copy(blade.position);
+          bladeEdge.rotation.copy(blade.rotation);
+          scythe.add(bladeEdge);
+          const counter = M(cone(0.02 * H, 0.09 * H), mats.steel);
+          counter.position.set(-0.02 * H, -0.31 * H, 0);
+          counter.rotation.z = 0.7;
+          scythe.add(counter);
+          tipMarker = blade;
+        } else { // cleaver
+          rig.weaponLen = 1.0;
+          const cleaver = new T.Group();
+          cleaver.rotation.x = 1.2;
+          cleaver.scale.setScalar(ws);
+          weapon.add(cleaver);
+          const grip = M(cyl(0.02 * H, 0.022 * H, 0.12 * H), mats.dark);
+          grip.position.y = 0.04 * H;
+          cleaver.add(grip);
+          const guard = M(box(0.1 * H, 0.026 * H, 0.04 * H), mats.lo);
+          guard.position.y = 0.085 * H;
+          cleaver.add(guard);
+          const blade = M(box(0.15 * H, 0.42 * H, 0.02 * H), mats.steel);
+          blade.position.set(0.03 * H, -0.19 * H, 0);
+          cleaver.add(blade);
+          const notch = M(box(0.05 * H, 0.1 * H, 0.024 * H), mats.lo);
+          notch.position.set(0.1 * H, -0.02 * H, 0);
+          cleaver.add(notch);
+          const glowStrip = M(box(0.026 * H, 0.4 * H, 0.026 * H), mats.glow);
+          glowStrip.position.set(-0.045 * H, -0.19 * H, 0);
+          cleaver.add(glowStrip);
+          tipMarker = blade;
+        }
       }
       armF.handG.add(weapon);
+      if (tipMarker && (isHero ? heroEl === "fire" : arch === "warden")) {
+        addEmitter(tipMarker, f.kit.glow);
+      }
 
-      // ice hero: kite shield on the off hand
-      if (f.build === "hero" && f.element === "ice") {
-        const shieldG = new T.BoxGeometry(0.15 * H, 0.2 * H, 0.02 * H);
-        geo.push(shieldG);
-        const shield = new T.Mesh(shieldG, mats.hi);
-        shield.position.set(0, -0.07 * H, 0.05 * H);
+      /* ============ off-hand shield (ice hero) ============ */
+      if (isHero && heroEl === "ice") {
+        const shield = M(box(0.16 * H, 0.21 * H, 0.024 * H), mats.hi);
+        shield.position.set(0, -0.07 * H, 0.055 * H);
         armB.handG.add(shield);
-        const rimG = new T.BoxGeometry(0.16 * H, 0.21 * H, 0.014 * H);
-        geo.push(rimG);
-        const rim = new T.Mesh(rimG, mats.accent);
-        rim.position.set(0, -0.07 * H, 0.045 * H);
+        const rim = M(box(0.17 * H, 0.22 * H, 0.016 * H), mats.accent);
+        rim.position.set(0, -0.07 * H, 0.048 * H);
         armB.handG.add(rim);
+        const boss = M(sph(0.032 * H), mats.steel);
+        boss.position.set(0, -0.07 * H, 0.072 * H);
+        armB.handG.add(boss);
       }
-      // arcane hero: a levitating rune orb
-      let orb = null;
-      if (f.build === "hero" && f.element === "arcane") {
-        const orbG = new T.SphereGeometry(0.05 * H, 14, 12);
-        geo.push(orbG);
-        orb = new T.Mesh(orbG, mats.accent);
-        orb.position.set(0, -0.12 * H, 0.1 * H);
-        armB.handG.add(orb);
-      }
-      // wind hero: fluttering scarf
+
+      /* ============ cloth: cape + scarf ============ */
+      const capeG = new T.Group();
+      capeG.position.set(0, 0.44 * H, -0.075 * H * bulk);
+      root.add(capeG);
+      const capeLen = arch === "revenant" ? 1.5 : heroEl === "shadow" ? 1.25 : 1;
+      const c1 = M(box(0.2 * H * bulk, 0.24 * H * capeLen, 0.012 * H), mats.cloth);
+      c1.position.y = -0.12 * H;
+      capeG.add(c1);
+      const c2 = M(box(0.24 * H * bulk, 0.2 * H * capeLen, 0.012 * H), mats.cloth);
+      c2.position.y = -0.33 * H * capeLen;
+      c2.rotation.x = 0.16;
+      capeG.add(c2);
+      const c3 = M(box(0.2 * H * bulk, 0.14 * H * capeLen, 0.012 * H), mats.cloth);
+      c3.position.y = -0.48 * H * capeLen;
+      c3.rotation.x = 0.3;
+      capeG.add(c3);
+
       const scarf = new T.Group();
       scarf.position.set(0, 0.24 * H, -0.05 * H);
       torsoG.add(scarf);
-      const s1G = new T.BoxGeometry(0.055 * H, 0.16 * H, 0.014 * H);
-      geo.push(s1G);
-      const s1 = new T.Mesh(s1G, mats.cloth);
-      s1.position.set(0, -0.08 * H, 0);
+      const s1 = M(box(0.055 * H, 0.16 * H, 0.012 * H), mats.cloth);
+      s1.position.y = -0.08 * H;
       scarf.add(s1);
-      const s2G = new T.BoxGeometry(0.05 * H, 0.12 * H, 0.012 * H);
-      geo.push(s2G);
-      const s2 = new T.Mesh(s2G, mats.cloth);
-      s2.position.set(0, -0.17 * H, 0);
+      const s2 = M(box(0.048 * H, 0.13 * H, 0.012 * H), mats.cloth);
+      s2.position.y = -0.18 * H;
       scarf.add(s2);
 
-      // cape
-      const capeG = new T.Group();
-      capeG.position.set(0, 0.44 * H, -0.07 * H);
-      root.add(capeG);
-      const c1G = new T.PlaneGeometry(0.2 * H * bulk, 0.24 * H);
-      geo.push(c1G);
-      const c1 = new T.Mesh(c1G, mats.cloth);
-      c1.position.set(0, -0.12 * H, 0);
-      capeG.add(c1);
-      const c2G = new T.PlaneGeometry(0.24 * H * bulk, 0.2 * H);
-      geo.push(c2G);
-      const c2 = new T.Mesh(c2G, mats.cloth);
-      c2.position.set(0, -0.32 * H, 0);
-      c2.rotation.x = 0.18;
-      capeG.add(c2);
-
-      // blob shadow
+      /* ============ blob shadow, flash, ward ============ */
       const blob = new T.Mesh(
         new T.PlaneGeometry(1, 1),
-        new T.MeshBasicMaterial({
-          map: this.blobTex, transparent: true, opacity: 0.4, depthWrite: false,
-        })
+        new T.MeshBasicMaterial({ map: this.blobTex, transparent: true, opacity: 0.4, depthWrite: false })
       );
       blob.rotation.x = -Math.PI / 2;
       blob.scale.set(0.42 * H, 0.3 * H, 1);
       this.scene.add(blob);
 
-      // hit flash silhouette
-      const flashMat = new T.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0, depthWrite: false,
-      });
-      const fBodyG = new T.CapsuleGeometry(0.12 * H * bulk, 0.34 * H, 3, 10);
-      const fHeadG = new T.SphereGeometry(0.1 * H, 12, 10);
+      const flashMat = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false });
+      const fBodyG = track(new T.CapsuleGeometry(0.12 * H * bulk, 0.34 * H, 3, 10));
+      const fHeadG = track(new T.SphereGeometry(0.1 * H, 12, 10));
       const fBody = new T.Mesh(fBodyG, flashMat);
       fBody.position.set(0, 0.55 * H, 0);
       const fHead = new T.Mesh(fHeadG, flashMat);
-      fHead.position.set(0, 0.78 * H, 0);
+      fHead.position.set(0, 0.82 * H, 0);
       fBody.visible = false;
       fHead.visible = false;
       this.scene.add(fBody, fHead);
 
-      // ward bubble
       const wardMat = new T.MeshBasicMaterial({
         color: 0x7fd8ff, transparent: true, opacity: 0.1, side: T.DoubleSide, depthWrite: false,
       });
-      const ward = new T.Mesh(new T.SphereGeometry(0.52 * H, 20, 16), wardMat);
+      const ward = new T.Mesh(track(new T.SphereGeometry(0.52 * H, 20, 16)), wardMat);
       ward.position.set(0, 0.55 * H, 0);
       ward.visible = false;
       this.scene.add(ward);
 
       this.scene.add(root);
-      const rig = {
-        f, H, bulk, root, blob, flashMat, fBody, fHead, ward, wardMat,
-        torsoG, headG, ornaments, armF, armB, legF, legB, capeG, scarf, orb,
-        mats, geo,
-      };
+      Object.assign(rig, {
+        torsoG, headG, ornaments, armF, armB, legF, legB, capeG, scarf,
+        blob, flashMat, fBody, fHead, ward, wardMat,
+      });
       rig.dispose = () => {
         this.scene.remove(root, blob, fBody, fHead, ward);
+        if (rig.orbiters) this.scene.remove(rig.orbiters.group);
         geo.forEach((g) => g.dispose());
         Object.values(mats).forEach((m) => m.dispose());
         flashMat.dispose();
         wardMat.dispose();
       };
       return rig;
+    }
+
+    makeOrbiters(count, radius, material, color) {
+      const T = window.THREE;
+      const group = new T.Group();
+      const meshes = [];
+      for (let i = 0; i < count; i += 1) {
+        const m = new T.Mesh(
+          color === null
+            ? new T.OctahedronGeometry(radius * 0.07, 0)
+            : new T.IcosahedronGeometry(radius * (0.09 + Math.random() * 0.05), 0),
+          material
+        );
+        const a = (i / count) * Math.PI * 2;
+        m.position.set(Math.cos(a) * radius, rand(-radius * 0.2, radius * 0.35), Math.sin(a) * radius * 0.6);
+        m.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+        group.add(m);
+        meshes.push({ m, a: a, r: radius, by: m.position.y, wob: rand(0, Math.PI * 2) });
+      }
+      this.scene.add(group);
+      return { group, meshes, speed: rand(0.4, 0.7), t: 0 };
     }
 
     rigFor(f) {
@@ -1110,19 +1555,25 @@
       const rig = this.rigFor(f);
       const p = f.pose;
       const H = rig.H;
-      void dt;
 
-      rig.root.position.set(f.x, f.y + p.bob - p.dip * 0.35, 0);
+      // landing squash-and-stretch (physics read)
+      const sq = f.squash || 0;
+      rig.root.scale.set(1 + 0.09 * sq, 1 - 0.16 * sq, 1 + 0.09 * sq);
+
+      const hover = rig.hover ? rig.hover + Math.sin(f.animT * 2.1) * 5 : 0;
+      rig.root.position.set(f.x, f.y + p.bob - p.dip * 0.35 + hover, 0);
       const baseY = f.facing > 0 ? Math.PI / 2 : -Math.PI / 2;
       const spinning = f.state === "ability" && f.attack && (f.attack.hits || 1) > 1 && f.phase === "active";
       rig.root.rotation.y = baseY + (spinning ? p.rot : 0);
-      // knock/dead: the whole body tips back; otherwise upright
       rig.root.rotation.x = spinning ? 0 : (f.state === "dead" || f.state === "knock" ? p.rot : 0);
 
-      const hunch = f.build === "brute" ? 0.2 : f.build === "beast" ? 0.26 : 0;
+      const hunch = rig.hunch || 0;
       rig.torsoG.rotation.x = -(p.torso + hunch);
+      // weight: the body leans into its velocity
+      const lean = clamp((f.vx * f.facing) / 2600, -0.1, 0.15);
+      rig.torsoG.rotation.z = -lean * (f.state === "idle" || f.state === "walk" ? 1 : 0.35);
       rig.torsoG.scale.y = p.breath;
-      rig.headG.rotation.x = -p.head;
+      rig.headG.rotation.x = -p.head - hunch * 0.75;
 
       const bendF = clamp(0.78 - Math.abs(p.armF) * 0.42, 0.08, 1.05);
       const bendB = clamp(0.62 - Math.abs(p.armB) * 0.42, 0.08, 1.05);
@@ -1138,19 +1589,57 @@
       rig.legB.hipG.rotation.x = -p.legB;
       rig.legB.kneeG.rotation.x = bendLB;
 
-      // cloth
+      // cloth follows speed and landings
       const run = clamp((f.vx * f.facing) / 340, -1.2, 1.2);
       const flap = Math.sin(f.animT * 6) * 0.1;
-      rig.capeG.rotation.x = 0.35 + run * 0.75 + flap * 0.5;
+      rig.capeG.rotation.x = 0.35 + run * 0.75 + flap * 0.5 + sq * 0.35;
       rig.scarf.rotation.x = 0.5 + run * 0.9 + flap * 0.8;
       rig.scarf.rotation.z = Math.sin(f.animT * 4.5) * 0.12 + run * 0.3;
       if (rig.orb) {
         rig.orb.position.y = -0.12 * H + Math.sin(f.animT * 3.2) * 0.03 * H;
         rig.orb.rotation.y = f.animT * 1.6;
+        if (rig.orbRing) {
+          rig.orbRing.position.copy(rig.orb.position);
+          rig.orbRing.rotation.x = f.animT * 1.4;
+          rig.orbRing.rotation.y = f.animT * 0.9;
+        }
       }
-      // ornament pulse (flames/gems breathe)
+      if (rig.halo) {
+        rig.halo.rotation.y = Math.PI / 2 + Math.sin(f.animT * 0.9) * 0.25;
+        rig.halo.rotation.z = Math.sin(f.animT * 1.8) * 0.1;
+      }
+      // tail: a wave travelling down the segments
+      for (let i = 0; i < rig.tail.length; i += 1) {
+        const seg = rig.tail[i];
+        seg.rotation.y = Math.sin(f.animT * 3.4 - i * 0.8) * (0.2 + i * 0.06) - run * 0.12;
+        seg.rotation.x = -0.1 - run * 0.08 + Math.sin(f.animT * 2.6 - i * 0.6) * 0.06;
+      }
+      // shards / runestones orbiting the bigger monsters
+      if (rig.orbiters) {
+        const o = rig.orbiters;
+        o.t += dt || 1 / 60;
+        for (let i = 0; i < o.meshes.length; i += 1) {
+          const m = o.meshes[i];
+          const a = m.a + o.t * o.speed;
+          m.m.position.set(Math.cos(a) * m.r, m.by + Math.sin(o.t * 1.7 + m.wob) * 12, Math.sin(a) * m.r * 0.6);
+          m.m.rotation.y += (dt || 1 / 60) * 0.8;
+          m.m.rotation.x += (dt || 1 / 60) * 0.5;
+        }
+        o.group.position.set(f.x, f.y + H * 0.45, 0);
+      }
+      // ornament pulse (flames / gems breathe)
       for (let i = 0; i < rig.ornaments.length; i += 1) {
         rig.ornaments[i].scale.setScalar(1 + Math.sin(f.animT * 5 + i) * 0.08);
+      }
+      // elemental emitters (a burning blade sheds sparks from its real tip)
+      if (rig.emitters.length && Math.random() < 0.6) {
+        for (let i = 0; i < rig.emitters.length; i += 1) {
+          rig.emitters[i].obj.getWorldPosition(this.tmp);
+          this.particles.spawn(
+            this.tmp.x + rand(-7, 7), this.tmp.y + rand(-7, 7), rig.emitters[i].color,
+            rand(-55, 55), rand(30, 150), 0.32
+          );
+        }
       }
 
       // blob shadow
@@ -1213,7 +1702,7 @@
         const a = f.attack;
         const prog = clamp((f.stateT - a.windup) / (a.active || 0.12), 0, 1);
         rig.armF.handG.getWorldPosition(this.tmp);
-        const size = (f.build === "brute" ? 1.0 : 0.72) * H;
+        const size = (rig.weaponLen || 0.72) * H;
         let arc = this.trailArc.get(f);
         if (!arc) {
           const m = new T.Mesh(
@@ -1260,6 +1749,9 @@
       const sy = shake ? rand(-shake, shake) * 0.25 : 0;
       this.camera.position.set(this.cam.x + sx, this.cam.y + sy, this.cam.dist);
       this.camera.lookAt(this.cam.x, 58, 0);
+      // impact zoom: heavy blows punch the lens in for a frame or two
+      this.camera.fov = 42 - (a.fovPunch || 0);
+      this.camera.updateProjectionMatrix();
     }
 
     /* ---------------- DOM numbers + banner ---------------- */
@@ -1337,8 +1829,23 @@
       if (this.sceneName === null) this.setScene(a.scene || "bg-ember");
 
       this.stepCamera(dt || 1 / 60);
+      this.stepEnv(dt, a.time);
       this.updateRig(a.player, dt);
       this.updateRig(a.enemy, dt);
+
+      // adaptive resolution — if frames run long, shed pixels before shedding smoothness
+      if (dt && dt > 0.001) {
+        this.frameEma = this.frameEma * 0.93 + dt * 1000 * 0.07;
+        if (this.frameEma > 23) this.frameHot += 1;
+        else if (this.frameEma < 17) this.frameHot = Math.max(0, this.frameHot - 1);
+        if (this.frameHot > 45 && this.dprLevel < this.dprLevels.length - 1) {
+          this.dprLevel += 1;
+          this.frameHot = 0;
+          this.frameEma = 18;
+          this.renderer.setPixelRatio(this.dprLevels[this.dprLevel]);
+          this.renderer.setSize(this.a.w, this.a.h, false);
+        }
+      }
 
       // ambient motes drift
       const pos = this.moteGeo.attributes.position.array;
@@ -1456,7 +1963,7 @@
     resize(w, h) {
       this.a.w = w;
       this.a.h = h;
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      const dpr = this.dprLevels[this.dprLevel] || 1.75;
       this.renderer.setPixelRatio(dpr);
       this.renderer.setSize(w, h, false);
       this.a.canvas.style.width = `${w}px`;
@@ -1864,6 +2371,8 @@
       this.buffer = null;
       this.slowmo = 1;
       this.cam.x = 0;
+      this.fovPunch = 0;
+      if (this.use3D) this.r.cam.dist = 1600; // swoop in for the duel
     }
 
     resize(logicalW, logicalH) {
@@ -1949,8 +2458,9 @@
       this.shots.push({
         owner, spec,
         x: owner.x + owner.facing * 58,
-        y: FIGHTER_H * owner.scale * 0.55,
+        y: FIGHTER_H * owner.scale * 0.62,
         vx: owner.facing * (spec.speed || 500),
+        vy: (spec.volley ? rand(18, 52) : 34) + this.shots.length * 0,
         life: 2.2,
         trail: [],
       });
@@ -1988,7 +2498,8 @@
       this.number(def, `${dmg}`, crit ? "#ffd479" : "#ff7a86", crit);
       this.impact(def, box.kind, crit, att);
       this.addShake(clamp((box.knock + dmg * 5) / 420, 0.25, 1.5) * (crit ? 14 : 9));
-      this.hitStop = Math.max(this.hitStop, crit ? 0.09 : 0.05);
+      this.hitStop = Math.max(this.hitStop, crit ? 0.05 : 0.032);
+      this.fovPunch = Math.max(this.fovPunch || 0, crit ? 4 : box.kind === "heavy" ? 3 : 1.6);
       if (box.kind === "heavy") SFX.thud();
       else if (box.kind === "magic") SFX.boom(att.element);
       else SFX.clang(att.element);
@@ -2003,8 +2514,8 @@
       f.vx += (f.facing > 0 ? -1 : 1) * 200;
       f.vy = 260;
       this.addShake(18);
-      this.hitStop = 0.16;
-      this.slowmo = 0.32; // the last blow lands in slow motion
+      this.hitStop = 0.11;
+      this.slowmo = 0.35; // the last blow lands in slow motion
       SFX.ko();
       const winner = f === this.player ? this.enemy : this.player;
       winner.state = "victory";
@@ -2064,9 +2575,9 @@
       f.vx -= f.facing * 40; // small weight shift back before the swing
       f.attack = {
         ...spec,
-        windup: 0.13 / f.stats.atkSpeed,
-        active: 0.1 / f.stats.atkSpeed,
-        recover: 0.19 / f.stats.atkSpeed,
+        windup: 0.1 / f.stats.atkSpeed,
+        active: 0.09 / f.stats.atkSpeed,
+        recover: 0.15 / f.stats.atkSpeed,
         range: f.stats.range,
       };
       SFX.whoosh();
@@ -2154,7 +2665,7 @@
 
     /* ---------------- update ---------------- */
     update(dt) {
-      if (this.hitStop > 0) { this.hitStop -= dt; dt *= 0.14; }
+      if (this.hitStop > 0) { this.hitStop -= dt; dt *= 0.22; }
       if (this.over && this.slowmo < 1) this.slowmo = approach(this.slowmo, 1, 1.4, dt);
       if (this.over) dt *= this.slowmo;
       this.time += dt;
@@ -2322,9 +2833,9 @@
         }
         if (f.dashLeft <= 0) { f.state = "idle"; f.attack = null; f.vx *= 0.25; }
       } else if (f.state === "hurt") {
-        if (f.stateT > 0.24) f.state = "idle";
+        if (f.stateT > 0.17) f.state = "idle";
       } else if (f.state === "knock") {
-        if (f.y <= 0 && f.stateT > 0.45) f.state = "idle";
+        if (f.y <= 0 && f.stateT > 0.34) f.state = "idle";
       } else if (f.state === "dead" || f.state === "victory") {
         f.vx = approach(f.vx, 0, 5, dt);
       } else {
@@ -2349,10 +2860,21 @@
       f.y += f.vy * dt;
       if (f.y > 0) f.vy -= GRAVITY * dt;
       if (f.y < 0) {
+        const impact = -f.vy;
         f.y = 0;
-        if (f.vy < -80 && !f.dead) { this.particles(f, 6, "#9fb0ff", 0.6); this.addShake(3); SFX.step(); }
+        if (impact > 260) {
+          f.squash = clamp(impact / 950, 0.25, 1);
+          this.particles(f, Math.min(16, 4 + Math.round(impact / 130)), "#aab6e8", 0.85);
+          this.addShake(clamp(impact / 260, 1, 6));
+          if (impact > 520 && !f.dead) SFX.thud();
+        } else if (impact > 80 && !f.dead) {
+          this.particles(f, 6, "#9fb0ff", 0.6);
+          SFX.step();
+        }
         f.vy = 0;
       }
+      f.wasAir = f.y > 2;
+      f.squash = Math.max(0, f.squash - dt * 5.5);
       const friction = f.state === "knock" || f.state === "dash" ? 1.8 : 10;
       if (f !== this.player || f.busy || Math.abs(this.input.dx) < 0.05) {
         f.vx = approach(f.vx, 0, friction, dt);
@@ -2402,6 +2924,8 @@
         const s = this.shots[i];
         s.life -= dt;
         s.x += s.vx * dt;
+        s.vy -= 150 * dt;
+        s.y += s.vy * dt;
         s.trail.push(s.x);
         if (s.trail.length > 10) s.trail.shift();
         const target = s.owner === this.player ? this.enemy : this.player;
@@ -2448,6 +2972,7 @@
         if (n.life <= 0) this.numbers.splice(i, 1);
       }
       this.shake = Math.max(0, this.shake - dt * 44);
+      this.fovPunch = Math.max(0, (this.fovPunch || 0) - dt * 26);
       this.shakeX = this.shake ? rand(-this.shake, this.shake) : 0;
       this.shakeY = this.shake ? rand(-this.shake, this.shake) * 0.5 : 0;
     }
@@ -2508,7 +3033,7 @@
         }
         case "attack": {
           base();
-          rate = 30;
+          rate = 40;
           if (f.phase === "windup") {
             g.armF = -1.45; g.armB = 0.5; g.torso = -0.16; g.head = -0.08;
             g.legB = -0.2; g.legF = 0.12; g.dip = 2;
@@ -2522,7 +3047,7 @@
         }
         case "ability": {
           base();
-          rate = 26;
+          rate = 34;
           const kind = a.type;
           if (kind === "heavy" && (a.hits || 1) > 1) {
             // cyclone: the whole body spins through the swing
@@ -2531,7 +3056,7 @@
               g.rot = -Math.PI * 2 * ((phaseT - a.windup) / Math.max(0.01, a.active));
               g.armF = 1.5; g.armB = -1.5; g.legF = 0.7; g.legB = -0.7; g.bob = 6;
             } else { g.armF = 0.4; g.legF = 0.2; }
-            rate = 34;
+            rate = 40;
           } else if (kind === "heavy") {
             if (f.phase === "windup") {
               g.armF = -2.6; g.armB = -1.2; g.torso = -0.42; g.head = -0.24;

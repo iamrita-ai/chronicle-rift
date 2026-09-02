@@ -45,6 +45,14 @@ CONFIG_VARIABLES: Final[dict[str, str]] = {
     "API_ID": "Optional Telegram API application ID. Not needed by this Bot API project.",
     "API_HASH": "Optional Telegram API application hash. Not needed by this Bot API project.",
     "ALLOWED_USER_IDS": "Optional comma-separated Telegram user-ID allow-list.",
+    "OWNER_USER_ID": (
+        "Optional Telegram user ID of the owner. The owner receives every feedback"
+        " note and plays with everything unlocked for testing."
+    ),
+    "REPO_URL": (
+        "Optional source repository URL shown on the bot home. "
+        "Default: https://github.com/iamrita-ai/chronicle-rift."
+    ),
     "LOG_LEVEL": "DEBUG, INFO, WARNING, ERROR, or CRITICAL. Default: INFO.",
 }
 
@@ -70,6 +78,8 @@ class Settings:
     telegram_api_id: int | None = field(default=None, repr=False)
     telegram_api_hash: str | None = field(default=None, repr=False)
     allowed_user_ids: frozenset[int] = frozenset()
+    owner_user_id: int | None = None
+    repo_url: str = "https://github.com/iamrita-ai/chronicle-rift"
     log_level: str = "INFO"
 
     @property
@@ -159,6 +169,8 @@ class Settings:
             telegram_api_id=telegram_api_id,
             telegram_api_hash=telegram_api_hash,
             allowed_user_ids=_user_ids(_optional("ALLOWED_USER_IDS")),
+            owner_user_id=_owner_user_id(_optional("OWNER_USER_ID")),
+            repo_url=_optional("REPO_URL") or "https://github.com/iamrita-ai/chronicle-rift",
             log_level=log_level,
         )
 
@@ -239,6 +251,20 @@ def _user_ids(raw_value: str | None) -> frozenset[int]:
     if not user_ids or any(user_id <= 0 for user_id in user_ids):
         raise ConfigurationError("ALLOWED_USER_IDS must contain positive Telegram user IDs.")
     return user_ids
+
+
+def _owner_user_id(raw_value: str | None) -> int | None:
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        owner_user_id = int(raw_value.strip())
+    except ValueError as exc:
+        raise ConfigurationError(
+            "OWNER_USER_ID must be a single positive Telegram user ID."
+        ) from exc
+    if owner_user_id <= 0:
+        raise ConfigurationError("OWNER_USER_ID must be a positive Telegram user ID.")
+    return owner_user_id
 
 
 def _path(name: str, value: str) -> str:

@@ -528,6 +528,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     inventory = inventory_view(game)
     character = character_card(game["character"], game)
     return {
+        "owner": bool(game.get("owner_mode")),
         "profile": {
             "first_name": player["profile"]["first_name"],
             "username": player["profile"].get("username"),

@@ -21,7 +21,36 @@ from .game_engine import (
     use_item,
 )
 from .identity import TelegramIdentity
-from .models import public_player_view
+from .models import CHARACTERS, MAX_RELIC_LEVEL, RELIC_IDS, public_player_view
+
+OWNER_TEST_COINS = 100_000
+
+
+def apply_owner_unlocks(game: dict[str, Any]) -> bool:
+    """Give the owner everything, for testing. Idempotent; returns True on change.
+
+    The unlocked state is applied in memory on load and persists with the
+    next regular save, so purchases and turns keep working unchanged.
+    """
+    changed = False
+    if not game.get("owner_mode"):
+        game["owner_mode"] = True
+        changed = True
+    if int(game.get("coins", 0)) < OWNER_TEST_COINS:
+        game["coins"] = OWNER_TEST_COINS
+        changed = True
+    owned = list(dict.fromkeys(game.get("owned_characters") or []))
+    if not set(CHARACTERS) <= set(owned):
+        game["owned_characters"] = sorted(set(owned) | set(CHARACTERS), key=list(CHARACTERS).index)
+        changed = True
+    relics = dict(game.get("relics") or {})
+    if any(int(relics.get(relic_id, 0)) < MAX_RELIC_LEVEL for relic_id in RELIC_IDS):
+        game["relics"] = {
+            **{relic_id: MAX_RELIC_LEVEL for relic_id in RELIC_IDS},
+            **{k: max(int(v), MAX_RELIC_LEVEL) for k, v in relics.items()},
+        }
+        changed = True
+    return changed
 
 
 class PlayerStore(Protocol):
@@ -74,18 +103,30 @@ class PurchaseResult:
 class GameService:
     """Keeps game mechanics server-side and persists every successful turn."""
 
-    def __init__(self, store: PlayerStore, narrator: Narrator, *, max_retries: int = 3) -> None:
+    def __init__(
+        self,
+        store: PlayerStore,
+        narrator: Narrator,
+        *,
+        max_retries: int = 3,
+        owner_user_id: int | None = None,
+    ) -> None:
         self._store = store
         self._narrator = narrator
         self._max_retries = max_retries
+        self._owner_user_id = owner_user_id
 
     async def dashboard(self, identity: TelegramIdentity) -> dict[str, Any]:
         """Load or initialize a durable hero profile for an authenticated user."""
-        return await self._store.get_or_create(
+        player = await self._store.get_or_create(
             user_id=identity.user_id,
             first_name=identity.first_name,
             username=identity.username,
         )
+        if self._owner_user_id is not None and identity.user_id == self._owner_user_id:
+            # Owner test mode: every hero, relic and a full purse of coins.
+            apply_owner_unlocks(player["game"])
+        return player
 
     async def player_view(self, identity: TelegramIdentity) -> dict[str, Any]:
         return public_player_view(await self.dashboard(identity))

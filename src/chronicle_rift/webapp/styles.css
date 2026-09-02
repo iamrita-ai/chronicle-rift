@@ -2699,3 +2699,58 @@ body.in-fight .app-topbar {
 .legal-scroll .small {
   font-size: 12px;
 }
+
+/* ==================== owner test-mode + telegram account ==================== */
+.owner-crown {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  vertical-align: 1px;
+  filter: drop-shadow(0 0 6px rgba(255, 212, 121, 0.8));
+  animation: crownPulse 2.4s ease-in-out infinite;
+}
+@keyframes crownPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+.owner-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(255, 194, 71, 0.16), rgba(255, 122, 71, 0.1));
+  border: 1px solid rgba(255, 212, 121, 0.45);
+  box-shadow: 0 0 22px rgba(255, 194, 71, 0.12) inset;
+}
+.owner-banner b {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: #ffd479;
+}
+.owner-banner small { color: rgba(255, 244, 214, 0.75); line-height: 1.45; }
+
+.tg-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(18, 22, 42, 0.72);
+  border: 1px solid rgba(122, 136, 210, 0.28);
+}
+.tg-account img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--element, #7c6cff);
+  flex: none;
+}
+.tg-account-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.tg-account-copy small { font-size: 9.5px; letter-spacing: 0.16em; color: rgba(150, 160, 210, 0.8); }
+.tg-account-copy b { font-size: 14px; }
+.tg-account-copy span { font-size: 12px; color: var(--element, #7c6cff); }

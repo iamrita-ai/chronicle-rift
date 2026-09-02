@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote as urlquote
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import KeyboardButtonStyle
@@ -19,7 +20,7 @@ from telegram.ext import (
 from . import __version__
 from .config import Settings
 from .database import DatabaseUnavailable
-from .game_engine import HOW_TO_PLAY, RULES, VALID_ACTIONS
+from .game_engine import HOW_TO_PLAY, RULES, TERMS, VALID_ACTIONS
 from .game_service import GameBusyError, GameService, PurchaseError
 from .identity import TelegramIdentity
 from .models import ITEMS, MAX_RELIC_LEVEL, SHOP_ITEMS, inventory_view, relic_cost
@@ -56,7 +57,32 @@ _FEEDBACK_KINDS = {
     "bug": "🐛 Bug report",
     "feature": "✨ Feature request",
     "improve": "💡 Improvement idea",
+    "other": "💬 Something else",
 }
+
+OWNER_HANDLE = "TechnicalSerena"
+COOWNER_HANDLE = "XioquiXan"
+
+DEPLOY_GUIDE = (
+    "🚀 DEPLOY CHRONICLERIFT — anywhere in minutes\n\n"
+    "You need three secrets: a bot token from @BotFather, a MongoDB URI "
+    "(Atlas free tier works) and a Groq API key.\n\n"
+    "1️⃣ LOCAL (fastest way to try it)\n"
+    "git clone the repo → copy .env.example to .env and fill the three secrets → "
+    "pip install -e \".[dev]\" → chronicle-rift. BOT_MODE stays polling.\n\n"
+    "2️⃣ RENDER (free tier, one click)\n"
+    "New Web Service → connect the repo → Start: chronicle-rift → add the env vars → "
+    "set BOT_MODE=webhook. Render provides RENDER_EXTERNAL_URL automatically and HTTPS.\n\n"
+    "3️⃣ DOCKER (any host)\n"
+    "docker build -t chronicle-rift . → docker run with the env vars and PORT exposed. "
+    "Pair with any reverse proxy that terminates HTTPS.\n\n"
+    "4️⃣ VPS (Ubuntu: systemd + nginx + Certbot)\n"
+    "Install Docker or a venv, run the app under a systemd unit, proxy your domain to "
+    "PORT with nginx, issue a free certificate with certbot --nginx, then set "
+    "BOT_MODE=webhook and PUBLIC_BASE_URL=https://your.domain.\n\n"
+    "The full walkthrough with copy-paste commands for every platform:\n"
+    "https://github.com/iamrita-ai/chronicle-rift#-deploy-your-own"
+)
 
 
 def art_url(settings: Settings, name: str) -> str | None:
@@ -65,17 +91,6 @@ def art_url(settings: Settings, name: str) -> str | None:
     if not base:
         return None
     return f"{base.rstrip('/')}/art/{name}.jpg"
-
-
-async def _send_art(bot: Any, chat_id: int, settings: Settings, name: str, caption: str) -> None:
-    """Best-effort illustrated message; the game never depends on it succeeding."""
-    url = art_url(settings, name)
-    if not url:
-        return
-    try:
-        await bot.send_photo(chat_id=chat_id, photo=url, caption=caption)
-    except Exception:
-        LOGGER.debug("Could not send illustration %s", name)
 
 
 def _styled_button(text: str, callback_data: str, style: str | None = None) -> InlineKeyboardButton:
@@ -90,12 +105,10 @@ def build_telegram_application(
     application = Application.builder().token(settings.bot_token).build()
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        del context
-        await _show_dashboard(update, game_service, rich_messages, settings, welcome=True)
+        await _show_dashboard(update, context, settings, welcome=True)
 
     async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        del context
-        await _show_dashboard(update, game_service, rich_messages, settings, welcome=False)
+        await _show_dashboard(update, context, settings, welcome=False)
 
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         del context
@@ -115,8 +128,31 @@ def build_telegram_application(
         if not chat:
             return
         await chat.send_message(
-            "Rules & Regulations and Terms & Conditions live inside the app — "
-            "tap the 📜 or the 📄 button below.",
+            RULES,
+            reply_markup=_launch_keyboard(
+                mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
+            ),
+        )
+
+    async def terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        del context
+        chat = update.effective_chat
+        if not chat:
+            return
+        await chat.send_message(
+            TERMS,
+            reply_markup=_launch_keyboard(
+                mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
+            ),
+        )
+
+    async def deploy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        del context
+        chat = update.effective_chat
+        if not chat:
+            return
+        await chat.send_message(
+            DEPLOY_GUIDE,
             reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
@@ -298,6 +334,26 @@ def build_telegram_application(
                 ),
             )
             return
+        if data == "terms":
+            await query.answer()
+            await query.message.reply_text(
+                TERMS,
+                reply_markup=_home_keyboard(
+                    mini_app_url=settings.mini_app_url,
+                    include_mini_app=query.message.chat.type == "private",
+                ),
+            )
+            return
+        if data == "deploy":
+            await query.answer()
+            await query.message.reply_text(
+                DEPLOY_GUIDE,
+                reply_markup=_home_keyboard(
+                    mini_app_url=settings.mini_app_url,
+                    include_mini_app=query.message.chat.type == "private",
+                ),
+            )
+            return
         if data == "about":
             await query.answer()
             _, plain = about_message(version=__version__)
@@ -374,12 +430,32 @@ def build_telegram_application(
         user = update.effective_user
         if not query or not user or not query.message:
             return
-        kind = (query.data or "").removeprefix("feedback:")
-        if kind not in _FEEDBACK_KINDS:
-            await query.answer("That option is no longer available.", show_alert=True)
-            return
         if not _is_allowed(settings, user.id):
             await query.answer("This realm is not available to your account.", show_alert=True)
+            return
+        kind = (query.data or "").removeprefix("feedback:")
+        if kind == "start":
+            # One button on the home screen collects every kind of feedback.
+            await query.answer()
+            rows = [
+                [
+                    _styled_button(_FEEDBACK_KINDS[k], f"feedback:{k}", _STYLE_DANGER)
+                    for k in ("bug", "feature")
+                ],
+                [
+                    _styled_button(_FEEDBACK_KINDS[k], f"feedback:{k}", _STYLE_DANGER)
+                    for k in ("improve", "other")
+                ],
+            ]
+            await query.message.reply_text(
+                "💬 What kind of note is it? Pick one, then send me the details as your "
+                "next message — bug reports, feature ideas, improvements, anything. "
+                "It goes straight to the owner.",
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+            return
+        if kind not in _FEEDBACK_KINDS:
+            await query.answer("That option is no longer available.", show_alert=True)
             return
         context.user_data["feedback_kind"] = kind
         await query.answer()
@@ -409,16 +485,33 @@ def build_telegram_application(
             return
         try:
             await game_service.save_feedback(_identity_from_update(user), kind, text)
-            await message.reply_text(
-                "💙 Thank you! Your note is recorded in the Chronicle. "
-                "I read every one of them before each new build."
-            )
         except DatabaseUnavailable:
             LOGGER.exception("Unable to store Telegram feedback")
             await message.reply_text(
                 "The Chronicle archives are briefly unavailable, so I could not save the note. "
                 "Please send it again in a moment."
             )
+            return
+        # The owner receives every note directly, wherever it is stored.
+        delivered = False
+        if settings.owner_user_id:
+            handle = f"@{user.username}" if user.username else f"id {user.id}"
+            try:
+                await context.bot.send_message(
+                    chat_id=settings.owner_user_id,
+                    text=(
+                        f"📬 {_FEEDBACK_KINDS.get(kind, 'Feedback')}\n"
+                        f"From: {user.first_name} ({handle})\n\n{text}"
+                    ),
+                )
+                delivered = True
+            except Exception:
+                LOGGER.exception("Could not deliver feedback to the owner")
+        await message.reply_text(
+            "💙 Thank you! Your note is recorded in the Chronicle"
+            + (" and delivered to the owner" if delivered else "")
+            + ". Every one of them is read before the next build."
+        )
 
     async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         del update
@@ -429,6 +522,8 @@ def build_telegram_application(
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("rules", rules_command))
+    application.add_handler(CommandHandler("terms", terms_command))
+    application.add_handler(CommandHandler("deploy", deploy_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("shop", shop_command))
     application.add_handler(CommandHandler("app", app_command))
@@ -439,32 +534,65 @@ def build_telegram_application(
     )
     application.add_handler(
         CallbackQueryHandler(
-            callback_menu, pattern=r"^(rules|about|howto|bag|noop|dashboard|shop:.*)$"
+            callback_menu,
+            pattern=r"^(rules|about|howto|terms|deploy|bag|noop|dashboard|shop:.*)$",
         )
     )
     application.add_handler(
-        CallbackQueryHandler(feedback_start, pattern=r"^feedback:(bug|feature|improve)$")
+        CallbackQueryHandler(
+            feedback_start, pattern=r"^feedback:(start|bug|feature|improve|other)$"
+        )
     )
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, feedback_text))
     application.add_error_handler(on_error)
     return application
 
 
+def home_caption(version: str) -> str:
+    """The about-blurb shown under the game poster on the bot home screen."""
+    return (
+        "⚔️ ChronicleRift v" + version + "\n\n"
+        "🜂 The Rift has torn open. Real-time 3D elemental duels live inside Telegram — "
+        "five heroes with their own weapons and abilities, five monsters and bosses, "
+        "loot, relics, a marketplace and an AI-narrated world. Lose a duel and you "
+        "simply wake at camp — progress is never lost.\n\n"
+        f"👑 Owner: @{OWNER_HANDLE}\n"
+        f"🤝 Co-owner: @{COOWNER_HANDLE}\n"
+        "🤖 Tap a button below — each one opens its own screen inside the arena app."
+    )
+
+
+async def _share_target(context: ContextTypes.DEFAULT_TYPE, settings: Settings) -> str:
+    """The best public link to hand to a friend: the direct Mini App link."""
+    username = None
+    try:
+        username = context.bot.username
+        if not username:
+            username = (await context.bot.get_me()).username
+    except Exception:
+        username = None
+    if username:
+        return f"https://t.me/{username}/app"
+    return settings.mini_app_url or settings.repo_url
+
+
+def _share_url(target: str) -> str:
+    return (
+        "https://t.me/share/url?url=" + urlquote(target, safe="")
+        + "&text=" + urlquote("⚔️ ChronicleRift — come fight the Rift with me!")
+    )
+
+
 async def _show_dashboard(
     update: Update,
-    game_service: GameService,
-    rich_messages: RichMessageClient,
+    context: ContextTypes.DEFAULT_TYPE,
     settings: Settings,
     *,
     welcome: bool,
 ) -> None:
-    """The bot home: a short greeting and the colored launcher menu.
-
-    No status walls — every button opens the matching Mini App screen
-    directly (arena, store, satchel, heroes, profile, rules, terms), and
-    the red row collects feedback.
-    """
-    del game_service, rich_messages, welcome
+    """The bot home: the game poster, what the game is, who made it, and the
+    colored launcher menu where every button deep-links into the Mini App."""
+    del welcome
     chat = update.effective_chat
     user = update.effective_user
     if not chat or not user:
@@ -472,14 +600,22 @@ async def _show_dashboard(
     if not _is_allowed(settings, user.id):
         await chat.send_message("This realm is not available to your account.")
         return
-    await chat.send_message(
-        "⚔️ ChronicleRift v" + __version__ + "\n"
-        "Tap a button — each one opens its own screen inside the arena app.",
-        reply_markup=_launch_keyboard(
-            mini_app_url=settings.mini_app_url,
-            include_mini_app=chat.type == "private",
-        ),
+    caption = home_caption(__version__)
+    share_target = await _share_target(context, settings)
+    markup = _launch_keyboard(
+        mini_app_url=settings.mini_app_url,
+        include_mini_app=chat.type == "private",
+        repo_url=settings.repo_url,
+        share_url=_share_url(share_target),
     )
+    poster = art_url(settings, "poster")
+    if poster:
+        try:
+            await chat.send_photo(photo=poster, caption=caption, reply_markup=markup)
+            return
+        except Exception:
+            LOGGER.debug("Could not send the game poster")
+    await chat.send_message(caption, reply_markup=markup)
 
 
 async def _send_dashboard_to(
@@ -493,7 +629,7 @@ async def _send_dashboard_to(
     del game_service, rich_messages, identity
     await bot.send_message(
         chat_id,
-        "⚔️ ChronicleRift v" + __version__,
+        home_caption(__version__),
         reply_markup=_launch_keyboard(mini_app_url=settings.mini_app_url, include_mini_app=True),
     )
 
@@ -509,12 +645,19 @@ def _web_button(
     )
 
 
-def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
+def _launch_keyboard(
+    *,
+    mini_app_url: str | None,
+    include_mini_app: bool,
+    repo_url: str | None = None,
+    share_url: str | None = None,
+) -> InlineKeyboardMarkup:
     """The home menu: colored buttons that deep-link straight into the Mini App.
 
-    Telegram renders styled inline buttons (PRIMARY blue, SUCCESS green,
-    DANGER red) on clients updated after Feb 2026; older clients still get
-    ordinary blue buttons with the same behaviour.
+    Every button is styled — SUCCESS green for playing and sharing, PRIMARY
+    blue for navigation, DANGER red for feedback. Telegram renders the colors
+    on clients updated after Feb 2026; older clients still get ordinary blue
+    buttons with the same behaviour.
     """
     rows: list[list[InlineKeyboardButton]] = []
     if mini_app_url and include_mini_app:
@@ -539,13 +682,21 @@ def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inl
                 _web_button("📄  Terms & Conditions", "terms", _STYLE_PRIMARY, mini_app_url),
             ]
         )
+        # One red button collects every kind of feedback; the follow-up menu
+        # splits it into bug / feature / improvement / other.
         rows.append(
-            [
-                _styled_button("🐛  Bug", "feedback:bug", _STYLE_DANGER),
-                _styled_button("✨  Feature", "feedback:feature", _STYLE_DANGER),
-                _styled_button("💡  Improve", "feedback:improve", _STYLE_DANGER),
-            ]
+            [_styled_button("💬  Feedback · Bugs · Ideas", "feedback:start", _STYLE_DANGER)]
         )
+        row: list[InlineKeyboardButton] = []
+        if share_url:
+            row.append(
+                InlineKeyboardButton("📢  Share Game", url=share_url, style=_STYLE_SUCCESS)
+            )
+        if repo_url:
+            row.append(InlineKeyboardButton("🐙  GitHub", url=repo_url, style=_STYLE_PRIMARY))
+        if row:
+            rows.append(row)
+        rows.append([_styled_button("🚀  Deploy Guide", "deploy", _STYLE_PRIMARY)])
     return InlineKeyboardMarkup(rows)
 
 

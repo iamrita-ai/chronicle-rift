@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from telegram.constants import KeyboardButtonStyle
 
-from chronicle_rift.bot import _launch_keyboard
+from chronicle_rift.bot import DEPLOY_GUIDE, _launch_keyboard, home_caption
 
 
 def test_launcher_has_colored_deep_link_buttons() -> None:
-    kb = _launch_keyboard(mini_app_url="https://x.example", include_mini_app=True)
+    kb = _launch_keyboard(
+        mini_app_url="https://x.example",
+        include_mini_app=True,
+        repo_url="https://github.com/iamrita-ai/chronicle-rift",
+        share_url="https://t.me/share/url?url=https%3A%2F%2Ft.me%2Fdemo%2Fapp",
+    )
     buttons = [b for row in kb.inline_keyboard for b in row]
-    assert len(buttons) == 10
+    assert len(buttons) == 11
 
     web = {b.text: b for b in buttons if b.web_app}
     assert web["▶️  PLAY — RIFT ARENA"].web_app.api_kwargs["start_parameter"] == "play"
@@ -24,14 +29,35 @@ def test_launcher_has_colored_deep_link_buttons() -> None:
     assert web["▶️  PLAY — RIFT ARENA"].style == KeyboardButtonStyle.SUCCESS
     assert web["🏪  Store"].style == KeyboardButtonStyle.PRIMARY
 
-    def is_feedback(b):
-        return b.callback_data is not None and b.callback_data.startswith("feedback:")
+    # one red feedback button collects every kind of note
+    feedback = {b.text: b for b in buttons if b.callback_data == "feedback:start"}
+    assert set(feedback) == {"💬  Feedback · Bugs · Ideas"}
+    assert feedback["💬  Feedback · Bugs · Ideas"].style == KeyboardButtonStyle.DANGER
 
-    feedback = {b.text: b for b in buttons if is_feedback(b)}
-    assert set(feedback) == {"🐛  Bug", "✨  Feature", "💡  Improve"}
-    assert all(b.style == KeyboardButtonStyle.DANGER for b in feedback.values())
+    # share + repo + deploy
+    urls = {b.text: b.url for b in buttons if b.url}
+    assert urls["📢  Share Game"].startswith("https://t.me/share/url?url=")
+    assert urls["🐙  GitHub"] == "https://github.com/iamrita-ai/chronicle-rift"
+    deploy = [b for b in buttons if b.callback_data == "deploy"]
+    assert deploy and deploy[0].style == KeyboardButtonStyle.PRIMARY
 
 
 def test_launcher_without_minapp_has_no_rows() -> None:
     kb = _launch_keyboard(mini_app_url=None, include_mini_app=False)
     assert len(kb.inline_keyboard) == 0
+
+
+def test_home_caption_credits_the_owners() -> None:
+    caption = home_caption("1.2.3")
+    assert "ChronicleRift v1.2.3" in caption
+    assert "@TechnicalSerena" in caption
+    assert "@XioquiXan" in caption
+
+
+def test_deploy_guide_covers_every_platform() -> None:
+    upper = DEPLOY_GUIDE.upper()
+    for word in ("LOCAL", "RENDER", "DOCKER", "VPS"):
+        assert word in upper
+    for word in ("nginx", "certbot"):
+        assert word in DEPLOY_GUIDE
+    assert "iamrita-ai/chronicle-rift" in DEPLOY_GUIDE

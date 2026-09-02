@@ -989,6 +989,30 @@ RULES = (
 )
 
 
+TERMS = (
+    "📄 ChronicleRift — Terms & Conditions\n\n"
+    "By playing ChronicleRift you agree to the following:\n\n"
+    "1. Game items only. Coins, gold and points exist only inside the game. "
+    "There are no real-money purchases and no real-world value of any kind.\n\n"
+    "2. Your account. Progress is tied to your Telegram account and stored "
+    "server-side. You are responsible for keeping your account safe.\n\n"
+    "3. No botting. Automated play, spoofed identity data or abuse of the API "
+    "voids your progress and access.\n\n"
+    "4. Fair play. Exploits should be reported through the feedback button, "
+    "not used. Accounts abusing known exploits may be reset.\n\n"
+    "5. Your data. The bot stores only your Telegram user ID, display name, "
+    "username and game state. Nothing is sold or shared.\n\n"
+    "6. Availability. The game runs on free hosting and may be briefly "
+    "unavailable during deploys. Progress is kept safe at all times.\n\n"
+    "7. Changes. Balance, heroes and rules may change between versions; "
+    "material changes are noted in the release notes.\n\n"
+    "8. Everyone is welcome. ChronicleRift is a fantasy game for all ages — "
+    "no gambling, no user-to-user chat.\n\n"
+    "Questions or complaints? Use the 💬 Feedback button on the bot home — "
+    "every note reaches the owner."
+)
+
+
 def build_enemy(chapter: int) -> dict[str, Any]:
     """Spawn the monster that guards ``chapter``, scaled to its toughness curve."""
     monster_id = monster_for_chapter(chapter)
