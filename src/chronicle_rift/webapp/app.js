@@ -252,6 +252,9 @@
       this.started = false;
       const p = this.playerStats(view);
       const e = this.enemyStats(view);
+      // warm the art cache (decode + pre-tint) while the start card is up,
+      // so the duel itself never stutters on a texture decode
+      window.ChronicleArena.preloadFighters([p.art, e.art]);
       $("mu-hero-art").src = ART(view.character.art, "png");
       $("mu-hero-name").textContent = p.name;
       $("mu-hero-stats").textContent = `${p.stats.hp} HP · ${Math.round(p.stats.damage)} DMG · ${view.character.element_name}`;
