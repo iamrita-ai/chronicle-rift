@@ -21,7 +21,7 @@ from .game_engine import (
     use_item,
 )
 from .identity import TelegramIdentity
-from .models import public_player_view
+from .models import apply_owner_unlock, public_player_view
 
 
 class PlayerStore(Protocol):
@@ -74,18 +74,32 @@ class PurchaseResult:
 class GameService:
     """Keeps game mechanics server-side and persists every successful turn."""
 
-    def __init__(self, store: PlayerStore, narrator: Narrator, *, max_retries: int = 3) -> None:
+    def __init__(
+        self,
+        store: PlayerStore,
+        narrator: Narrator,
+        *,
+        max_retries: int = 3,
+        owner_ids: frozenset[int] = frozenset(),
+    ) -> None:
         self._store = store
         self._narrator = narrator
         self._max_retries = max_retries
+        self._owner_ids = owner_ids
+
+    def is_owner(self, identity: TelegramIdentity) -> bool:
+        return identity.user_id in self._owner_ids
 
     async def dashboard(self, identity: TelegramIdentity) -> dict[str, Any]:
         """Load or initialize a durable hero profile for an authenticated user."""
-        return await self._store.get_or_create(
+        player = await self._store.get_or_create(
             user_id=identity.user_id,
             first_name=identity.first_name,
             username=identity.username,
         )
+        if self.is_owner(identity):
+            apply_owner_unlock(player)
+        return player
 
     async def player_view(self, identity: TelegramIdentity) -> dict[str, Any]:
         return public_player_view(await self.dashboard(identity))

@@ -1,3 +1,3 @@
 """ChronicleRift — an AI-powered Telegram tactical adventure."""
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"

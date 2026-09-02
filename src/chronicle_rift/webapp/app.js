@@ -252,6 +252,9 @@
       this.started = false;
       const p = this.playerStats(view);
       const e = this.enemyStats(view);
+      // warm the art cache (decode + pre-tint) while the start card is up,
+      // so the duel itself never stutters on a texture decode
+      window.ChronicleArena.preloadFighters([p.art, e.art]);
       $("mu-hero-art").src = ART(view.character.art, "png");
       $("mu-hero-name").textContent = p.name;
       $("mu-hero-stats").textContent = `${p.stats.hp} HP · ${Math.round(p.stats.damage)} DMG · ${view.character.element_name}`;
@@ -592,6 +595,28 @@
     });
   }
 
+  /* The shop shows what a move DOES — damage and effects, not cooldowns. */
+  function abilityLine(a) {
+    const bits = [];
+    if (a.mul) bits.push(`${Math.round(a.mul * 100)}% DMG`);
+    if (a.hits > 1) bits.push(`${a.hits} hits`);
+    if (a.speed && !a.dashSpeed) bits.push("projectile");
+    if (a.dashSpeed) bits.push("dash");
+    if (a.burn) bits.push(`burn ${a.burn}`);
+    if (a.freeze) bits.push("freeze");
+    if (a.slow) bits.push("slow");
+    if (a.lifesteal) bits.push(`heals ${Math.round(a.lifesteal * 100)}%`);
+    if (a.shield) bits.push(`-${Math.round(a.shield * 100)}% dmg taken`);
+    if (a.regen) bits.push(`regen ${a.regen}`);
+    if (a.haste) bits.push(`+${Math.round((a.haste - 1) * 100)}% speed`);
+    if (a.empower) bits.push(`next hit ×${a.empower}`);
+    if (a.iframes) bits.push("evade frames");
+    if (a.pierceDef) bits.push("pierces ward");
+    if ((a.lift || 0) > 120 || (a.knock || 0) > 380) bits.push("launch");
+    else if ((a.knock || 0) > 150) bits.push("knockback");
+    return bits.join(" · ") || a.desc || "—";
+  }
+
   function renderHeroStore(view) {
     const grid = $("hero-store");
     grid.replaceChildren();
@@ -621,12 +646,12 @@
       const moves = el("ul", "hero-moves");
       const basic = el("li");
       basic.appendChild(el("b", null, kit.basic.name));
-      basic.appendChild(el("span", null, "basic attack"));
+      basic.appendChild(el("span", null, `${Math.round(kit.basic.mul * 100)}% DMG · basic`));
       moves.appendChild(basic);
       kit.abilities.forEach((a) => {
         const li = el("li");
         li.appendChild(el("b", null, a.name));
-        li.appendChild(el("span", null, `${a.cd}s CD`));
+        li.appendChild(el("span", null, abilityLine(a)));
         moves.appendChild(li);
       });
       body.appendChild(moves);

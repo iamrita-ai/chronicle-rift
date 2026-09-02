@@ -45,6 +45,11 @@ CONFIG_VARIABLES: Final[dict[str, str]] = {
     "API_ID": "Optional Telegram API application ID. Not needed by this Bot API project.",
     "API_HASH": "Optional Telegram API application hash. Not needed by this Bot API project.",
     "ALLOWED_USER_IDS": "Optional comma-separated Telegram user-ID allow-list.",
+    "OWNER_USER_IDS": (
+        "Optional comma-separated Telegram user IDs of the owners. Owners always "
+        "pass the allow-list, receive every feedback note, and get a fully "
+        "unlocked chronicle (all heroes, unlimited coins) for testing."
+    ),
     "LOG_LEVEL": "DEBUG, INFO, WARNING, ERROR, or CRITICAL. Default: INFO.",
 }
 
@@ -70,6 +75,7 @@ class Settings:
     telegram_api_id: int | None = field(default=None, repr=False)
     telegram_api_hash: str | None = field(default=None, repr=False)
     allowed_user_ids: frozenset[int] = frozenset()
+    owner_user_ids: frozenset[int] = frozenset()
     log_level: str = "INFO"
 
     @property
@@ -159,6 +165,7 @@ class Settings:
             telegram_api_id=telegram_api_id,
             telegram_api_hash=telegram_api_hash,
             allowed_user_ids=_user_ids(_optional("ALLOWED_USER_IDS")),
+            owner_user_ids=_user_ids(_optional("OWNER_USER_IDS")),
             log_level=log_level,
         )
 

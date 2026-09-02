@@ -58,6 +58,39 @@ _FEEDBACK_KINDS = {
     "improve": "💡 Improvement idea",
 }
 
+REPO_URL = "https://github.com/iamrita-ai/chronicle-rift"
+OWNER_CREDITS = (
+    "👑 Owner — @TechnicalSerena (https://t.me/TechnicalSerena)\n"
+    "🛠 Co-owner — @XioquiXan (https://t.me/XioquiXan)"
+)
+
+DEPLOY_TUTORIAL = "\n".join([
+    "🚀 Deploy ChronicleRift — your own realm in ~10 minutes",
+    "",
+    "▸ ANY VPS (DigitalOcean, Hetzner, AWS, Oracle free tier…)",
+    "1. Ubuntu 22.04+, open port 443, point a domain at the box.",
+    "2. git clone https://github.com/iamrita-ai/chronicle-rift",
+    "3. Copy .env.example → .env and fill BOT_TOKEN (@BotFather),",
+    "   MONGODB_URI (free Atlas cluster), GROQ_API_KEY (console.groq.com).",
+    "4. Docker (easiest): docker build -t chronicle-rift .",
+    "   docker run -d --env-file .env -p 8000:8000 chronicle-rift",
+    "   then Caddy/Nginx + TLS in front, PUBLIC_BASE_URL=https://your.domain",
+    "   or systemd: python -m venv .venv && .venv/bin/pip install -e .",
+    "   with a unit running .venv/bin/python -m chronicle_rift (webhook mode).",
+    "5. In @BotFather attach the Mini App URL (https://your.domain/app).",
+    "",
+    "▸ RENDER (zero-ops)",
+    "Import the repo on render.com — render.yaml wires the web service.",
+    "Add the three secrets; Render sets RENDER_EXTERNAL_URL for you.",
+    "",
+    "▸ LOCAL (just play / develop)",
+    'pip install -e ".[dev]" then python tools/preview_miniapp.py and open',
+    "http://localhost:8080 — the full Mini App, stubbed Telegram, no accounts.",
+    "Real bot locally: fill .env, keep BOT_MODE=polling, python -m chronicle_rift.",
+    "",
+    "Full guide, badges and security notes live in README.md on the repo.",
+])
+
 
 def art_url(settings: Settings, name: str) -> str | None:
     """Public HTTPS URL of a bundled illustration, served by our own Mini App."""
@@ -309,6 +342,26 @@ def build_telegram_application(
                 ),
             )
             return
+        if data == "tutorial":
+            await query.answer()
+            await query.message.reply_text(
+                DEPLOY_TUTORIAL,
+                reply_markup=_home_keyboard(
+                    mini_app_url=settings.mini_app_url,
+                    include_mini_app=query.message.chat.type == "private",
+                ),
+            )
+            return
+        if data == "owners":
+            await query.answer()
+            await query.message.reply_text(
+                "👑 The keepers of the rift\n\n" + OWNER_CREDITS + "\n\n"
+                "🧑‍ Source, issues & contributions: " + REPO_URL + "\n"
+                "🔐 Security reports: see SECURITY.md in the repository.\n"
+                "⚖️ License: MIT — play, fork and learn.",
+                disable_web_page_preview=True,
+            )
+            return
         if data == "dashboard":
             await query.answer()
             await _send_dashboard_to(
@@ -409,10 +462,30 @@ def build_telegram_application(
             return
         try:
             await game_service.save_feedback(_identity_from_update(user), kind, text)
-            await message.reply_text(
-                "💙 Thank you! Your note is recorded in the Chronicle. "
-                "I read every one of them before each new build."
-            )
+            # deliver the note straight to every owner's private chat
+            forwarded = 0
+            for owner_id in settings.owner_user_ids:
+                if owner_id == user.id:
+                    continue
+                try:
+                    await context.bot.send_message(
+                        owner_id,
+                        f"📨 {_FEEDBACK_KINDS[kind]} from {user.first_name} "
+                        f"(tg:{user.id})\n\n{text}",
+                    )
+                    forwarded += 1
+                except Exception:
+                    LOGGER.debug("Could not forward feedback to owner %s", owner_id)
+            if forwarded:
+                await message.reply_text(
+                    "💙 Thank you! Your note is recorded in the Chronicle and was "
+                    "delivered straight to the owners."
+                )
+            else:
+                await message.reply_text(
+                    "💙 Thank you! Your note is recorded in the Chronicle. "
+                    "I read every one of them before each new build."
+                )
         except DatabaseUnavailable:
             LOGGER.exception("Unable to store Telegram feedback")
             await message.reply_text(
@@ -439,7 +512,8 @@ def build_telegram_application(
     )
     application.add_handler(
         CallbackQueryHandler(
-            callback_menu, pattern=r"^(rules|about|howto|bag|noop|dashboard|shop:.*)$"
+            callback_menu,
+            pattern=r"^(rules|about|howto|bag|noop|dashboard|tutorial|owners|shop:.*)$",
         )
     )
     application.add_handler(
@@ -472,14 +546,23 @@ async def _show_dashboard(
     if not _is_allowed(settings, user.id):
         await chat.send_message("This realm is not available to your account.")
         return
-    await chat.send_message(
-        "⚔️ ChronicleRift v" + __version__ + "\n"
-        "Tap a button — each one opens its own screen inside the arena app.",
-        reply_markup=_launch_keyboard(
-            mini_app_url=settings.mini_app_url,
-            include_mini_app=chat.type == "private",
-        ),
+    keyboard = _launch_keyboard(
+        mini_app_url=settings.mini_app_url,
+        include_mini_app=chat.type == "private",
     )
+    caption = (
+        "⚔️ ChronicleRift v" + __version__ + " — the living chronicle awaits.\n\n"
+        + OWNER_CREDITS + "\n\n"
+        "Tap a coloured button — each one opens its own screen inside the arena app."
+    )
+    poster = art_url(settings, "hero") or art_url(settings, "realm")
+    if poster:
+        try:
+            await chat.send_photo(photo=poster, caption=caption, reply_markup=keyboard)
+            return
+        except Exception:
+            LOGGER.debug("Poster send failed; falling back to text", exc_info=True)
+    await chat.send_message(caption, reply_markup=keyboard)
 
 
 async def _send_dashboard_to(
@@ -546,7 +629,28 @@ def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inl
                 _styled_button("💡  Improve", "feedback:improve", _STYLE_DANGER),
             ]
         )
+        rows.append(
+            [
+                _styled_button("🚀  Deploy Tutorial", "tutorial", _STYLE_PRIMARY),
+                _styled_button("👑  Owners & Credits", "owners", _STYLE_PRIMARY),
+            ]
+        )
+        rows.append(
+            [
+                InlineKeyboardButton("🧑‍💻  Source · Contribute", url=REPO_URL),
+                InlineKeyboardButton("🔗  Share Mini App", url=_share_url(mini_app_url)),
+            ]
+        )
     return InlineKeyboardMarkup(rows)
+
+
+def _share_url(mini_app_url: str | None) -> str:
+    """A t.me share link carrying the public Mini App URL."""
+    from urllib.parse import quote
+
+    target = mini_app_url or REPO_URL
+    text = "ChronicleRift — a tactical elemental RPG that lives inside Telegram. Enter the rift!"
+    return f"https://t.me/share/url?url={quote(target)}&text={quote(text)}"
 
 
 async def _send_shop_to(
@@ -680,4 +784,6 @@ def _identity_from_update(user: Any) -> TelegramIdentity:
 
 
 def _is_allowed(settings: Settings, user_id: int) -> bool:
+    if user_id in settings.owner_user_ids:
+        return True
     return not settings.allowed_user_ids or user_id in settings.allowed_user_ids

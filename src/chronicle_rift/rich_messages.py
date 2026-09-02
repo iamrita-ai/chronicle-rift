@@ -191,12 +191,21 @@ def about_message(*, version: str) -> tuple[str, str]:
         "A turn-based tactical fantasy adventure for Telegram. Defeat enemies, earn "
         "Gold, Coins and Points, level up, and shop for upgrades. Rules are resolved "
         "server-side and every turn is saved to your Chronicle.\n\n"
+        "👑 **Owner** — [@TechnicalSerena](https://t.me/TechnicalSerena) · "
+        "🛠 **Co-owner** — [@XioquiXan](https://t.me/XioquiXan)\n\n"
+        "🧑‍ **Source & contributions** — "
+        "[github.com/iamrita-ai/chronicle-rift](https://github.com/iamrita-ai/chronicle-rift)\n"
+        "⚖️ **License** — MIT · 🔐 **Security** — see SECURITY.md\n\n"
         "Commands: `/play`, `/shop`, `/rules`, `/about`, `/app`."
     )
     plain = (
         f"ℹ️ ChronicleRift v{version}\n\n"
         "A turn-based tactical fantasy adventure for Telegram. Defeat enemies, earn "
         "Gold, Coins and Points, level up, and shop for upgrades.\n\n"
+        "👑 Owner — @TechnicalSerena (https://t.me/TechnicalSerena)\n"
+        "🛠 Co-owner — @XioquiXan (https://t.me/XioquiXan)\n"
+        "🧑‍ Source: https://github.com/iamrita-ai/chronicle-rift\n"
+        "⚖️ License: MIT · 🔐 Security: SECURITY.md\n\n"
         "Commands: /play, /shop, /rules, /about, /app."
     )
     return rich, plain

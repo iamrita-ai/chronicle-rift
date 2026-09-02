@@ -528,6 +528,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     inventory = inventory_view(game)
     character = character_card(game["character"], game)
     return {
+        "owner": bool(game.get("owner_unlock", False)),
         "profile": {
             "first_name": player["profile"]["first_name"],
             "username": player["profile"].get("username"),
@@ -901,6 +902,20 @@ def character_of(game: dict[str, Any]) -> dict[str, Any]:
     return CHARACTERS.get(
         str(game.get("character", DEFAULT_CHARACTER)), CHARACTERS[DEFAULT_CHARACTER]
     )
+
+
+def apply_owner_unlock(player: dict[str, Any]) -> dict[str, Any]:
+    """Give an owner a fully unlocked chronicle for testing.
+
+    Applied in-memory on every load: every hero is owned and the coin purse
+    is topped up so any purchase succeeds. Regular players are untouched.
+    """
+    ensure_game_defaults(player)
+    game = player["game"]
+    game["owner_unlock"] = True
+    game["owned_characters"] = list(CHARACTERS)
+    game["coins"] = max(int(game.get("coins", 0)), 1_000_000)
+    return player
 
 
 def character_card(character_id: str, game: dict[str, Any]) -> dict[str, Any]:

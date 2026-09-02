@@ -86,3 +86,28 @@ async def test_purchase_returns_failure_without_saving_when_unaffordable() -> No
     assert result.success is False
     assert result.reason == "insufficient_coins"
     assert store.player["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_owner_gets_fully_unlocked_chronicle() -> None:
+    store = MemoryStore()
+    service = GameService(store, TestNarrator(), owner_ids=frozenset({11}))
+
+    view = await service.player_view(TelegramIdentity(11, "Rita", "rift"))
+
+    assert view["owner"] is True
+    assert all(card["owned"] for card in view["roster"])
+    assert view["hero"]["coins"] >= 1_000_000
+    assert service.is_owner(TelegramIdentity(11, "Rita", "rift"))
+    assert not service.is_owner(TelegramIdentity(12, "Not", "owner"))
+
+
+@pytest.mark.asyncio
+async def test_regular_player_stays_locked() -> None:
+    store = MemoryStore()
+    service = GameService(store, TestNarrator(), owner_ids=frozenset({99}))
+
+    view = await service.player_view(TelegramIdentity(11, "Rita", "rift"))
+
+    assert view["owner"] is False
+    assert not all(card["owned"] for card in view["roster"])

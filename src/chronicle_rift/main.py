@@ -84,7 +84,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         polling_started = False
         try:
             await repository.connect()
-            game_service = GameService(repository, narrator)
+            game_service = GameService(
+                repository, narrator, owner_ids=runtime_settings.owner_user_ids
+            )
             telegram_application = build_telegram_application(
                 settings=runtime_settings,
                 game_service=game_service,

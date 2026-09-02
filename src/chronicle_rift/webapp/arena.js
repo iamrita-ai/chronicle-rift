@@ -305,6 +305,8 @@
       this.combo = 0;
       this.comboT = 0;
       this.stepT = 0;
+      this.landT = 0; // landing squash timer (physics feedback)
+      this.art = cfg.art || null; // official key art used as the fighter sprite
       this.ghosts = [];
       // skeletal pose (radians, except bob/dip in world units and breath as a scale)
       this.pose = { head: 0, torso: 0, armF: 0, armB: 0, legF: 0, legB: 0, bob: 0, rot: 0, dip: 0, breath: 1 };
@@ -384,6 +386,10 @@
       for (let i = 0; i < 6; i += 1) this.arcPool.push(this.makeArc());
       for (let i = 0; i < 6; i += 1) this.ghostPool.push(this.makeGhost());
       for (let i = 0; i < 6; i += 1) this.shotPool.push(this.makeShot());
+
+      // compile every material/shader up front so the first swing never
+      // hitches on a shader-compile stall (the classic "lag on attack")
+      try { this.renderer.compile(this.scene, this.camera); } catch (_) { /* older three */ }
 
       // DOM overlay for damage numbers and the K.O. banner
       this.dom = document.getElementById("arena-fx-host");
@@ -690,29 +696,48 @@
       }
     }
 
+    /* cached elemental-silhouette texture of a fighter's key art */
+    tintTex(entry, color) {
+      const canvas = entry.tint(color);
+      if (!canvas) return null;
+      if (!entry._tex3d) entry._tex3d = new Map();
+      let tex = entry._tex3d.get(color);
+      if (!tex) {
+        tex = new window.THREE.CanvasTexture(canvas);
+        entry._tex3d.set(color, tex);
+      }
+      return tex;
+    }
+
     makeGhost() {
       const T = window.THREE;
       const m = new T.Mesh(
-        new T.CapsuleGeometry(1, 3.2, 3, 10),
+        new T.PlaneGeometry(1, 1),
         new T.MeshBasicMaterial({
-          color: 0xffffff, transparent: true, opacity: 0,
-          blending: T.AdditiveBlending, depthWrite: false,
+          transparent: true, opacity: 0, blending: T.AdditiveBlending,
+          depthWrite: false, toneMapped: false,
         })
       );
       m.visible = false;
       this.scene.add(m);
       return { m, life: 0, max: 1, active: false };
     }
-    fireGhost(x, color, size, life) {
+    fireGhost(f, gh, size) {
+      const entry = loadFighterArt(f.art);
+      if (!entry.ready) return;
+      const tex = this.tintTex(entry, f.kit.color);
+      if (!tex) return;
       for (let i = 0; i < this.ghostPool.length; i += 1) {
         const g = this.ghostPool[i];
         if (!g.active) {
           g.active = true;
-          g.life = life; g.max = life;
-          // unit capsule is 5.2 tall; scale so the ghost matches the fighter's height
-          g.m.position.set(x, size * 0.5, 0);
-          g.m.scale.set(size * 0.13, size * 0.19, size * 0.13);
-          g.m.material.color.set(color);
+          g.life = gh.life; g.max = gh.max;
+          const aspect = entry.img.width / entry.img.height;
+          const ph = size * 1.22;
+          g.m.position.set(gh.x, size * 0.5, 0);
+          g.m.scale.set(ph * aspect, ph, 1);
+          g.m.material.map = tex;
+          g.m.material.color.set(0xffffff);
           g.m.visible = true;
           return;
         }
@@ -736,326 +761,55 @@
     }
 
     /* ---------------- fighter rigs ---------------- */
+    /* ---------------- fighter rigs — official art on animated 3D planes ---- *
+     * The fighters you see are the game's real key art, mounted on camera-  *
+     * facing planes inside the 3D stage. Every state (windup, swing, dash,  *
+     * knockback, KO) animates the whole sprite with anticipation, squash &  *
+     * stretch, lean and fall — so hero and monster always look "original".  *
+     * --------------------------------------------------------------------- */
     buildRig(f) {
       const T = window.THREE;
       const H = FIGHTER_H * f.scale;
-      const S = skinFor(f.element);
-      const acc = f.kit.color;
-      const bulk = f.build === "brute" ? 1.34 : f.build === "beast" ? 1.14 : 1;
-      const monster = f.build !== "hero";
 
-      const mats = {
-        body: new T.MeshStandardMaterial({ color: S.armor, roughness: 0.55, metalness: 0.35 }),
-        hi: new T.MeshStandardMaterial({ color: S.armorHi, roughness: 0.4, metalness: 0.5 }),
-        lo: new T.MeshStandardMaterial({ color: S.armorLo, roughness: 0.7, metalness: 0.3 }),
-        cloth: new T.MeshStandardMaterial({ color: S.cloth, roughness: 0.95, side: T.DoubleSide }),
-        steel: new T.MeshStandardMaterial({ color: S.steel, roughness: 0.3, metalness: 0.85 }),
-        eye: new T.MeshStandardMaterial({ color: 0x050508, emissive: acc, emissiveIntensity: 2.4 }),
-        accent: new T.MeshStandardMaterial({
-          color: acc, emissive: acc, emissiveIntensity: 1.0, roughness: 0.5, metalness: 0.2,
-        }),
-      };
-      const geo = [];
+      const root = new T.Group(); // feet pivot; carries fall/lean in screen space
+      const mir = new T.Group();  // facing mirror + squash & stretch
+      const spr = new T.Group();  // art plane + overlays
+      root.add(mir);
+      mir.add(spr);
 
-      const root = new T.Group();
-
-      // pelvis
-      const pelvisG = new T.BoxGeometry(0.19 * H * bulk, 0.1 * H, 0.15 * H * bulk);
-      geo.push(pelvisG);
-      const pelvis = new T.Mesh(pelvisG, mats.body);
-      pelvis.position.set(0, 0.47 * H, 0);
-      root.add(pelvis);
-
-      // legs (front limb on the camera side: local -x)
-      const buildLeg = (side) => {
-        const hipG = new T.Group();
-        hipG.position.set(side * 0.04 * H * bulk, 0.47 * H, 0);
-        root.add(hipG);
-        const thighG = new T.CapsuleGeometry(0.075 * H * bulk, 0.12 * H, 3, 10);
-        geo.push(thighG);
-        const thigh = new T.Mesh(thighG, side < 0 ? mats.body : mats.lo);
-        thigh.position.set(0, -0.115 * H, 0);
-        hipG.add(thigh);
-        const kneeG = new T.Group();
-        kneeG.position.set(0, -0.225 * H, 0);
-        hipG.add(kneeG);
-        const shinG = new T.CapsuleGeometry(0.055 * H * bulk, 0.11 * H, 3, 10);
-        geo.push(shinG);
-        const shin = new T.Mesh(shinG, side < 0 ? mats.body : mats.lo);
-        shin.position.set(0, -0.1 * H, 0);
-        kneeG.add(shin);
-        const footG = new T.BoxGeometry(0.085 * H, 0.05 * H, 0.15 * H);
-        geo.push(footG);
-        const foot = new T.Mesh(footG, mats.lo);
-        foot.position.set(0, -0.208 * H, 0.035 * H);
-        kneeG.add(foot);
-        return { hipG, kneeG };
-      };
-      const legF = buildLeg(-1);
-      const legB = buildLeg(1);
-
-      // torso
-      const torsoG = new T.Group();
-      torsoG.position.set(0, 0.5 * H, 0);
-      root.add(torsoG);
-      const chestG = new T.CapsuleGeometry(0.1 * H * bulk, 0.1 * H, 4, 14);
-      geo.push(chestG);
-      const chest = new T.Mesh(chestG, mats.body);
-      chest.position.set(0, 0.125 * H, 0);
-      torsoG.add(chest);
-      const plateG = new T.BoxGeometry(0.16 * H * bulk, 0.1 * H, 0.05 * H);
-      geo.push(plateG);
-      const plate = new T.Mesh(plateG, mats.hi);
-      plate.position.set(0, 0.15 * H, 0.062 * H);
-      torsoG.add(plate);
-      const beltG = new T.BoxGeometry(0.21 * H * bulk, 0.035 * H, 0.16 * H * bulk);
-      geo.push(beltG);
-      const belt = new T.Mesh(beltG, mats.lo);
-      belt.position.set(0, 0.015 * H, 0);
-      torsoG.add(belt);
-      const sigilG = new T.BoxGeometry(0.045 * H, 0.045 * H, 0.02 * H);
-      geo.push(sigilG);
-      const sigil = new T.Mesh(sigilG, mats.accent);
-      sigil.position.set(0, 0.14 * H, 0.092 * H);
-      torsoG.add(sigil);
-      const neckG = new T.CapsuleGeometry(0.028 * H, 0.03 * H, 3, 8);
-      geo.push(neckG);
-      const neck = new T.Mesh(neckG, mats.lo);
-      neck.position.set(0, 0.235 * H, 0);
-      torsoG.add(neck);
-
-      // head
-      const headG = new T.Group();
-      headG.position.set(0, 0.27 * H, 0);
-      torsoG.add(headG);
-      const skullG = new T.SphereGeometry(0.09 * H, 18, 14);
-      geo.push(skullG);
-      const skull = new T.Mesh(skullG, mats.body);
-      skull.scale.set(0.95, 1.1, 1);
-      headG.add(skull);
-      const faceG = new T.BoxGeometry(0.1 * H, 0.075 * H, 0.05 * H);
-      geo.push(faceG);
-      const face = new T.Mesh(faceG, mats.hi);
-      face.position.set(0, -0.012 * H, 0.068 * H);
-      headG.add(face);
-      const eyeG = new T.BoxGeometry(0.07 * H, 0.016 * H, 0.02 * H);
-      geo.push(eyeG);
-      const eye = new T.Mesh(eyeG, mats.eye);
-      eye.position.set(0, 0.008 * H, 0.098 * H);
-      headG.add(eye);
-
-      const ornaments = [];
-      if (monster) {
-        // horns
-        const hornG = new T.ConeGeometry(0.028 * H, 0.14 * H, 8);
-        geo.push(hornG);
-        [-1, 1].forEach((s) => {
-          const horn = new T.Mesh(hornG, mats.lo);
-          horn.position.set(s * 0.055 * H, 0.1 * H, -0.03 * H);
-          horn.rotation.set(-0.7, 0, -s * 0.55);
-          headG.add(horn);
-          ornaments.push(horn);
-        });
-      } else {
-        // hero crest / per-element identity
-        if (f.element === "fire") {
-          const flameG = new T.ConeGeometry(0.022 * H, 0.13 * H, 7);
-          geo.push(flameG);
-          [-0.03, 0, 0.03].forEach((x, i) => {
-            const fl = new T.Mesh(flameG, mats.accent);
-            fl.position.set(x * H, 0.1 + (i === 1 ? 0.02 : 0) * H, -0.02 * H);
-            headG.add(fl);
-            ornaments.push(fl);
-          });
-        } else if (f.element === "arcane") {
-          const gemG = new T.OctahedronGeometry(0.03 * H, 0);
-          geo.push(gemG);
-          const gem = new T.Mesh(gemG, mats.accent);
-          gem.position.set(0, 0.05 * H, 0.085 * H);
-          headG.add(gem);
-          ornaments.push(gem);
-        } else if (f.element === "shadow") {
-          const crestG = new T.ConeGeometry(0.02 * H, 0.16 * H, 6);
-          geo.push(crestG);
-          [-1, 1].forEach((s) => {
-            const cr = new T.Mesh(crestG, mats.accent);
-            cr.position.set(s * 0.04 * H, 0.12 * H, -0.01 * H);
-            cr.rotation.z = s * 0.5;
-            headG.add(cr);
-            ornaments.push(cr);
-          });
-        }
-      }
-
-      // arms (front = -x, camera side)
-      const buildArm = (side) => {
-        const shG = new T.Group();
-        shG.position.set(side * 0.078 * H * bulk, 0.2 * H, 0);
-        torsoG.add(shG);
-        const padG = new T.SphereGeometry(0.062 * H * bulk, 12, 10);
-        geo.push(padG);
-        const pad = new T.Mesh(padG, side < 0 ? mats.hi : mats.lo);
-        pad.scale.set(1, 0.8, 1);
-        shG.add(pad);
-        const upperG = new T.CapsuleGeometry(0.05 * H * bulk, 0.09 * H, 3, 10);
-        geo.push(upperG);
-        const upper = new T.Mesh(upperG, side < 0 ? mats.body : mats.lo);
-        upper.position.set(0, -0.09 * H, 0);
-        shG.add(upper);
-        const elG = new T.Group();
-        elG.position.set(0, -0.17 * H, 0);
-        shG.add(elG);
-        const foreG = new T.CapsuleGeometry(0.042 * H * bulk, 0.09 * H, 3, 10);
-        geo.push(foreG);
-        const fore = new T.Mesh(foreG, side < 0 ? mats.body : mats.lo);
-        fore.position.set(0, -0.08 * H, 0);
-        elG.add(fore);
-        const handG = new T.Group();
-        handG.position.set(0, -0.16 * H, 0);
-        elG.add(handG);
-        const handMeshG = new T.SphereGeometry(0.04 * H, 10, 8);
-        geo.push(handMeshG);
-        const handMesh = new T.Mesh(handMeshG, mats.lo);
-        handG.add(handMesh);
-        return { shG, elG, handG };
-      };
-      const armF = buildArm(-1);
-      const armB = buildArm(1);
-
-      // weapons
-      const weapon = new T.Group();
-      if (f.build === "beast") {
-        const clawG = new T.ConeGeometry(0.02 * H, 0.13 * H, 7);
-        geo.push(clawG);
-        [-0.3, 0, 0.3].forEach((a, i) => {
-          const claw = new T.Mesh(clawG, i === 1 ? mats.accent : mats.lo);
-          claw.position.set(Math.sin(a) * 0.05 * H, -0.09 * H, Math.cos(a) * 0.05 * H);
-          claw.rotation.x = Math.PI + 0.35;
-          claw.rotation.z = a;
-          weapon.add(claw);
-        });
-      } else {
-        const brutal = f.build === "brute";
-        const ws = brutal ? 1.45 : 1;
-        const sword = new T.Group();
-        sword.rotation.x = 1.15;
-        sword.scale.setScalar(ws);
-        weapon.add(sword);
-        const gripG = new T.CylinderGeometry(0.016 * H, 0.018 * H, 0.08 * H, 8);
-        geo.push(gripG);
-        const grip = new T.Mesh(gripG, mats.lo);
-        grip.position.set(0, 0.02 * H, 0);
-        sword.add(grip);
-        const pomG = new T.SphereGeometry(0.024 * H, 10, 8);
-        geo.push(pomG);
-        const pom = new T.Mesh(pomG, mats.accent);
-        pom.position.set(0, 0.068 * H, 0);
-        sword.add(pom);
-        const guardG = new T.BoxGeometry(0.1 * H, 0.022 * H, 0.034 * H);
-        geo.push(guardG);
-        const guard = new T.Mesh(guardG, mats.hi);
-        guard.position.set(0, 0.052 * H, 0);
-        sword.add(guard);
-        const bladeG = new T.BoxGeometry(0.034 * H, 0.4 * H, 0.011 * H);
-        geo.push(bladeG);
-        const blade = new T.Mesh(bladeG, mats.steel);
-        blade.position.set(0, -0.24 * H, 0);
-        sword.add(blade);
-        const edgeG = new T.BoxGeometry(0.01 * H, 0.39 * H, 0.018 * H);
-        geo.push(edgeG);
-        const edge = new T.Mesh(edgeG, mats.accent);
-        edge.position.set(0, -0.24 * H, 0);
-        sword.add(edge);
-        const tipG = new T.ConeGeometry(0.017 * H, 0.07 * H, 4);
-        geo.push(tipG);
-        const tip = new T.Mesh(tipG, mats.steel);
-        tip.position.set(0, -0.485 * H, 0);
-        tip.rotation.x = Math.PI;
-        sword.add(tip);
-      }
-      armF.handG.add(weapon);
-
-      // ice hero: kite shield on the off hand
-      if (f.build === "hero" && f.element === "ice") {
-        const shieldG = new T.BoxGeometry(0.15 * H, 0.2 * H, 0.02 * H);
-        geo.push(shieldG);
-        const shield = new T.Mesh(shieldG, mats.hi);
-        shield.position.set(0, -0.07 * H, 0.05 * H);
-        armB.handG.add(shield);
-        const rimG = new T.BoxGeometry(0.16 * H, 0.21 * H, 0.014 * H);
-        geo.push(rimG);
-        const rim = new T.Mesh(rimG, mats.accent);
-        rim.position.set(0, -0.07 * H, 0.045 * H);
-        armB.handG.add(rim);
-      }
-      // arcane hero: a levitating rune orb
-      let orb = null;
-      if (f.build === "hero" && f.element === "arcane") {
-        const orbG = new T.SphereGeometry(0.05 * H, 14, 12);
-        geo.push(orbG);
-        orb = new T.Mesh(orbG, mats.accent);
-        orb.position.set(0, -0.12 * H, 0.1 * H);
-        armB.handG.add(orb);
-      }
-      // wind hero: fluttering scarf
-      const scarf = new T.Group();
-      scarf.position.set(0, 0.24 * H, -0.05 * H);
-      torsoG.add(scarf);
-      const s1G = new T.BoxGeometry(0.055 * H, 0.16 * H, 0.014 * H);
-      geo.push(s1G);
-      const s1 = new T.Mesh(s1G, mats.cloth);
-      s1.position.set(0, -0.08 * H, 0);
-      scarf.add(s1);
-      const s2G = new T.BoxGeometry(0.05 * H, 0.12 * H, 0.012 * H);
-      geo.push(s2G);
-      const s2 = new T.Mesh(s2G, mats.cloth);
-      s2.position.set(0, -0.17 * H, 0);
-      scarf.add(s2);
-
-      // cape
-      const capeG = new T.Group();
-      capeG.position.set(0, 0.44 * H, -0.07 * H);
-      root.add(capeG);
-      const c1G = new T.PlaneGeometry(0.2 * H * bulk, 0.24 * H);
-      geo.push(c1G);
-      const c1 = new T.Mesh(c1G, mats.cloth);
-      c1.position.set(0, -0.12 * H, 0);
-      capeG.add(c1);
-      const c2G = new T.PlaneGeometry(0.24 * H * bulk, 0.2 * H);
-      geo.push(c2G);
-      const c2 = new T.Mesh(c2G, mats.cloth);
-      c2.position.set(0, -0.32 * H, 0);
-      c2.rotation.x = 0.18;
-      capeG.add(c2);
-
-      // blob shadow
-      const blob = new T.Mesh(
-        new T.PlaneGeometry(1, 1),
-        new T.MeshBasicMaterial({
-          map: this.blobTex, transparent: true, opacity: 0.4, depthWrite: false,
-        })
-      );
-      blob.rotation.x = -Math.PI / 2;
-      blob.scale.set(0.42 * H, 0.3 * H, 1);
-      this.scene.add(blob);
-
-      // hit flash silhouette
-      const flashMat = new T.MeshBasicMaterial({
-        color: 0xffffff, transparent: true, opacity: 0, depthWrite: false,
+      const geo = new T.PlaneGeometry(1, 1);
+      const bodyMat = new T.MeshBasicMaterial({
+        transparent: true, depthWrite: false, alphaTest: 0.02, toneMapped: false,
       });
-      const fBodyG = new T.CapsuleGeometry(0.12 * H * bulk, 0.34 * H, 3, 10);
-      const fHeadG = new T.SphereGeometry(0.1 * H, 12, 10);
-      const fBody = new T.Mesh(fBodyG, flashMat);
-      fBody.position.set(0, 0.55 * H, 0);
-      const fHead = new T.Mesh(fHeadG, flashMat);
-      fHead.position.set(0, 0.78 * H, 0);
-      fBody.visible = false;
-      fHead.visible = false;
-      this.scene.add(fBody, fHead);
+      const body = new T.Mesh(geo, bodyMat);
+      const flashMat = new T.MeshBasicMaterial({
+        transparent: true, opacity: 0, depthWrite: false, alphaTest: 0.02, toneMapped: false,
+      });
+      const flash = new T.Mesh(geo, flashMat);
+      flash.position.z = 3;
+      // elemental rim aura behind the art sells the "living" feel
+      const auraMat = new T.SpriteMaterial({
+        map: this.glowTex, color: f.kit.color, transparent: true, opacity: 0,
+        blending: T.AdditiveBlending, depthWrite: false,
+      });
+      const aura = new T.Sprite(auraMat);
+      aura.position.set(0, H * 0.52, -8);
+      aura.scale.set(H * 1.5, H * 1.5, 1);
+      spr.add(body, flash, aura);
+
+      // grounded blob shadow that shrinks as the fighter rises
+      const blobGeo = new T.PlaneGeometry(1, 1);
+      const blobMat = new T.MeshBasicMaterial({
+        map: this.blobTex, transparent: true, opacity: 0.42, depthWrite: false,
+      });
+      const blob = new T.Mesh(blobGeo, blobMat);
+      blob.rotation.x = -Math.PI / 2;
+      blob.position.set(0, 0.6, 0);
+      this.scene.add(blob);
 
       // ward bubble
       const wardMat = new T.MeshBasicMaterial({
-        color: 0x7fd8ff, transparent: true, opacity: 0.1, side: T.DoubleSide, depthWrite: false,
+        color: 0x7fd8ff, transparent: true, opacity: 0.1, depthWrite: false, side: T.DoubleSide,
       });
       const ward = new T.Mesh(new T.SphereGeometry(0.52 * H, 20, 16), wardMat);
       ward.position.set(0, 0.55 * H, 0);
@@ -1064,16 +818,15 @@
 
       this.scene.add(root);
       const rig = {
-        f, H, bulk, root, blob, flashMat, fBody, fHead, ward, wardMat,
-        torsoG, headG, ornaments, armF, armB, legF, legB, capeG, scarf, orb,
-        mats, geo,
+        f, H, root, mir, spr, body, bodyMat, flash, flashMat, aura, auraMat,
+        blob, blobMat, ward, wardMat, geo, blobGeo, textured: false, frozen: false,
       };
       rig.dispose = () => {
-        this.scene.remove(root, blob, fBody, fHead, ward);
-        geo.forEach((g) => g.dispose());
-        Object.values(mats).forEach((m) => m.dispose());
-        flashMat.dispose();
-        wardMat.dispose();
+        this.scene.remove(root, blob, ward);
+        geo.dispose();
+        blobGeo.dispose();
+        ward.geometry.dispose();
+        [bodyMat, flashMat, auraMat, blobMat, wardMat].forEach((m) => m.dispose());
       };
       return rig;
     }
@@ -1105,67 +858,77 @@
       this.trailArc = new WeakMap();
     }
 
-    updateRig(f, dt) {
+    /* Attach the (already preloaded & decoded) key art once it is ready. */
+    textureRig(rig) {
+      if (rig.textured) return;
       const T = window.THREE;
-      const rig = this.rigFor(f);
-      const p = f.pose;
-      const H = rig.H;
+      const entry = loadFighterArt(rig.f.art);
+      if (!entry.ready) return;
+      rig.textured = true;
+      const tex = new T.CanvasTexture(entry.img);
+      tex.colorSpace = T.SRGBColorSpace || tex.colorSpace;
+      tex.anisotropy = 4;
+      rig.bodyMat.map = tex;
+      rig.bodyMat.needsUpdate = true;
+      rig.flashTexWhite = new T.CanvasTexture(entry.white);
+      rig.flashTexIce = new T.CanvasTexture(entry.cyan);
+      rig.flashMat.map = rig.flashTexWhite;
+      rig.flashMat.needsUpdate = true;
+      // size the plane to the art; the painted figure fills ~92% of the frame
+      const aspect = entry.img.width / entry.img.height;
+      const ph = rig.H * 1.22;
+      rig.sprH = ph;
+      rig.body.scale.set(ph * aspect, ph, 1);
+      rig.body.position.y = ph * 0.5 - rig.H * 0.05;
+      rig.flash.scale.copy(rig.body.scale);
+      rig.flash.position.copy(rig.body.position);
+    }
+
+    updateRig(f, dt) {
       void dt;
+      const rig = this.rigFor(f);
+      this.textureRig(rig);
+      if (!rig.textured) rig.auraMat.opacity = 0.3; // visible as a glow until art lands
+      const sp = spritePose(f);
+      const H = rig.H;
 
-      rig.root.position.set(f.x, f.y + p.bob - p.dip * 0.35, 0);
-      const baseY = f.facing > 0 ? Math.PI / 2 : -Math.PI / 2;
-      const spinning = f.state === "ability" && f.attack && (f.attack.hits || 1) > 1 && f.phase === "active";
-      rig.root.rotation.y = baseY + (spinning ? p.rot : 0);
-      // knock/dead: the whole body tips back; otherwise upright
-      rig.root.rotation.x = spinning ? 0 : (f.state === "dead" || f.state === "knock" ? p.rot : 0);
+      rig.root.position.set(f.x, f.y, 0);
+      rig.root.rotation.z = f.facing * (sp.lean - sp.rot);
+      rig.root.rotation.y = sp.spin;
+      rig.mir.scale.x = (f.facing * (f.artFacing || 1)) * sp.squashX;
+      rig.mir.scale.y = sp.squashY;
+      rig.spr.position.y = sp.bob;
 
-      const hunch = f.build === "brute" ? 0.2 : f.build === "beast" ? 0.26 : 0;
-      rig.torsoG.rotation.x = -(p.torso + hunch);
-      rig.torsoG.scale.y = p.breath;
-      rig.headG.rotation.x = -p.head;
+      const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
+      rig.bodyMat.opacity = alpha;
 
-      const bendF = clamp(0.78 - Math.abs(p.armF) * 0.42, 0.08, 1.05);
-      const bendB = clamp(0.62 - Math.abs(p.armB) * 0.42, 0.08, 1.05);
-      rig.armF.shG.rotation.x = -p.armF;
-      rig.armF.elG.rotation.x = -bendF;
-      rig.armB.shG.rotation.x = -p.armB;
-      rig.armB.elG.rotation.x = -bendB;
-
-      const bendLF = clamp(0.16 + Math.max(0, -p.legF) * 0.95 + p.dip * 0.014, 0.05, 1.35);
-      const bendLB = clamp(0.16 + Math.max(0, -p.legB) * 0.95 + p.dip * 0.014, 0.05, 1.35);
-      rig.legF.hipG.rotation.x = -p.legF;
-      rig.legF.kneeG.rotation.x = bendLF;
-      rig.legB.hipG.rotation.x = -p.legB;
-      rig.legB.kneeG.rotation.x = bendLB;
-
-      // cloth
-      const run = clamp((f.vx * f.facing) / 340, -1.2, 1.2);
-      const flap = Math.sin(f.animT * 6) * 0.1;
-      rig.capeG.rotation.x = 0.35 + run * 0.75 + flap * 0.5;
-      rig.scarf.rotation.x = 0.5 + run * 0.9 + flap * 0.8;
-      rig.scarf.rotation.z = Math.sin(f.animT * 4.5) * 0.12 + run * 0.3;
-      if (rig.orb) {
-        rig.orb.position.y = -0.12 * H + Math.sin(f.animT * 3.2) * 0.03 * H;
-        rig.orb.rotation.y = f.animT * 1.6;
-      }
-      // ornament pulse (flames/gems breathe)
-      for (let i = 0; i < rig.ornaments.length; i += 1) {
-        rig.ornaments[i].scale.setScalar(1 + Math.sin(f.animT * 5 + i) * 0.08);
-      }
-
-      // blob shadow
-      const lift = clamp(1 - f.y / 400, 0.35, 1);
-      rig.blob.position.set(f.x, 0.4, 0);
-      rig.blob.scale.set(0.42 * H * lift, 0.3 * H * lift, 1);
-      rig.blob.material.opacity = 0.42 * lift;
-
-      // hit flash / freeze coat
+      // hit flash / freeze coat: a pre-tinted copy of the exact silhouette
       const frozen = f.freeze > 0;
-      const fo = Math.max(f.flash * 0.75, frozen ? 0.32 : 0);
+      const fo = Math.max(f.flash * 0.85, frozen ? 0.4 : 0) * alpha;
+      if (frozen !== rig.frozen) {
+        rig.frozen = frozen;
+        if (rig.flashTexWhite) {
+          rig.flashMat.map = frozen ? rig.flashTexIce : rig.flashTexWhite;
+          rig.flashMat.needsUpdate = true;
+        }
+      }
       rig.flashMat.opacity = fo;
-      rig.fBody.visible = fo > 0.02;
-      rig.fHead.visible = fo > 0.02;
-      rig.flashMat.color.set(frozen ? 0x9fe4ff : 0xffffff);
+      rig.flash.visible = fo > 0.02;
+
+      // elemental aura: empower, burn, or casting
+      const casting = f.state === "ability" && f.phase === "windup";
+      const auraOn = f.empower > 0 || f.burn > 0 || casting;
+      rig.auraMat.opacity = auraOn
+        ? 0.16 + Math.sin(f.animT * 9) * 0.06 + (casting ? 0.14 : 0)
+        : 0;
+      if (f.burn > 0) rig.auraMat.color.set(0xff8a3c);
+      else rig.auraMat.color.set(f.kit.color);
+
+      // blob shadow tracks height
+      const lift = clamp(1 - f.y / 400, 0.35, 1);
+      rig.blob.position.set(f.x, 0.6, 0);
+      rig.blob.scale.set(H * 0.62 * lift * sp.squashX, H * 0.42 * lift, 1);
+      rig.blobMat.opacity = 0.42 * lift * alpha;
 
       // ward bubble
       const hasWard = f.shield > 0;
@@ -1176,26 +939,26 @@
         rig.wardMat.opacity = 0.09 + Math.sin(f.animT * 8) * 0.03;
       }
 
-      // charge glow at the real hand joint
-      if (f.state === "ability" && f.phase === "windup" &&
-          (f.attack && (f.attack.type === "magic" || f.attack.type === "buff"))) {
+      // charge glow gathers at the casting hand (front of the sprite)
+      if (casting && (f.attack && (f.attack.type === "magic" || f.attack.type === "buff"))) {
         const charge = clamp(f.stateT / Math.max(0.01, f.attack.windup), 0, 1);
-        rig.armF.handG.getWorldPosition(this.tmp);
-        let sp = this.charge.get(f);
-        if (!sp) {
-          sp = new T.Sprite(new T.SpriteMaterial({
+        this.tmp.set(f.x + f.facing * H * 0.36, f.y + H * 0.62, 0);
+        let sp2 = this.charge.get(f);
+        if (!sp2) {
+          const T = window.THREE;
+          sp2 = new T.Sprite(new T.SpriteMaterial({
             map: this.glowTex, color: f.kit.glow, transparent: true, opacity: 0.8,
             blending: T.AdditiveBlending, depthWrite: false,
           }));
-          this.scene.add(sp);
-          this.charge.set(f, sp);
-          this.chargeSprites.push(sp);
+          this.scene.add(sp2);
+          this.charge.set(f, sp2);
+          this.chargeSprites.push(sp2);
         }
-        sp.visible = true;
-        sp.position.copy(this.tmp);
-        const s = (10 + charge * 34) * f.scale;
-        sp.scale.set(s, s, 1);
-        sp.material.opacity = 0.5 + charge * 0.5;
+        sp2.visible = true;
+        sp2.position.copy(this.tmp);
+        const s = (12 + charge * 40) * f.scale;
+        sp2.scale.set(s, s, 1);
+        sp2.material.opacity = 0.5 + charge * 0.5;
         if (Math.random() < 0.4) {
           this.particles.spawn(
             this.tmp.x + rand(-8, 8), this.tmp.y + rand(-8, 8), f.kit.color,
@@ -1206,16 +969,16 @@
         this.charge.get(f).visible = false;
       }
 
-      // blade trail while the swing is active
+      // blade trail sweeps in front of the sprite while the swing is active
       const swing = (f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-        f.attack && f.attack.type !== "magic" && f.attack.type !== "buff";
+        f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !sp.spin;
       if (swing) {
         const a = f.attack;
         const prog = clamp((f.stateT - a.windup) / (a.active || 0.12), 0, 1);
-        rig.armF.handG.getWorldPosition(this.tmp);
-        const size = (f.build === "brute" ? 1.0 : 0.72) * H;
+        this.tmp.set(f.x + f.facing * H * 0.3, f.y + H * 0.6, 18);
         let arc = this.trailArc.get(f);
         if (!arc) {
+          const T = window.THREE;
           const m = new T.Mesh(
             new T.RingGeometry(0.5, 0.82, 26, 1, 0, 1.6),
             new T.MeshBasicMaterial({
@@ -1229,12 +992,11 @@
           this.trailArcs.push(arc);
         }
         arc.m.visible = true;
-        arc.m.position.set(this.tmp.x, this.tmp.y, 18);
-        const ang = -p.armF + prog * 1.6;
-        arc.m.rotation.z = Math.PI / 2 - ang * f.facing;
-        const sc = size * (1.05 - prog * 0.35);
+        arc.m.position.copy(this.tmp);
+        arc.m.rotation.z = (Math.PI / 2) - (0.9 - prog * 1.8) * f.facing;
+        const sc = H * (1.15 - prog * 0.4);
         arc.m.scale.set(sc, sc, 1);
-        arc.m.material.opacity = 0.55 * (1 - prog);
+        arc.m.material.opacity = 0.6 * (1 - prog);
       } else if (this.trailArc.has(f)) {
         this.trailArc.get(f).m.visible = false;
       }
@@ -1382,7 +1144,7 @@
           const gh = f.ghosts[i];
           if (!gh._seeded) {
             gh._seeded = true;
-            this.fireGhost(gh.x, f.kit.color, FIGHTER_H * f.scale, gh.max);
+            this.fireGhost(f, gh, FIGHTER_H * f.scale);
           }
         }
       }
@@ -1469,265 +1231,159 @@
   /* ================================================================== *\
    * 2D renderer (fallback when WebGL/Three is unavailable)
    * ================================================================== */
-  function bone(ctx, a, b, w0, w1) {
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
-    ctx.beginPath();
-    ctx.arc(a.x, a.y, w0, ang + Math.PI / 2, ang - Math.PI / 2);
-    ctx.arc(b.x, b.y, w1, ang - Math.PI / 2, ang + Math.PI / 2);
-    ctx.closePath();
-    ctx.fill();
+  /* ================================================================== *\
+   * fighter art — preloaded, decoded, pre-tinted key art sprites
+   * ================================================================== */
+  const ART_CACHE = new Map();
+
+  function tintCanvas(img, color) {
+    const c = makeCanvas(img.width, img.height);
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0);
+    g.globalCompositeOperation = "source-in";
+    g.fillStyle = color;
+    g.fillRect(0, 0, c.width, c.height);
+    return c;
   }
 
-  function poly(ctx, pts) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i][0], pts[i][1]);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  /* Build the whole skeleton for the current pose (local units, feet at 0,0). */
-  function skeleton(f, H) {
-    const p = f.pose;
-    const brute = f.build === "brute";
-    const beast = f.build === "beast";
-    const bulk = brute ? 1.34 : beast ? 1.14 : 1;
-    const t = p.torso + (brute ? 0.2 : beast ? 0.26 : 0); // monsters hunch forward
-    const up = Math.PI - t;
-    const fw = { x: Math.cos(t), y: Math.sin(t) };
-
-    const hip = { x: 0, y: -0.47 * H };
-    const chest = jointAt(hip, up, 0.21 * H * p.breath);
-    const neck = jointAt(chest, up, 0.06 * H);
-    const head = jointAt(neck, Math.PI - t - p.head, 0.105 * H);
-
-    const shF = { x: chest.x + fw.x * 0.05 * H * bulk, y: chest.y + fw.y * 0.05 * H - 0.01 * H };
-    const shB = { x: chest.x - fw.x * 0.05 * H * bulk, y: chest.y - fw.y * 0.05 * H - 0.012 * H };
-    const hipF = { x: hip.x + fw.x * 0.035 * H, y: hip.y + fw.y * 0.035 * H };
-    const hipB = { x: hip.x - fw.x * 0.035 * H, y: hip.y - fw.y * 0.035 * H };
-
-    const arm = (sh, ang, back) => {
-      const bend = clamp((back ? 0.62 : 0.78) - Math.abs(ang) * 0.42, 0.08, 1.05);
-      const elbow = jointAt(sh, ang, 0.165 * H);
-      const hand = jointAt(elbow, ang + bend, 0.155 * H);
-      return { sh, elbow, hand, wrist: ang + bend };
+  /* One shared loader: the battle preloads both fighters before the bell,
+     so the first swing never stutters on a texture decode. */
+  function loadFighterArt(url) {
+    if (!url) return { ready: false, promise: Promise.resolve(null) };
+    if (ART_CACHE.has(url)) return ART_CACHE.get(url);
+    const entry = {
+      img: null, ready: false, white: null, cyan: null, tints: new Map(),
+      promise: null,
     };
-    const leg = (hp, ang) => {
-      const bend = clamp(0.16 + Math.max(0, -ang) * 0.95 + p.dip * 0.014, 0.05, 1.35);
-      const knee = jointAt(hp, ang, 0.215 * H);
-      const ankle = jointAt(knee, ang - bend, 0.2 * H);
-      return { hip: hp, knee, ankle, ang: ang - bend };
-    };
-
-    return {
-      bulk, t, fw, hip, chest, neck, head,
-      armF: arm(shF, p.armF, false),
-      armB: arm(shB, p.armB, true),
-      legF: leg(hipF, p.legF),
-      legB: leg(hipB, p.legB),
-    };
-  }
-
-  /* a limb with a cylindrical highlight down its lit side */
-  function litBone(ctx, p0, p1, w0, w1, base, hi, tint) {
-    ctx.fillStyle = tint || base;
-    bone(ctx, p0, p1, w0, w1);
-    if (tint) return;
-    const dx = p1.x - p0.x, dy = p1.y - p0.y;
-    const len = Math.hypot(dx, dy) || 1;
-    let nx = -dy / len, ny = dx / len;
-    if (nx < 0) { nx = -nx; ny = -ny; }
-    ctx.fillStyle = hi;
-    bone(ctx,
-      { x: p0.x + nx * w0 * 0.34, y: p0.y + ny * w0 * 0.34 },
-      { x: p1.x + nx * w1 * 0.34, y: p1.y + ny * w1 * 0.34 },
-      w0 * 0.42, w1 * 0.42);
-  }
-
-  function drawWeapon2D(ctx, f, sk, H, tint) {
-    const S = skinFor(f.element);
-    const acc = f.kit.color;
-    const hand = sk.armF.hand;
-    const beast = f.build === "beast";
-    const brute = f.build === "brute";
-
-    if (beast) {
-      ctx.fillStyle = tint || S.steel;
-      for (let i = -1; i <= 1; i += 1) {
-        const a = sk.armF.wrist + 0.3 + i * 0.34;
-        const mid = jointAt(hand, a, 0.07 * H);
-        const tip = jointAt(mid, a + 0.5, 0.09 * H);
-        bone(ctx, hand, mid, 0.022 * H, 0.014 * H);
-        bone(ctx, mid, tip, 0.014 * H, 0.003 * H);
+    entry.tint = (color) => {
+      let t = entry.tints.get(color);
+      if (!t && entry.img) {
+        t = tintCanvas(entry.img, color);
+        entry.tints.set(color, t);
       }
-      if (!tint) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.45;
-        ctx.fillStyle = acc;
-        bone(ctx, hand, jointAt(hand, sk.armF.wrist + 0.3, 0.14 * H), 0.02 * H, 0.004 * H);
-        ctx.restore();
+      return t || null;
+    };
+    entry.promise = new Promise((resolve) => {
+      const img = new Image();
+      const done = () => {
+        if (entry.ready) return resolve(entry);
+        if (img.width) {
+          entry.img = img;
+          try {
+            entry.white = tintCanvas(img, "#ffffff");
+            entry.cyan = tintCanvas(img, "#9fe4ff");
+          } catch (_) { entry.white = entry.cyan = null; }
+          entry.ready = true;
+        }
+        resolve(entry);
+      };
+      img.onload = done;
+      img.onerror = done;
+      img.src = url;
+    });
+    ART_CACHE.set(url, entry);
+    return entry;
+  }
+
+  /* Whole-sprite animation parameters for the current state. Positive
+     `lean` tips the fighter toward the foe (anticipation = negative),
+     `rot` falls it backwards, `spin` is the cyclone twirl. */
+  function spritePose(f) {
+    const t = f.animT;
+    const a = f.attack;
+    const o = { lean: 0, squashX: 1, squashY: 1, bob: 0, rot: 0, spin: 0 };
+    if (f.landT > 0) {
+      const k = f.landT / 0.18;
+      o.squashX *= 1 + 0.16 * k;
+      o.squashY *= 1 - 0.13 * k;
+    }
+    switch (f.state) {
+      case "idle": {
+        const br = Math.sin(t * 2.1);
+        o.bob = br * 2.6;
+        o.squashY *= 1 + br * 0.013;
+        o.lean = Math.sin(t * 0.7) * 0.02;
+        break;
       }
-      return;
+      case "walk": {
+        const dir = f.vx * f.facing > 0 ? 1 : -1;
+        const w = Math.abs(Math.sin(t * 10.5));
+        o.bob = w * 4.5;
+        o.lean = 0.09 * dir;
+        o.squashY *= 1 + w * 0.02;
+        break;
+      }
+      case "attack":
+      case "ability": {
+        const kind = a ? a.type : "slash";
+        const multi = a && (a.hits || 1) > 1;
+        if (f.phase === "windup") {
+          const k = kind === "heavy" ? 1.7 : kind === "magic" ? 1.1 : 1;
+          o.lean = -0.13 * k;           // coil backwards — anticipation
+          o.squashY *= 1.05;
+          o.squashX *= 0.96;
+          o.bob = -2;
+        } else if (f.phase === "active") {
+          if (multi) {
+            o.spin = -Math.PI * 2 *
+              clamp((f.stateT - (a.windup || 0)) / Math.max(0.01, a.active || 0.3), 0, 1);
+            o.bob = 5;
+          } else if (kind === "magic" || kind === "buff" || kind === "blink") {
+            o.lean = 0.1;
+          } else {
+            o.lean = kind === "heavy" ? 0.4 : 0.24;  // drive into the blow
+            o.squashX *= 1.08;
+            o.squashY *= 0.95;
+          }
+          o.bob -= 3;
+        } else {
+          o.lean = 0.1;                  // follow-through
+          o.squashY *= 0.99;
+        }
+        break;
+      }
+      case "dash":
+        o.lean = 0.42;
+        o.squashX *= 1.15;
+        o.squashY *= 0.94;
+        break;
+      case "hurt":
+        o.lean = -0.3;
+        o.squashX *= 1.05;
+        o.bob = -1;
+        break;
+      case "knock":
+        o.rot = 0.5 + Math.min(0.7, f.stateT * 1.4);
+        o.lean = -0.2;
+        break;
+      case "dead":
+        o.rot = 1.45 * clamp(f.stateT * 2.2, 0, 1);
+        break;
+      case "victory":
+        o.bob = Math.abs(Math.sin(t * 3.6)) * 9;
+        o.lean = -0.06;
+        break;
+      default:
+        break;
     }
-
-    const len = (brute ? 0.68 : 0.5) * H;
-    const wide = (brute ? 0.055 : 0.036) * H;
-    const a = sk.armF.wrist - 1.15;
-    const tip = jointAt(hand, a, len);
-    const neck = jointAt(hand, a, len * 0.82);
-    const butt = jointAt(hand, a + Math.PI, 0.07 * H);
-    const guardA = jointAt(hand, a + Math.PI / 2, 0.062 * H);
-    const guardB = jointAt(hand, a - Math.PI / 2, 0.062 * H);
-
-    ctx.fillStyle = tint || S.armorLo;
-    bone(ctx, butt, hand, 0.02 * H, 0.017 * H); // grip
-    ctx.fillStyle = tint || acc;
-    ctx.beginPath();
-    ctx.arc(butt.x, butt.y, 0.026 * H, 0, Math.PI * 2);
-    ctx.fill(); // pommel
-    bone(ctx, guardA, guardB, 0.016 * H, 0.016 * H); // crossguard
-    // blade: wide body then a point
-    ctx.fillStyle = tint || S.steel;
-    bone(ctx, hand, neck, wide, wide * 0.8);
-    bone(ctx, neck, tip, wide * 0.8, 0.004 * H);
-    if (!tint) {
-      ctx.fillStyle = S.armorLo;
-      bone(ctx, jointAt(hand, a, len * 0.1), neck, wide * 0.2, wide * 0.14); // fuller
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = 0.5;
-      ctx.fillStyle = acc;
-      bone(ctx, jointAt(hand, a, len * 0.12), tip, wide * 0.55, 0.004 * H);
-      ctx.restore();
-    }
+    return o;
   }
 
-  function drawCape2D(ctx, f, sk, H, tint) {
-    const S = skinFor(f.element);
-    const run = clamp((f.vx * f.facing) / 340, -1.2, 1.2);
-    const flap = Math.sin(f.animT * 6) * 0.1;
-    const root = { x: sk.chest.x - sk.fw.x * 0.075 * H, y: sk.chest.y - sk.fw.y * 0.075 * H };
-    const a0 = -0.3 - run * 0.85 - f.pose.bob * 0.012 + flap * 0.4;
-    const a1 = a0 - 0.24 - run * 0.35 + flap;
-    const a2 = a1 - 0.2 - run * 0.3 + flap * 1.4;
-    const p1 = jointAt(root, a0, 0.2 * H);
-    const p2 = jointAt(p1, a1, 0.18 * H);
-    const p3 = jointAt(p2, a2, 0.15 * H);
-    ctx.fillStyle = tint || S.cloth;
-    bone(ctx, root, p1, 0.05 * H, 0.085 * H);
-    bone(ctx, p1, p2, 0.085 * H, 0.075 * H);
-    bone(ctx, p2, p3, 0.075 * H, 0.03 * H);
-    if (!tint) {
-      ctx.fillStyle = "rgba(0,0,0,0.28)";
-      bone(ctx, p1, p3, 0.03 * H, 0.02 * H); // inner fold
-    }
-  }
-
-  function drawHead2D(ctx, f, sk, H, tint) {
-    const S = skinFor(f.element);
-    const acc = f.kit.color;
-    const ang = sk.t + f.pose.head;
-    const monster = f.build !== "hero";
+  /* Draw one fighter's key art with the full transform stack. `image` may
+     be the original art or a pre-tinted silhouette (flash / after-image). */
+  function drawArtFighter(ctx, f, entry, image, o, H, zoom, alpha) {
+    if (!image) return;
+    const aspect = image.width / image.height;
+    const ph = H * 1.22;
     ctx.save();
-    ctx.translate(sk.head.x, sk.head.y);
-    ctx.rotate(-ang);
-    const r = 0.095 * H;
-    // helmet dome
-    ctx.fillStyle = tint || S.armor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.95, r * 1.05, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (!tint) {
-      ctx.fillStyle = S.armorHi;
-      ctx.beginPath();
-      ctx.ellipse(r * 0.18, -r * 0.3, r * 0.6, r * 0.62, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // faceplate / muzzle pushed toward the enemy
-    ctx.fillStyle = tint || S.armorLo;
-    poly(ctx, [[r * 0.2, -r * 0.1], [r * 1.45, r * 0.35], [r * 1.2, r * 0.72], [r * 0.15, r * 0.85]]);
-    if (monster) {
-      ctx.fillStyle = tint || S.armorHi;
-      poly(ctx, [[-r * 0.15, -r * 0.75], [-r * 1.35, -r * 2.15], [-r * 0.75, -r * 2.0], [r * 0.1, -r * 1.0]]);
-      poly(ctx, [[r * 0.5, -r * 0.7], [r * 1.15, -r * 2.1], [r * 0.62, -r * 1.95], [r * 0.85, -r * 0.5]]);
-    } else {
-      ctx.fillStyle = tint || acc;
-      poly(ctx, [[-r * 0.6, -r * 0.75], [-r * 1.25, -r * 1.55], [-r * 0.05, -r * 1.15], [r * 0.35, -r * 0.8]]); // crest
-      ctx.fillStyle = tint || S.armorHi;
-      poly(ctx, [[-r * 0.2, -r * 0.95], [r * 0.85, -r * 0.55], [r * 0.75, -r * 0.2], [-r * 0.2, -r * 0.55]]);
-    }
-    if (!tint) {
-      // glowing eye slit
-      ctx.fillStyle = acc;
-      ctx.beginPath();
-      ctx.ellipse(r * 0.55, r * 0.14, r * 0.34, r * 0.13, 0.15, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.globalAlpha *= alpha;
+    ctx.scale((f.facing * (f.artFacing || 1)) * o.squashX, o.squashY);
+    ctx.rotate(o.lean);
+    ctx.translate(0, -o.bob * zoom);
+    const w = ph * aspect;
+    ctx.drawImage(image, -w / 2, -ph + H * 0.05, w, ph);
     ctx.restore();
   }
-
-  /* Draw the complete 2D fighter. `tint` flattens everything to one colour
-     (used for the damage flash and dash after-images). */
-  function drawPuppet2D(ctx, f, H, tint) {
-    const S = skinFor(f.element);
-    const sk = skeleton(f, H);
-    const b = sk.bulk;
-    const lo = tint || S.armorLo;
-
-    // --- limbs behind the body (darker, no highlight)
-    ctx.fillStyle = lo;
-    bone(ctx, sk.armB.sh, sk.armB.elbow, 0.05 * H * b, 0.04 * H * b);
-    bone(ctx, sk.armB.elbow, sk.armB.hand, 0.04 * H * b, 0.031 * H * b);
-    bone(ctx, sk.legB.hip, sk.legB.knee, 0.072 * H * b, 0.052 * H * b);
-    bone(ctx, sk.legB.knee, sk.legB.ankle, 0.052 * H * b, 0.038 * H * b);
-    bone(ctx, sk.legB.ankle, jointAt(sk.legB.ankle, Math.PI / 2 - 0.1, 0.085 * H), 0.036 * H, 0.026 * H);
-
-    drawCape2D(ctx, f, sk, H, tint);
-
-    // --- front leg with boot
-    litBone(ctx, sk.legF.hip, sk.legF.knee, 0.078 * H * b, 0.055 * H * b, S.armor, S.armorHi, tint);
-    litBone(ctx, sk.legF.knee, sk.legF.ankle, 0.055 * H * b, 0.04 * H * b, S.armor, S.armorHi, tint);
-    ctx.fillStyle = tint || S.armorLo;
-    bone(ctx, sk.legF.ankle, jointAt(sk.legF.ankle, Math.PI / 2 - 0.1, 0.095 * H), 0.04 * H, 0.028 * H);
-    ctx.fillStyle = tint || S.armorHi;
-    bone(ctx, sk.legF.knee, jointAt(sk.legF.knee, sk.legF.ang, 0.022 * H), 0.045 * H * b, 0.036 * H * b); // knee plate
-
-    // --- torso
-    litBone(ctx, sk.hip, sk.chest, 0.088 * H * b, 0.108 * H * b, S.armor, S.armorHi, tint);
-    ctx.fillStyle = tint || S.armorLo;
-    bone(ctx, sk.chest, sk.neck, 0.05 * H, 0.036 * H); // neck
-    if (!tint) {
-      // chest sigil + belt
-      ctx.fillStyle = f.kit.color;
-      ctx.globalAlpha = 0.5;
-      ctx.beginPath();
-      ctx.arc(sk.chest.x + sk.fw.x * 0.025 * H, sk.chest.y + 0.035 * H, 0.022 * H, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = S.armorLo;
-      bone(ctx, jointAt(sk.hip, Math.PI / 2 - sk.t, 0.05 * H * b), jointAt(sk.hip, -Math.PI / 2 - sk.t, 0.05 * H * b), 0.02 * H, 0.02 * H); // belt
-    }
-
-    drawHead2D(ctx, f, sk, H, tint);
-
-    // --- weapon arm on top so the swing always reads
-    litBone(ctx, sk.armF.sh, sk.armF.elbow, 0.053 * H * b, 0.042 * H * b, S.armor, S.armorHi, tint);
-    litBone(ctx, sk.armF.elbow, sk.armF.hand, 0.042 * H * b, 0.033 * H * b, S.armor, S.armorHi, tint);
-    ctx.fillStyle = tint || S.armorHi;
-    ctx.beginPath();
-    ctx.arc(sk.armF.sh.x, sk.armF.sh.y - 0.008 * H, 0.056 * H * b, 0, Math.PI * 2);
-    ctx.fill(); // pauldron
-    if (!tint) {
-      ctx.fillStyle = S.armorLo;
-      ctx.beginPath();
-      ctx.arc(sk.armF.sh.x + 0.014 * H, sk.armF.sh.y + 0.016 * H, 0.042 * H * b, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    drawWeapon2D(ctx, f, sk, H, tint);
-    return sk;
-  }
-
   /* pre-rendered soft glow used for every 2D particle (no per-frame shadowBlur) */
   let GLOW = null;
   function glowSprite2D() {
@@ -1988,7 +1644,8 @@
       this.number(def, `${dmg}`, crit ? "#ffd479" : "#ff7a86", crit);
       this.impact(def, box.kind, crit, att);
       this.addShake(clamp((box.knock + dmg * 5) / 420, 0.25, 1.5) * (crit ? 14 : 9));
-      this.hitStop = Math.max(this.hitStop, crit ? 0.09 : 0.05);
+      // short hit-stop adds weight without reading as input lag
+      this.hitStop = Math.max(this.hitStop, crit ? 0.055 : 0.028);
       if (box.kind === "heavy") SFX.thud();
       else if (box.kind === "magic") SFX.boom(att.element);
       else SFX.clang(att.element);
@@ -2322,7 +1979,7 @@
         }
         if (f.dashLeft <= 0) { f.state = "idle"; f.attack = null; f.vx *= 0.25; }
       } else if (f.state === "hurt") {
-        if (f.stateT > 0.24) f.state = "idle";
+        if (f.stateT > 0.2) f.state = "idle";
       } else if (f.state === "knock") {
         if (f.y <= 0 && f.stateT > 0.45) f.state = "idle";
       } else if (f.state === "dead" || f.state === "victory") {
@@ -2347,17 +2004,34 @@
 
       f.x += f.vx * dt;
       f.y += f.vy * dt;
+      f.landT = Math.max(0, f.landT - dt);
       if (f.y > 0) f.vy -= GRAVITY * dt;
       if (f.y < 0) {
         f.y = 0;
-        if (f.vy < -80 && !f.dead) { this.particles(f, 6, "#9fb0ff", 0.6); this.addShake(3); SFX.step(); }
+        if (f.vy < -80 && !f.dead) {
+          // impact: landing squash + dust ring + thud
+          f.landT = 0.18;
+          this.particles(f, 6, "#9fb0ff", 0.6);
+          this.fx.push({ type: "ring", color: "#9fb0ff", x: f.x, y: 2, life: 0.25, max: 0.25, size: 10, grow: 120 });
+          this.addShake(3);
+          SFX.step();
+        }
         f.vy = 0;
       }
       const friction = f.state === "knock" || f.state === "dash" ? 1.8 : 10;
       if (f !== this.player || f.busy || Math.abs(this.input.dx) < 0.05) {
         f.vx = approach(f.vx, 0, friction, dt);
       }
+      const wall = f.x < -ARENA_HALF ? -1 : f.x > ARENA_HALF ? 1 : 0;
       f.x = clamp(f.x, -ARENA_HALF, ARENA_HALF);
+      if (wall && Math.abs(f.vx) > 240) {
+        // bounce off the arena rim with spark + shake — momentum matters
+        f.vx *= -0.42;
+        f.landT = Math.max(f.landT, 0.12);
+        this.fx.push({ type: "flash", color: f.kit.glow, x: f.x + wall * 14, y: f.y + FIGHTER_H * f.scale * 0.5, life: 0.16, max: 0.16, size: 46 });
+        this.particles(f, 5, f.kit.color, 0.8);
+        this.addShake(4);
+      }
       if (!f.dead && !this.over) this.faceFoe(f);
 
       for (let i = f.ghosts.length - 1; i >= 0; i -= 1) {
@@ -2670,45 +2344,53 @@
     drawFighter(ctx, f) {
       const zoom = this.cam.zoom;
       const [sx, sy] = this.project(f.x, f.y);
-      const p = f.pose;
+      const o = spritePose(f);
       const H = FIGHTER_H * f.scale * zoom;
+      const entry = loadFighterArt(f.art);
       const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
 
-      // dash after-images: the same puppet, flattened to the element colour
-      if (f.ghosts.length) {
-        ctx.save();
-        ctx.globalCompositeOperation = "lighter";
-        f.ghosts.forEach((gh) => {
-          const [gx, gy] = this.project(gh.x, f.y);
+      // dash after-images: the real art flattened to the element colour
+      if (f.ghosts.length && entry.ready) {
+        const tint = entry.tint(f.kit.color);
+        if (tint) {
           ctx.save();
-          ctx.globalAlpha = (gh.life / gh.max) * 0.3 * alpha;
-          ctx.translate(gx, gy - p.bob * zoom);
-          ctx.scale(f.facing, 1);
-          drawPuppet2D(ctx, f, H, f.kit.color);
+          ctx.globalCompositeOperation = "lighter";
+          f.ghosts.forEach((gh) => {
+            const [gx, gy] = this.project(gh.x, f.y);
+            ctx.save();
+            ctx.translate(gx, gy);
+            ctx.globalAlpha = (gh.life / gh.max) * 0.3 * alpha;
+            drawArtFighter(ctx, f, entry, tint, o, H, zoom, 1);
+            ctx.restore();
+          });
           ctx.restore();
-        });
-        ctx.restore();
+        }
       }
 
       ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(sx, sy + p.dip * zoom * 0.35);
-      ctx.scale(f.facing, 1);
-      if (p.rot) {
+      ctx.translate(sx, sy);
+      if (o.rot) {
+        // topple backwards around the hips
         ctx.translate(0, -H * 0.45);
-        ctx.rotate(p.rot);
+        ctx.rotate(-f.facing * o.rot);
         ctx.translate(0, H * 0.45);
       }
-      ctx.translate(0, -p.bob * zoom);
-
-      const sk = drawPuppet2D(ctx, f, H, null);
-
-      // white damage flash / freeze coat, over the exact same silhouette
-      if (f.flash > 0.02 || f.freeze > 0) {
-        ctx.save();
-        ctx.globalAlpha = alpha * Math.max(f.flash * 0.72, f.freeze > 0 ? 0.32 : 0);
-        drawPuppet2D(ctx, f, H, f.freeze > 0 ? "#9fe4ff" : "#ffffff");
-        ctx.restore();
+      if (entry.ready) {
+        drawArtFighter(ctx, f, entry, entry.img, o, H, zoom, alpha);
+        // white damage flash / freeze coat over the exact same silhouette
+        if (f.flash > 0.02 || f.freeze > 0) {
+          ctx.save();
+          ctx.globalAlpha = alpha * Math.max(f.flash * 0.8, f.freeze > 0 ? 0.4 : 0);
+          drawArtFighter(ctx, f, entry, f.freeze > 0 ? entry.cyan : entry.white, o, H, zoom, 1);
+          ctx.restore();
+        }
+      } else {
+        // art not ready yet (offline?) — elemental silhouette keeps play going
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = f.kit.color;
+        ctx.beginPath();
+        ctx.ellipse(0, -H * 0.5, H * 0.22, H * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.restore();
 
@@ -2726,12 +2408,12 @@
       }
       if (f.empower > 0 && Math.random() < 0.5) this.particles(f, 1, f.kit.color, 0.4);
 
-      // charge gathering in the casting hand — tracked to the real hand joint
+      // charge gathering at the casting hand
       if (f.state === "ability" && f.phase === "windup" &&
           (f.attack?.type === "magic" || f.attack?.type === "buff")) {
         const charge = clamp(f.stateT / Math.max(0.01, f.attack.windup), 0, 1);
-        const hx = sx + sk.armF.hand.x * f.facing;
-        const hy = sy + sk.armF.hand.y - p.bob * zoom;
+        const hx = sx + f.facing * H * 0.36;
+        const hy = sy - H * 0.62;
         const size = (14 + charge * 42) * zoom * f.scale;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
@@ -2749,28 +2431,20 @@
         }
       }
 
-      // the blade leaves a trail through its actual swing arc
+      // the swing leaves a glowing arc sweeping in front of the sprite
       if ((f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-          f.attack && f.attack.type !== "magic" && f.attack.type !== "buff") {
+          f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !o.spin) {
         const prog = clamp((f.stateT - f.attack.windup) / (f.attack.active || 0.12), 0, 1);
-        const wrist = sk.armF.wrist - 0.5;
-        const tipL = (f.build === "brute" ? 0.78 : 0.58) * H;
-        const hx = sk.armF.hand.x, hy = sk.armF.hand.y;
         ctx.save();
-        ctx.translate(sx, sy - p.bob * zoom);
+        ctx.translate(sx + f.facing * H * 0.12, sy - H * 0.58);
         ctx.scale(f.facing, 1);
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.5 * (1 - prog);
+        ctx.globalAlpha = 0.55 * (1 - prog);
         ctx.strokeStyle = f.kit.glow;
         ctx.lineWidth = 7 * zoom * f.scale;
         ctx.lineCap = "round";
         ctx.beginPath();
-        for (let i = 0; i <= 6; i += 1) {
-          const a = wrist + (i / 6) * 1.5 * (1 - prog);
-          const px = hx + Math.sin(a) * tipL;
-          const py = hy + Math.cos(a) * tipL;
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
+        ctx.arc(0, 0, H * 0.72, -1.2 + prog * 1.7, -0.25 + prog * 1.7);
         ctx.stroke();
         ctx.restore();
       }
@@ -2882,7 +2556,10 @@
   }
 
   window.ChronicleArena = {
-    Arena, KITS, kitFor,
+    Arena, KITS, kitFor, loadFighterArt,
+    /* Preload + decode fighter key art (and pre-tint flash silhouettes)
+       before the duel starts, so combat never stutters on a decode. */
+    preloadFighters: (urls) => Promise.all((urls || []).map((u) => loadFighterArt(u).promise)),
     setMuted: (v) => { Audio2.muted = v; if (!v) Audio2.ready(); },
     unlockAudio: () => Audio2.ready(),
   };
