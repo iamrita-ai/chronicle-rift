@@ -2381,3 +2381,321 @@ body.in-fight #app {
 .force-landscape .play-btn b { font-size: 15px; }
 .force-landscape .matchup { gap: 4px; }
 .force-landscape .mu-note { display: none; }
+
+/* ================================================================== *
+ * v0.10 — top player bar, profile / rules / terms, 3D fx overlay
+ * ================================================================== */
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px;
+  margin: 0 -2px 12px;
+  background: linear-gradient(180deg, rgba(5, 6, 15, 0.96) 72%, rgba(5, 6, 15, 0));
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+body.in-fight .app-topbar {
+  display: none;
+}
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.topbar-brand .brand-sigil {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.topbar-brand .brand-sigil svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--gold);
+  filter: drop-shadow(0 0 8px rgba(255, 212, 121, 0.45));
+}
+.topbar-title {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.topbar-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.topbar-chip:active {
+  transform: scale(0.97);
+  border-color: var(--element);
+}
+.topbar-chip img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--element, var(--gold));
+  background: #000;
+}
+.topbar-chip-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  min-width: 0;
+}
+.topbar-chip-copy b {
+  font-size: 13px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-chip-copy small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.topbar-chev {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+
+/* the home header's brand row is now provided by the top bar */
+#screen-home .home-top {
+  display: none;
+}
+#screen-home .home-hero {
+  padding-top: 4px;
+}
+
+/* ---------------- 3D damage numbers + K.O. banner ---------------- */
+#arena-fx-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 8;
+}
+.fx3d-num {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  font-weight: 900;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9), 0 0 18px rgba(0, 0, 0, 0.5);
+  will-change: left, top, opacity;
+  pointer-events: none;
+  font-family: system-ui, sans-serif;
+}
+.fx3d-num.is-crit {
+  font-size: 34px;
+}
+.fx3d-banner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: radial-gradient(ellipse at center, rgba(4, 5, 14, 0.2) 0%, rgba(4, 5, 14, 0.74) 78%);
+  opacity: 0;
+}
+.fx3d-banner.is-shown {
+  animation: banner-in 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.fx3d-banner b {
+  font-size: min(16vw, 84px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  font-family: system-ui, sans-serif;
+}
+.fx3d-banner.is-win b {
+  color: var(--gold);
+  text-shadow: 0 0 34px rgba(255, 212, 121, 0.55);
+}
+.fx3d-banner.is-lose b {
+  color: var(--bad);
+  text-shadow: 0 0 34px rgba(255, 95, 109, 0.5);
+}
+.fx3d-banner small {
+  color: rgba(238, 241, 255, 0.85);
+  font-weight: 600;
+}
+
+/* ---------------- profile ---------------- */
+.profile-card {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+}
+.profile-avatar {
+  width: 86px;
+  height: 86px;
+  flex: none;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 2px solid var(--element, var(--gold));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  background: #000;
+}
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.profile-id {
+  min-width: 0;
+  flex: 1;
+}
+.profile-id h3 {
+  font-size: 20px;
+  margin: 5px 0 2px;
+}
+.profile-id .muted {
+  font-size: 12px;
+}
+.profile-id .xp-line {
+  margin-top: 9px;
+}
+
+.pstat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pstat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 6px;
+  text-align: center;
+}
+.pstat b {
+  display: block;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.pstat small {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.profile-wallet {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.profile-wallet .wallet-card {
+  padding: 10px 8px;
+}
+
+.profile-rows {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.prow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.prow:last-child {
+  border-bottom: 0;
+}
+.prow b {
+  display: block;
+  font-size: 14px;
+}
+.prow small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---------------- rules & terms ---------------- */
+.legal-scroll {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.legal-scroll h4 {
+  font-size: 14px;
+  margin: 14px 0 8px;
+  letter-spacing: 0.04em;
+}
+.legal-scroll h4:first-child {
+  margin-top: 0;
+}
+.legal-scroll p {
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+.legal-scroll ul,
+.legal-scroll ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.legal-scroll li {
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin-bottom: 8px;
+  color: #cdd3f2;
+}
+.legal-scroll li b {
+  color: var(--text);
+}
+.legal-scroll .small {
+  font-size: 12px;
+}

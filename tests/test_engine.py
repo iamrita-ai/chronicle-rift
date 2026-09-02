@@ -487,3 +487,40 @@ def test_arena_cannot_invent_health() -> None:
     player = new_player(user_id=44, first_name="Duelist", username=None)
     result = resolve_arena(player, "win", hp_left=9999)
     assert result.player["game"]["hp"] == result.player["game"]["max_hp"]
+
+
+def test_arena_win_keeps_the_career_record() -> None:
+    player = new_player(user_id=45, first_name="Duelist", username=None)
+    result = resolve_arena(player, "win", hp_left=7)
+    game = result.player["game"]
+    assert game["arena_wins"] == 1
+    assert game["boss_kills"] == 0
+    assert game["best_chapter"] == game["chapter"] == 2
+
+    # a boss kill is counted separately: feed the *resulting* player forward
+    # and mark its enemy a boss before the next duel.
+    player = result.player
+    player["game"]["enemy"]["boss"] = True
+    result = resolve_arena(player, "win", hp_left=7)
+    assert result.player["game"]["arena_wins"] == 2
+    assert result.player["game"]["boss_kills"] == 1
+    assert result.player["game"]["best_chapter"] == result.player["game"]["chapter"]
+
+
+def test_arena_loss_counts_a_defeat() -> None:
+    player = new_player(user_id=46, first_name="Duelist", username=None)
+    result = resolve_arena(player, "lose")
+    assert result.player["game"]["arena_losses"] == 1
+    assert result.player["game"]["arena_wins"] == 0
+
+
+def test_public_view_exposes_profile_and_record() -> None:
+    from chronicle_rift.models import public_player_view
+
+    player = new_player(user_id=47, first_name="Duelist", username="duelist")
+    view = public_player_view(player)
+    assert view["profile"]["hero_name"] == "Duelist"
+    assert view["profile"]["username"] == "duelist"
+    assert view["record"] == {
+        "wins": 0, "losses": 0, "boss_kills": 0, "chapter": 1, "best_chapter": 1,
+    }

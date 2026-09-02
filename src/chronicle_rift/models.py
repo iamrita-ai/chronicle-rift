@@ -301,6 +301,10 @@ GAME_DEFAULTS: dict[str, Any] = {
     "stun": 0,
     "turn": 0,
     "base_max_hp": BASE_MAX_HP,
+    "arena_wins": 0,
+    "arena_losses": 0,
+    "boss_kills": 0,
+    "best_chapter": 1,
 }
 
 
@@ -524,6 +528,18 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     inventory = inventory_view(game)
     character = character_card(game["character"], game)
     return {
+        "profile": {
+            "first_name": player["profile"]["first_name"],
+            "username": player["profile"].get("username"),
+            "hero_name": player["profile"]["hero_name"],
+        },
+        "record": {
+            "wins": int(game.get("arena_wins", 0)),
+            "losses": int(game.get("arena_losses", 0)),
+            "boss_kills": int(game.get("boss_kills", 0)),
+            "chapter": game["chapter"],
+            "best_chapter": int(game.get("best_chapter", 1)),
+        },
         "character": character,
         "roster": [character_card(cid, game) for cid in CHARACTERS],
         "hero": {

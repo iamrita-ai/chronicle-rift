@@ -27,6 +27,7 @@ class PlayerRepository:
         self._client = AsyncMongoClient(mongodb_uri, serverSelectionTimeoutMS=8000)
         self._database_name = database_name
         self._players: AsyncCollection[dict[str, Any]] | None = None
+        self._feedback: AsyncCollection[dict[str, Any]] | None = None
 
     async def connect(self) -> None:
         """Check MongoDB connectivity and create the indexes used by the game."""
@@ -34,8 +35,10 @@ class PlayerRepository:
             await self._client.admin.command("ping")
             database = self._client.get_database(self._database_name)
             self._players = database.get_collection("players")
+            self._feedback = database.get_collection("feedback")
             await self._players.create_index("updated_at")
             await self._players.create_index("profile.username")
+            await self._feedback.create_index(("user_id", "created_at"))
         except PyMongoError as exc:
             raise DatabaseUnavailable("MongoDB connection failed.") from exc
 
@@ -119,6 +122,24 @@ class PlayerRepository:
         if not result:
             raise ConcurrentUpdateError("Player state changed before this turn could be saved.")
         return result
+
+    async def insert_feedback(self, *, user_id: int, first_name: str, kind: str, text: str) -> None:
+        """Store one player feedback note (bug report / feature / improvement)."""
+        feedback = self._feedback
+        if feedback is None:
+            raise DatabaseUnavailable("MongoDB has not been initialized.")
+        try:
+            await feedback.insert_one(
+                {
+                    "user_id": user_id,
+                    "first_name": first_name[:64],
+                    "kind": kind if kind in {"bug", "feature", "improve"} else "improve",
+                    "text": text[:2000],
+                    "created_at": datetime.now(UTC),
+                }
+            )
+        except PyMongoError as exc:
+            raise DatabaseUnavailable("Could not store the feedback note.") from exc
 
     def _collection(self) -> AsyncCollection[dict[str, Any]]:
         if self._players is None:

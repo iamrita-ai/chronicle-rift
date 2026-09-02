@@ -9,11 +9,29 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%237c6cff' d='M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://telegram.org/js/telegram-web-app.js?61"></script>
+    <script src="./vendor/three.min.js"></script>
     <script defer src="./arena.js"></script>
     <script defer src="./app.js"></script>
   </head>
   <body>
     <div id="app">
+      <!-- ==================== TOP PLAYER BAR ==================== -->
+      <header class="app-topbar" id="app-topbar">
+        <div class="topbar-brand">
+          <span class="brand-sigil" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 1.8 13.9 9l7.3 1.9-7.3 1.9L12 20.2 10.1 12.9 2.8 11 10.1 9z"/></svg>
+          </span>
+          <span class="topbar-title">ChronicleRift</span>
+        </div>
+        <button class="topbar-chip" id="topbar-profile" type="button" aria-label="Open your profile">
+          <img id="topbar-avatar" src="./art/char-emberblade.png" alt="" />
+          <span class="topbar-chip-copy">
+            <b id="topbar-name">Riftwalker</b>
+            <small><span id="topbar-level">Lv 1</span> · <span id="topbar-coins">—</span> 🪙</small>
+          </span>
+          <svg class="topbar-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </header>
       <!-- ==================== HOME ==================== -->
       <section class="screen is-active" id="screen-home" data-screen="home">
         <header class="home-hero">
@@ -110,6 +128,7 @@
       <!-- ==================== BATTLE (real-time arena) ==================== -->
       <section class="screen battle-screen" id="screen-battle" data-screen="battle">
         <canvas id="arena-canvas"></canvas>
+        <div id="arena-fx-host" aria-hidden="true"></div>
 
         <div class="fight-hud">
           <div class="hud-side hud-player">
@@ -272,6 +291,111 @@
           </label>
           <button class="wide-btn" id="set-tutorial" type="button">Replay the How to Play guide</button>
           <p class="note" id="version-note">ChronicleRift</p>
+        </div>
+      </section>
+
+      <!-- ==================== PROFILE ==================== -->
+      <section class="screen" id="screen-profile" data-screen="profile">
+        <div class="sub-top">
+          <button class="icon-btn" data-goto="home" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <h2>Profile</h2>
+          <span></span>
+        </div>
+        <div class="profile-card">
+          <div class="profile-avatar"><img id="pf-avatar" src="./art/char-emberblade.png" alt="" /></div>
+          <div class="profile-id">
+            <span class="element-tag" id="pf-element">FIRE</span>
+            <h3 id="pf-name">Riftwalker</h3>
+            <small class="muted" id="pf-username"></small>
+            <p class="muted" id="pf-title"></p>
+            <div class="xp-line">
+              <div class="bar bar-xp"><span id="pf-xp"></span></div>
+              <small id="pf-xp-cap">— XP</small>
+            </div>
+          </div>
+        </div>
+        <div class="pstat-grid">
+          <div class="pstat"><b id="pf-wins">0</b><small>DUELS WON</small></div>
+          <div class="pstat"><b id="pf-losses">0</b><small>DEFEATS</small></div>
+          <div class="pstat"><b id="pf-boss">0</b><small>BOSSES SLAIN</small></div>
+          <div class="pstat"><b id="pf-chapter">1</b><small>CHAPTER</small></div>
+        </div>
+        <div class="profile-wallet">
+          <div class="wallet-card"><small>COINS</small><strong id="pf-coins">—</strong></div>
+          <div class="wallet-card"><small>POINTS</small><strong id="pf-points">—</strong></div>
+          <div class="wallet-card"><small>GOLD</small><strong id="pf-gold">—</strong></div>
+          <div class="wallet-card"><small>VITALITY</small><strong id="pf-hp">—</strong></div>
+        </div>
+        <div class="profile-rows">
+          <div class="prow">
+            <div><b id="pf-hero">—</b><small>Hero in play</small></div>
+            <button class="btn-ghost" id="pf-heroes" type="button">Change hero</button>
+          </div>
+          <div class="prow"><div><b id="pf-owned">1 of 5</b><small>Heroes recruited</small></div></div>
+          <div class="prow"><div><b id="pf-best">1</b><small>Best chapter reached</small></div></div>
+          <div class="prow"><div><b id="pf-relics">—</b><small>Forged relics</small></div></div>
+        </div>
+        <button class="play-btn" id="pf-play" type="button">
+          <span class="play-glow" aria-hidden="true"></span>
+          <b>ENTER THE RIFT</b>
+          <small>Chapter duel in the arena</small>
+        </button>
+      </section>
+
+      <!-- ==================== RULES ==================== -->
+      <section class="screen" id="screen-rules" data-screen="rules">
+        <div class="sub-top">
+          <button class="icon-btn" data-goto="home" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <h2>Rules &amp; Regulations</h2>
+          <span></span>
+        </div>
+        <div class="legal-scroll">
+          <h4>⚔️ The Arena</h4>
+          <ul>
+            <li>You duel the chapter monster in real time. Damage lands only when an attack physically connects — range, timing and positioning matter.</li>
+            <li>Move with the joystick on the left. The big sword button is your basic attack; the three icons above it are your abilities, each with its own cooldown and stamina cost.</li>
+            <li>Every hero fights differently: Fire cleaves and burns, Ice smashes and freezes, Wind whirls and blinks, Arcane pierces and drains, Shadow reaps and vanishes.</li>
+            <li>Watch your stamina bar — attacks cost it and it regenerates while you wait. An exhausted hero must rest.</li>
+            <li>Win to clear the chapter: gold, coins, points, XP and a loot chest. Every 5th chapter is a boss with doubled rewards.</li>
+            <li>Defeat sends you back to camp fully healed — nothing is ever lost.</li>
+            <li>Recruit heroes, buy potions and forge relics in the Store. Relics can be upgraded to level 5.</li>
+            <li>Healing items can be drunk before a duel or between rounds; they top up your vitality instantly.</li>
+          </ul>
+          <h4>🕊 Fair Play</h4>
+          <ul>
+            <li>One account per player. Your progress is verified server-side and saved to the Chronicle.</li>
+            <li>Automation, spoofed identity or abuse of the realm costs you access.</li>
+            <li>Found a bug, or want something added or improved? Use the 🐛 Bug, ✨ Feature and 💡 Improve buttons on the bot home — every note is read before each new build.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ==================== TERMS ==================== -->
+      <section class="screen" id="screen-terms" data-screen="terms">
+        <div class="sub-top">
+          <button class="icon-btn" data-goto="home" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <h2>Terms &amp; Conditions</h2>
+          <span></span>
+        </div>
+        <div class="legal-scroll">
+          <p>By playing ChronicleRift you agree to the following:</p>
+          <ol>
+            <li><b>Game items only.</b> Coins, gold and points exist only inside the game. There are no real-money purchases and no real-world value of any kind.</li>
+            <li><b>Your account.</b> Progress is tied to your Telegram account and stored server-side. You are responsible for keeping your account safe.</li>
+            <li><b>No botting.</b> Automated play, spoofed identity data or abuse of the API voids your progress and access.</li>
+            <li><b>Fair play.</b> Exploits should be reported through the feedback buttons, not used. Accounts abusing known exploits may be reset.</li>
+            <li><b>Your data.</b> The bot stores only your Telegram user ID, display name, username and game state. Nothing is sold or shared.</li>
+            <li><b>Availability.</b> The game runs on free hosting and may be briefly unavailable during deploys. Progress is kept safe at all times.</li>
+            <li><b>Changes.</b> Balance, heroes and rules may change between versions; material changes are noted in the release notes.</li>
+            <li><b>Everyone is welcome.</b> ChronicleRift is a fantasy game for all ages — no gambling, no user-to-user chat.</li>
+          </ol>
+          <p class="muted small">Questions or complaints? Use the feedback buttons on the bot home — they are all read.</p>
         </div>
       </section>
 

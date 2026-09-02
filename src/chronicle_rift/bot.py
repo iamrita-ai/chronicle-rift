@@ -7,7 +7,14 @@ from typing import Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
 from telegram.constants import KeyboardButtonStyle
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from . import __version__
 from .config import Settings
@@ -43,6 +50,12 @@ _ACTION_STYLES = {
     "guard": _STYLE_PRIMARY,
     "scout": _STYLE_PRIMARY,
     "rest": _STYLE_SUCCESS,
+}
+
+_FEEDBACK_KINDS = {
+    "bug": "🐛 Bug report",
+    "feature": "✨ Feature request",
+    "improve": "💡 Improvement idea",
 }
 
 
@@ -102,7 +115,8 @@ def build_telegram_application(
         if not chat:
             return
         await chat.send_message(
-            "Rules, items and elements are explained inside the app.",
+            "Rules & Regulations and Terms & Conditions live inside the app — "
+            "tap the 📜 or the 📄 button below.",
             reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
@@ -355,6 +369,57 @@ def build_telegram_application(
             await _notify_purchase(context.bot, query.message.chat_id, result.summary)
             return
 
+    async def feedback_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        query = update.callback_query
+        user = update.effective_user
+        if not query or not user or not query.message:
+            return
+        kind = (query.data or "").removeprefix("feedback:")
+        if kind not in _FEEDBACK_KINDS:
+            await query.answer("That option is no longer available.", show_alert=True)
+            return
+        if not _is_allowed(settings, user.id):
+            await query.answer("This realm is not available to your account.", show_alert=True)
+            return
+        context.user_data["feedback_kind"] = kind
+        await query.answer()
+        await query.message.reply_text(
+            f"{_FEEDBACK_KINDS[kind]} — send me the details as your next message "
+            "(a few lines is perfect).",
+            reply_markup=_launch_keyboard(
+                mini_app_url=settings.mini_app_url,
+                include_mini_app=query.message.chat.type == "private",
+            ),
+        )
+
+    async def feedback_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        user = update.effective_user
+        message = update.effective_message
+        if not user or not message or not message.text:
+            return
+        kind = context.user_data.pop("feedback_kind", None)
+        if not kind:
+            return
+        if not _is_allowed(settings, user.id):
+            return
+        text = message.text.strip()[:2000]
+        if not text:
+            await message.reply_text("Please send a short description as plain text.")
+            context.user_data["feedback_kind"] = kind
+            return
+        try:
+            await game_service.save_feedback(_identity_from_update(user), kind, text)
+            await message.reply_text(
+                "💙 Thank you! Your note is recorded in the Chronicle. "
+                "I read every one of them before each new build."
+            )
+        except DatabaseUnavailable:
+            LOGGER.exception("Unable to store Telegram feedback")
+            await message.reply_text(
+                "The Chronicle archives are briefly unavailable, so I could not save the note. "
+                "Please send it again in a moment."
+            )
+
     async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
         del update
         LOGGER.error("Unhandled Telegram handler error: %s", type(context.error).__name__)
@@ -377,6 +442,10 @@ def build_telegram_application(
             callback_menu, pattern=r"^(rules|about|howto|bag|noop|dashboard|shop:.*)$"
         )
     )
+    application.add_handler(
+        CallbackQueryHandler(feedback_start, pattern=r"^feedback:(bug|feature|improve)$")
+    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, feedback_text))
     application.add_error_handler(on_error)
     return application
 
@@ -389,7 +458,12 @@ async def _show_dashboard(
     *,
     welcome: bool,
 ) -> None:
-    """The bot is only a launcher: one line, one button, no status walls."""
+    """The bot home: a short greeting and the colored launcher menu.
+
+    No status walls — every button opens the matching Mini App screen
+    directly (arena, store, satchel, heroes, profile, rules, terms), and
+    the red row collects feedback.
+    """
     del game_service, rich_messages, welcome
     chat = update.effective_chat
     user = update.effective_user
@@ -399,7 +473,8 @@ async def _show_dashboard(
         await chat.send_message("This realm is not available to your account.")
         return
     await chat.send_message(
-        "ChronicleRift",
+        "⚔️ ChronicleRift v" + __version__ + "\n"
+        "Tap a button — each one opens its own screen inside the arena app.",
         reply_markup=_launch_keyboard(
             mini_app_url=settings.mini_app_url,
             include_mini_app=chat.type == "private",
@@ -418,16 +493,59 @@ async def _send_dashboard_to(
     del game_service, rich_messages, identity
     await bot.send_message(
         chat_id,
-        "ChronicleRift",
+        "⚔️ ChronicleRift v" + __version__,
         reply_markup=_launch_keyboard(mini_app_url=settings.mini_app_url, include_mini_app=True),
     )
 
 
+def _web_button(
+    label: str, start_param: str, style: str | None, mini_app_url: str
+) -> InlineKeyboardButton:
+    """Colored Mini App launcher button; the start parameter deep-links a screen."""
+    return InlineKeyboardButton(
+        label,
+        web_app=WebAppInfo(mini_app_url, api_kwargs={"start_parameter": start_param}),
+        style=style,
+    )
+
+
 def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> InlineKeyboardMarkup:
-    """Just the play button — everything else lives inside the Mini App."""
+    """The home menu: colored buttons that deep-link straight into the Mini App.
+
+    Telegram renders styled inline buttons (PRIMARY blue, SUCCESS green,
+    DANGER red) on clients updated after Feb 2026; older clients still get
+    ordinary blue buttons with the same behaviour.
+    """
     rows: list[list[InlineKeyboardButton]] = []
     if mini_app_url and include_mini_app:
-        rows.append([InlineKeyboardButton("▶️ PLAY — RIFT ARENA", web_app=WebAppInfo(mini_app_url))])
+        rows.append(
+            [_web_button("▶️  PLAY — RIFT ARENA", "play", _STYLE_SUCCESS, mini_app_url)]
+        )
+        rows.append(
+            [
+                _web_button("🏪  Store", "shop", _STYLE_PRIMARY, mini_app_url),
+                _web_button("🎒  Satchel", "satchel", _STYLE_PRIMARY, mini_app_url),
+            ]
+        )
+        rows.append(
+            [
+                _web_button("🧙  Heroes", "heroes", _STYLE_PRIMARY, mini_app_url),
+                _web_button("👤  My Profile", "profile", _STYLE_SUCCESS, mini_app_url),
+            ]
+        )
+        rows.append(
+            [
+                _web_button("📜  Rules & Regulations", "rules", _STYLE_PRIMARY, mini_app_url),
+                _web_button("📄  Terms & Conditions", "terms", _STYLE_PRIMARY, mini_app_url),
+            ]
+        )
+        rows.append(
+            [
+                _styled_button("🐛  Bug", "feedback:bug", _STYLE_DANGER),
+                _styled_button("✨  Feature", "feedback:feature", _STYLE_DANGER),
+                _styled_button("💡  Improve", "feedback:improve", _STYLE_DANGER),
+            ]
+        )
     return InlineKeyboardMarkup(rows)
 
 

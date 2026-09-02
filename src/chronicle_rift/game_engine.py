@@ -1048,9 +1048,17 @@ def resolve_arena(
         effects["damage"] = int(enemy["hp"])
         enemy["hp"] = 0
         game["energy"] = game["max_energy"]
-        return _victory(updated, "arena", effects, fallen_name, was_boss, rng)
+        result = _victory(updated, "arena", effects, fallen_name, was_boss, rng)
+        # _victory advances the chapter on this same document; keep the
+        # career record in step with it.
+        game["arena_wins"] = int(game.get("arena_wins", 0)) + 1
+        game["best_chapter"] = max(int(game.get("best_chapter", 1)), int(game["chapter"]))
+        if was_boss:
+            game["boss_kills"] = int(game.get("boss_kills", 0)) + 1
+        return result
 
     game["hp"] = game["max_hp"]
+    game["arena_losses"] = int(game.get("arena_losses", 0)) + 1
     game["energy"] = game["max_energy"]
     game["focus"] = 0
     game["burn"] = 0

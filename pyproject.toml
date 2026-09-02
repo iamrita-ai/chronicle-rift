@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "chronicle-rift"
-version = "0.9.0"
+version = "0.10.0"
 description = "AI-powered tactical fantasy adventure for Telegram Rich Messages and Mini Apps"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -52,7 +52,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-chronicle_rift = ["webapp/*.html", "webapp/*.css", "webapp/*.js", "webapp/art/*.jpg", "webapp/art/*.png"]
+chronicle_rift = ["webapp/*.html", "webapp/*.css", "webapp/*.js", "webapp/vendor/*.js", "webapp/art/*.jpg", "webapp/art/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

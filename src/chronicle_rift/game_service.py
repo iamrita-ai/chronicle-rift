@@ -251,3 +251,10 @@ class GameService:
         raise GameBusyError(
             "Your chronicle changed in another window. Please try again."
         ) from last_conflict
+
+    async def save_feedback(self, identity: TelegramIdentity, kind: str, text: str) -> None:
+        """Persist a player feedback note; the store may lack the sink in tests."""
+        saver = getattr(self._store, "insert_feedback", None)
+        if saver is None:
+            return
+        await saver(user_id=identity.user_id, first_name=identity.first_name, kind=kind, text=text)

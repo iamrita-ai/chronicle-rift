@@ -1,5 +1,7 @@
-/* ChronicleRift Mini App — v0.7.0
- * Home hub + a real-time 2.5D arena fight (see arena.js for the engine).
+/* ChronicleRift Mini App — v0.10.0
+ * Home hub + a real-time 3D arena fight (see arena.js for the engine),
+ * a top player bar, and Profile / Rules / Terms screens. Bot buttons deep-link
+ * into any screen via the Telegram WebApp start parameter (#play, #profile…).
  */
 (() => {
   "use strict";
@@ -22,7 +24,25 @@
     busy: false,
     screen: "home",
     tab: "heroes",
+    pendingScreen: null, // deep link from a bot button, resolved once data loads
     settings: { sound: true, haptics: true, shake: true },
+  };
+
+  /* Telegram appends the WebApp start parameter as the URL hash (#/play). */
+  function readStartParameter() {
+    const hash = window.location.hash || "";
+    const m = hash.match(/^#\/?([a-z0-9_-]+)/i);
+    return m ? m[1].toLowerCase() : "";
+  }
+  const START_PARAM_SCREENS = {
+    play: "battle",
+    shop: "store",
+    satchel: "bag",
+    heroes: "store",
+    profile: "profile",
+    rules: "rules",
+    terms: "terms",
+    settings: "settings",
   };
 
   /* ------------------------------------------------------------------ *
@@ -115,7 +135,16 @@
   /* ------------------------------------------------------------------ *
    * navigation
    * ------------------------------------------------------------------ */
-  const SCREENS = { home: "screen-home", battle: "screen-battle", store: "screen-store", bag: "screen-bag", settings: "screen-settings" };
+  const SCREENS = {
+    home: "screen-home",
+    battle: "screen-battle",
+    store: "screen-store",
+    bag: "screen-bag",
+    settings: "screen-settings",
+    profile: "screen-profile",
+    rules: "screen-rules",
+    terms: "screen-terms",
+  };
   function goto(name) {
     const target = name === "heroes" ? "store" : SCREENS[name] ? name : "home";
     if (name === "heroes") switchTab("heroes");
@@ -484,12 +513,51 @@
     $("satchel-value").textContent = view.inventory_value;
     $("version-note").textContent = `ChronicleRift ${state.version ? `v${state.version}` : ""}`;
 
+    renderTopbar(view);
+    renderProfile(view);
+
     renderHealRail(view);
     renderHeroStore(view);
     renderShop(view);
     renderForge(view);
     renderSatchel(view);
     if (state.screen === "battle" && !Fight.started) Fight.renderAbilityButtons(view);
+  }
+
+  function renderTopbar(view) {
+    const chip = $("topbar-profile");
+    if (!chip) return;
+    $("topbar-avatar").src = ART(view.character.art, "png");
+    $("topbar-name").textContent = view.profile?.hero_name || view.hero.name;
+    $("topbar-level").textContent = `Lv ${view.hero.level}`;
+    $("topbar-coins").textContent = view.hero.coins;
+    chip.style.setProperty("--element", view.character.element_color);
+  }
+
+  function renderProfile(view) {
+    const rec = view.record || {};
+    const hero = view.hero;
+    const set = (id, text) => { const n = $(id); if (n) n.textContent = text; };
+    $("pf-avatar").src = ART(view.character.art, "png");
+    $("pf-name").textContent = view.profile?.hero_name || hero.name;
+    $("pf-title").textContent = view.character.title;
+    $("pf-element").textContent = view.character.element_name.toUpperCase();
+    $("pf-element").style.setProperty("--element", view.character.element_color);
+    set("pf-username", view.profile?.username ? `@${view.profile.username}` : view.profile?.first_name || "");
+    set("pf-wins", rec.wins ?? 0);
+    set("pf-losses", rec.losses ?? 0);
+    set("pf-boss", rec.boss_kills ?? 0);
+    set("pf-chapter", rec.chapter ?? view.quest.chapter);
+    set("pf-best", rec.best_chapter ?? view.quest.chapter);
+    set("pf-coins", hero.coins);
+    set("pf-points", hero.points);
+    set("pf-gold", hero.gold);
+    set("pf-hp", `${hero.hp}/${hero.max_hp}`);
+    set("pf-owned", `${view.roster.filter((c) => c.owned).length} of ${view.roster.length}`);
+    set("pf-hero", view.character.name);
+    set("pf-relics", view.relics.length ? view.relics.map((r) => `${r.name} L${r.level}`).join(" · ") : "None forged yet");
+    setBar("pf-xp", hero.progress);
+    set("pf-xp-cap", `${hero.xp} XP · ${hero.xp_to_next} to level ${hero.level + 1}`);
   }
 
   const HEAL_IDS = ["salve", "draught", "greater_draught", "regen_balm", "phoenix_tear", "elixir"];
@@ -854,6 +922,9 @@
       if (state.settings.sound) UI.tap();
     });
     $("loot-close").addEventListener("click", () => closeModal($("loot-modal")));
+    $("topbar-profile").addEventListener("click", () => goto("profile"));
+    $("pf-play").addEventListener("click", () => goto("battle"));
+    $("pf-heroes").addEventListener("click", () => goto("heroes"));
     $("onboard-next").addEventListener("click", () => {
       if (slideIndex >= SLIDES.length - 1) {
         closeModal($("onboard"));
@@ -865,10 +936,21 @@
       UI.tap();
     });
 
+    // Deep link from a colored bot button (#play, #profile, #rules, …)
+    const startParam = readStartParameter();
+    try { history.replaceState(null, "", window.location.pathname); } catch (_) { /* ignore */ }
+    const deepTarget = START_PARAM_SCREENS[startParam];
+    if (deepTarget) state.pendingScreen = deepTarget;
+
     refresh().then(() => {
+      if (state.pendingScreen) {
+        const target = state.pendingScreen;
+        state.pendingScreen = null;
+        goto(target);
+      }
       let seen = "1";
       try { seen = localStorage.getItem(TUTORIAL_KEY); } catch (_) { seen = "1"; }
-      if (!seen) openTutorial();
+      if (!seen && state.screen !== "battle") openTutorial();
     });
   }
 

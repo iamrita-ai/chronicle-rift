@@ -170,6 +170,33 @@ Outcomes stay server-authoritative: winning posts to `POST /api/arena/finish`, w
 through the same victory path as before (gold, coins, points, XP, loot chest, next chapter),
 and losing wakes you at camp fully healed. Reported health is clamped to your real maximum.
 
+### v0.10 — 3D immersive arena, smooth combat, colored bot launcher, profile
+
+* **Real 3D fighters.** The arena now renders with Three.js (vendored in
+  `webapp/vendor/three.min.js`, so it works offline and on the Mini App): low-poly
+  jointed puppets with helmets, armor plates, capes and per-element identity
+  (flame crests, ice shields, scarves, levitating rune orbs, shadow horns) plus
+  per-element arenas — ember, frost, arcane and void — with fog, drifting motes
+  and distant monoliths. A full 2D canvas renderer remains as an automatic
+  fallback when WebGL is unavailable.
+* **Smooth, responsive combat.** The simulation runs on a fixed 120 Hz step
+  (rendered every frame) so the fight stays fluid on 60/90/120 Hz phones.
+  Attack and ability taps are **buffered**: a tap during recover chains into the
+  next swing instead of being dropped. KOs land in slow motion, hits use
+  hit-stop, and the camera tracks the duel with a zoom that frames both fighters.
+* **Immersion.** GPU particle bursts, ground shock rings, slash arcs, dash
+  after-images, levelling charge glow at the real hand joint, ward bubbles,
+  damage numbers on a DOM layer and a K.O. banner.
+* **Top player bar + Profile.** A sticky bar shows your hero, level and coins;
+  tapping it opens a new Profile screen (duels won, bosses slain, chapter,
+  best chapter, wallet, relics, change hero).
+* **Colored bot launcher.** The bot home is now a colored button menu (Telegram
+  styled buttons where supported): ▶️ Play, Store, Satchel, Heroes, My Profile,
+  Rules & Regulations, Terms & Conditions — each deep-links straight into its
+  Mini App screen via the WebApp start parameter. A red row collects feedback:
+  🐛 Bug / ✨ Feature / 💡 Improve, stored server-side for the next build.
+* **Rules & Terms screens** added to the app.
+
 ### v0.9 — jointed fighters, real weapon swings, bigger enemies
 
 * **Every fighter is a jointed puppet drawn frame by frame** — pelvis, spine,
