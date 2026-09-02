@@ -428,7 +428,7 @@ def build_telegram_application(
         if not query or not user or not query.message:
             return
         kind = (query.data or "").removeprefix("feedback:")
-        if kind not in _FEEDBACK_KINDS:
+        if kind not in _FEEDBACK_KINDS and kind != "any":
             await query.answer("That option is no longer available.", show_alert=True)
             return
         if not _is_allowed(settings, user.id):
@@ -437,8 +437,10 @@ def build_telegram_application(
         context.user_data["feedback_kind"] = kind
         await query.answer()
         await query.message.reply_text(
-            f"{_FEEDBACK_KINDS[kind]} — send me the details as your next message "
-            "(a few lines is perfect).",
+            "📨 Send me your note as the next message — a few lines is perfect.\n"
+            "One button, every kind: I file it as a 🐛 bug, ✨ feature or 💡 "
+            "improvement automatically (or start your message with one of those "
+            "emoji to choose).",
             reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url,
                 include_mini_app=query.message.chat.type == "private",
@@ -456,6 +458,8 @@ def build_telegram_application(
         if not _is_allowed(settings, user.id):
             return
         text = message.text.strip()[:2000]
+        if kind == "any":
+            kind = _detect_feedback_kind(text)
         if not text:
             await message.reply_text("Please send a short description as plain text.")
             context.user_data["feedback_kind"] = kind
@@ -517,7 +521,7 @@ def build_telegram_application(
         )
     )
     application.add_handler(
-        CallbackQueryHandler(feedback_start, pattern=r"^feedback:(bug|feature|improve)$")
+        CallbackQueryHandler(feedback_start, pattern=r"^feedback:(bug|feature|improve|any)$")
     )
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, feedback_text))
     application.add_error_handler(on_error)
@@ -624,9 +628,12 @@ def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inl
         )
         rows.append(
             [
-                _styled_button("🐛  Bug", "feedback:bug", _STYLE_DANGER),
-                _styled_button("✨  Feature", "feedback:feature", _STYLE_DANGER),
-                _styled_button("💡  Improve", "feedback:improve", _STYLE_DANGER),
+                # one button for every kind of note — the kind is auto-detected
+                _styled_button(
+                    "📨  Feedback — 🐛 bug · ✨ feature · 💡 improve",
+                    "feedback:any",
+                    _STYLE_DANGER,
+                ),
             ]
         )
         rows.append(
@@ -642,6 +649,18 @@ def _launch_keyboard(*, mini_app_url: str | None, include_mini_app: bool) -> Inl
             ]
         )
     return InlineKeyboardMarkup(rows)
+
+
+def _detect_feedback_kind(text: str) -> str:
+    """One feedback button serves all kinds; guess the kind from the note."""
+    t = text.lower()
+    if t.startswith("🐛") or any(
+        w in t for w in ("bug", "crash", "error", "broken", "fix", "freeze", "stuck", "lag")
+    ):
+        return "bug"
+    if t.startswith("✨") or any(w in t for w in ("feature", "add ", "new ", "please add")):
+        return "feature"
+    return "improve"
 
 
 def _share_url(mini_app_url: str | None) -> str:

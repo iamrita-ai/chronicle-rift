@@ -8,7 +8,7 @@ from chronicle_rift.bot import REPO_URL, _launch_keyboard
 def test_launcher_has_colored_deep_link_buttons() -> None:
     kb = _launch_keyboard(mini_app_url="https://x.example", include_mini_app=True)
     buttons = [b for row in kb.inline_keyboard for b in row]
-    assert len(buttons) == 14
+    assert len(buttons) == 12
 
     web = {b.text: b for b in buttons if b.web_app}
     assert web["▶️  PLAY — RIFT ARENA"].web_app.api_kwargs["start_parameter"] == "play"
@@ -28,9 +28,11 @@ def test_launcher_has_colored_deep_link_buttons() -> None:
     def is_feedback(b):
         return b.callback_data is not None and b.callback_data.startswith("feedback:")
 
-    feedback = {b.text: b for b in buttons if is_feedback(b)}
-    assert set(feedback) == {"🐛  Bug", "✨  Feature", "💡  Improve"}
-    assert all(b.style == KeyboardButtonStyle.DANGER for b in feedback.values())
+    # a single unified feedback button covering bugs, features and ideas
+    feedback = [b for b in buttons if is_feedback(b)]
+    assert len(feedback) == 1
+    assert feedback[0].callback_data == "feedback:any"
+    assert feedback[0].style == KeyboardButtonStyle.DANGER
 
     # tutorial + owners callbacks are present and colored
     callbacks = {b.callback_data: b for b in buttons if b.callback_data}
@@ -46,3 +48,12 @@ def test_launcher_has_colored_deep_link_buttons() -> None:
 def test_launcher_without_minapp_has_no_rows() -> None:
     kb = _launch_keyboard(mini_app_url=None, include_mini_app=False)
     assert len(kb.inline_keyboard) == 0
+
+
+def test_feedback_kind_auto_detection() -> None:
+    from chronicle_rift.bot import _detect_feedback_kind
+
+    assert _detect_feedback_kind("the arena freezes when I attack") == "bug"
+    assert _detect_feedback_kind("🐛 crash on chapter 5") == "bug"
+    assert _detect_feedback_kind("please add a guild system") == "feature"
+    assert _detect_feedback_kind("make the camera zoom smoother") == "improve"

@@ -82,7 +82,7 @@ You are a **Riftwalker**. One monster guards each chapter; empty its HP bar in a
 🏪 Store   🎒 Satchel       (blue · Mini App screens)
 🧙 Heroes  👤 My Profile    (blue / green)
 📜 Rules & Regulations  📄 Terms & Conditions
-🐛 Bug  ✨ Feature  💡 Improve   (red · delivered to the owners)
+📨 Feedback — 🐛 bug · ✨ feature · 💡 improve   (red · one button, delivered to the owners)
 🚀 Deploy Tutorial  👑 Owners & Credits
 🧑‍ Source · Contribute  🔗 Share Mini App   (shareable t.me link)
 ```
