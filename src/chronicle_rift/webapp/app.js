@@ -25,7 +25,7 @@
     screen: "home",
     tab: "heroes",
     pendingScreen: null, // deep link from a bot button, resolved once data loads
-    settings: { sound: true, haptics: true, shake: true },
+    settings: { sound: true, haptics: true, shake: true, renderer: "auto" },
   };
 
   /* Telegram appends the WebApp start parameter as the URL hash (#/play). */
@@ -188,6 +188,7 @@
       if (this.arena) return this.arena;
       this.arena = new window.ChronicleArena.Arena({
         canvas: $("arena-canvas"),
+        rendererPref: state.settings.renderer,
         onEnd: (outcome, hpLeft) => this.finish(outcome, hpLeft),
         onHud: (a) => this.hud(a),
       });
@@ -855,6 +856,47 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * voice narration — Groq Orpheus speaks the chronicle
+   * ------------------------------------------------------------------ */
+  let voiceAudio = null;
+  async function playNarration() {
+    const btn = $("quest-voice");
+    if (!btn) return;
+    if (voiceAudio && !voiceAudio.paused) {
+      voiceAudio.pause();
+      btn.classList.remove("is-playing");
+      return;
+    }
+    btn.classList.add("is-busy");
+    haptic("light");
+    try {
+      const res = await fetch("/api/voice", { method: "POST", headers: authHeaders() });
+      if (!res.ok) {
+        let detail = `Voice unavailable (${res.status})`;
+        try {
+          const data = await res.json();
+          if (data?.detail) detail = data.detail;
+        } catch (_) { /* keep the generic message */ }
+        throw new Error(detail);
+      }
+      const blob = await res.blob();
+      if (voiceAudio) {
+        voiceAudio.pause();
+        URL.revokeObjectURL(voiceAudio.src);
+      }
+      voiceAudio = new Audio(URL.createObjectURL(blob));
+      voiceAudio.onended = () => btn.classList.remove("is-playing");
+      btn.classList.add("is-playing");
+      await voiceAudio.play();
+    } catch (err) {
+      btn.classList.remove("is-playing");
+      toast(err.message, "error");
+    } finally {
+      btn.classList.remove("is-busy");
+    }
+  }
+
+  /* ------------------------------------------------------------------ *
    * modals + onboarding
    * ------------------------------------------------------------------ */
   function openModal(node) {
@@ -952,6 +994,34 @@
         if (key === "sound" && box.checked) UI.tap();
       });
     });
+    // Graphics: Auto uses 3D and falls back to 2D automatically; 3D/2D force
+    // a renderer for devices where the automatic choice misbehaves.
+    const gfxBtns = ["auto", "3d", "2d"].map((mode) => $(`set-gfx-${mode}`));
+    const syncGfx = () => {
+      gfxBtns.forEach((btn) => {
+        btn.classList.toggle("is-on", state.settings.renderer === btn.dataset.mode);
+      });
+      const note = $("gfx-note");
+      if (note) {
+        note.textContent = Fight.arena
+          ? `Currently rendering with the ${Fight.arena.use3D ? "3D" : "2D"} engine`
+          : "Applies when you enter the arena";
+      }
+    };
+    gfxBtns.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.settings.renderer = btn.dataset.mode;
+        saveSettings();
+        // rebuild the arena so the choice takes effect immediately
+        if (Fight.arena && state.screen !== "battle") {
+          try { Fight.arena.stop(); } catch (_) { /* ignore */ }
+          Fight.arena = null;
+        }
+        syncGfx();
+        UI.tap();
+      });
+    });
+    syncGfx();
     $("set-tutorial").addEventListener("click", openTutorial);
   }
 
@@ -981,6 +1051,7 @@
       if (state.settings.sound) UI.tap();
     });
     $("loot-close").addEventListener("click", () => closeModal($("loot-modal")));
+    $("quest-voice").addEventListener("click", playNarration);
     $("topbar-profile").addEventListener("click", () => goto("profile"));
     $("pf-play").addEventListener("click", () => goto("battle"));
     $("pf-heroes").addEventListener("click", () => goto("heroes"));

@@ -34,15 +34,15 @@
 | | |
 | --- | --- |
 | 🥊 **Real-time 3D combat** | A Three.js arena — fully jointed fighters, real weapon swings, hitboxes that only land when the blade connects, knockback arcs, hit-stop, slow-motion K.O.s and impact zoom. |
-| 🧙 **Five hand-built heroes** | Emberblade (flaming greatsword), Frostward (warhammer + shield), Stormcaller (twin sabers + blink), the Rift Reader (rune staff + orbiting orb), Voidreaper (scythe + hood). |
+| 🧙 **Five hand-built heroes** | Emberblade (flaming sword), Frostward (ice spear + tower shield), Stormcaller (twin sabers on the gale), the Rift Reader (rift-tome + orbiting runes), Voidreaper (hooded scythe). |
 | 👹 **Five distinct monsters** | The quadruped Rift Stalker with a live tail, the hulking Ash Warden, shard-orbiting Obsidian Herald, floating Frost Revenant and the boss Ebon Colossus. |
 | 🌍 **Living arenas** | Painted sky domes, rune pillars, floating rift rocks, flickering braziers and drifting elemental motes — themed per element. |
-| ⚡ **Smooth by design** | Fixed 120 Hz simulation, buffered inputs, adaptive resolution that protects frame rate on weak phones, and a full 2D canvas fallback when WebGL is missing. |
+| ⚡ **Smooth by design** | Fixed 120 Hz simulation, buffered inputs, adaptive resolution that protects frame rate on weak phones — plus a **Graphics** setting (Auto / 3D / 2D) so any device can force the always-works 2D engine. |
 | 🛍 **Economy that matters** | Coins, loot chests, 18 items, upgradeable relics, a marketplace and a hero roster — the shop shows each ability's **damage and effects**, not just timers. |
-| 🤖 **Colored bot home** | Every button on `/start` is colored and deep-links straight into the matching Mini App screen: play, store, satchel, heroes, profile, rules, terms — plus **Share**, **GitHub** and **Deploy guide**. |
+| 🤖 **Colored bot home** | Every button on `/start` is colored and deep-links straight into the matching Mini App screen: play, store, satchel, heroes, profile, rules, terms — plus **Share** and **GitHub**. |
 | 💬 **Feedback pipeline** | One red button collects bug reports, feature requests and ideas — every note is stored **and delivered to the owner's Telegram**. |
 | 👑 **Owner test mode** | Set `OWNER_USER_ID` and the owner account plays with every hero, relic and a full purse — everything unlocked for testing. |
-| 🧠 **AI narration** | Groq flavors each chapter with a short narrative; combat math stays deterministic and server-side. |
+| 🧠 **AI narration — now spoken** | Groq flavors each chapter with a short narrative, and Orpheus TTS reads the latest chapter aloud from the 🔊 button on the quest card. Combat math stays deterministic and server-side. |
 | 🔐 **Hardened by default** | Telegram `initData` HMAC validation, webhook secret checks, strict CSP, optimistic concurrency in MongoDB. |
 
 ## 📸 Screenshots
@@ -53,6 +53,7 @@
 | ![Wind hero vs the Ash Warden](docs/assets/arena-wind.png) | ![Arcane hero vs the Obsidian Herald](docs/assets/arena-arcane.png) |
 | ![Boss duel — the Ebon Colossus](docs/assets/arena-boss.png) | ![The Mini App home](docs/assets/ui-home.png) |
 | ![Hero roster with damage & effects](docs/assets/ui-heroes.png) | ![Player profile](docs/assets/ui-profile.png) |
+| ![Settings with the graphics picker](docs/assets/ui-settings.png) | |
 
 ## 🎮 Gameplay
 
@@ -82,7 +83,7 @@ You are a Riftwalker. One monster guards each chapter — empty its HP bar in a 
 
 ## 🚀 Deploy your own
 
-You need three secrets: a **bot token** from [@BotFather](https://t.me/BotFather), a **MongoDB URI** (the free Atlas tier works) and a **[Groq API key](https://console.groq.com/)**. The bot sends the same deploy guide on the 🚀 **Deploy Guide** button.
+You need three secrets: a **bot token** from [@BotFather](https://t.me/BotFather), a **MongoDB URI** (the free Atlas tier works) and a **[Groq API key](https://console.groq.com/)**.
 
 ### 1 · Local (2 minutes)
 
@@ -169,6 +170,8 @@ Prefer Caddy? `your-domain.example { reverse_proxy 127.0.0.1:10000 }` replaces s
 | `MONGODB_URI` | Yes | `mongodb://` or `mongodb+srv://` persistence URI |
 | `GROQ_API_KEY` | Yes | Groq credential for narration |
 | `GROQ_MODEL` | No | Narration model; default `openai/gpt-oss-20b` |
+| `GROQ_TTS_MODEL` | No | Voice model for the 🔊 *Hear the chronicle* button; default `canopylabs/orpheus-v1-english` |
+| `GROQ_TTS_VOICE` | No | Orpheus voice name; default `tara` |
 | `MONGODB_DATABASE` | No | Database name; default `chronicle_rift` |
 | `BOT_MODE` | No | `polling` (local) or `webhook` (deployed) |
 | `PUBLIC_BASE_URL` / `RENDER_EXTERNAL_URL` | Deploy | HTTPS origin for webhook + Mini App |

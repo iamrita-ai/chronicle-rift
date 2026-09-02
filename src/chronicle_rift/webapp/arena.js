@@ -406,10 +406,31 @@
       this.rigs = new Map();
       this.sceneName = null;
       this.tmp = new T.Vector3();
-      this.dprLevels = [1.75, 1.4, 1.15, 1];
-      this.dprLevel = 0;
+      this.dprCap = 1.75;
       this.frameEma = 16.7;
       this.frameHot = 0;
+      this.renderFails = 0;
+      this.contextLost = false;
+      this.lostCount = 0;
+
+      // A GPU can drop the context (driver reset, memory pressure). Prevent
+      // the default loss so the browser can restore it; if it keeps dying,
+      // the arena falls back to the 2D renderer instead of going black.
+      canvas.addEventListener(
+        "webglcontextlost",
+        (e) => {
+          e.preventDefault();
+          this.contextLost = true;
+          this.lostCount += 1;
+          if (this.lostCount >= 2) this.a.swapTo2D();
+        },
+        false
+      );
+      canvas.addEventListener(
+        "webglcontextrestored",
+        () => { this.contextLost = false; },
+        false
+      );
       this.charge = new WeakMap();
       this.chargeSprites = [];
       this.trailArc = new WeakMap();
@@ -893,6 +914,29 @@
         }
       }
     }
+    /* A travelling projectile: bright core + soft elemental halo. */
+    makeShot() {
+      const T = window.THREE;
+      const core = new T.Mesh(
+        new T.CircleGeometry(7, 16),
+        new T.MeshBasicMaterial({
+          color: 0xffffff, transparent: true, blending: T.AdditiveBlending,
+          depthWrite: false, toneMapped: false,
+        })
+      );
+      const halo = new T.Mesh(
+        new T.CircleGeometry(18, 16),
+        new T.MeshBasicMaterial({
+          color: 0xffffff, transparent: true, opacity: 0.45,
+          blending: T.AdditiveBlending, depthWrite: false, toneMapped: false,
+        })
+      );
+      core.visible = false;
+      halo.visible = false;
+      this.scene.add(core, halo);
+      return { core, halo, active: false, owner: null };
+    }
+
     /* ---------------- fighter rigs — official art on animated 3D planes ---- *
      * The fighters you see are the game's real key art, mounted on camera-  *
      * facing planes inside the 3D stage. Every state (windup, swing, dash,  *
@@ -1243,11 +1287,11 @@
         this.frameEma = this.frameEma * 0.93 + dt * 1000 * 0.07;
         if (this.frameEma > 23) this.frameHot += 1;
         else if (this.frameEma < 17) this.frameHot = Math.max(0, this.frameHot - 1);
-        if (this.frameHot > 45 && this.dprLevel < this.dprLevels.length - 1) {
-          this.dprLevel += 1;
+        if (this.frameHot > 45 && this.dprCap > 1) {
+          this.dprCap = Math.max(1, this.dprCap - 0.25);
           this.frameHot = 0;
           this.frameEma = 18;
-          this.renderer.setPixelRatio(this.dprLevels[this.dprLevel]);
+          this.renderer.setPixelRatio(this.effectiveDpr());
           this.renderer.setSize(this.a.w, this.a.h, false);
         }
       }
@@ -1362,14 +1406,30 @@
 
       this.renderNumbers();
       this.renderBanner();
-      this.renderer.render(this.scene, this.camera);
+      if (this.contextLost) return;
+      try {
+        this.renderer.render(this.scene, this.camera);
+        this.renderFails = 0;
+      } catch (err) {
+        this.renderFails += 1;
+        if (this.renderFails > 40) this.a.swapTo2D();
+      }
+    }
+
+    /* Effective device-pixel ratio honouring the hard pixel budget. Big
+       phone screens at full dpr can exhaust GPU memory and destroy the
+       context — cap the buffer first, crispness second. */
+    effectiveDpr() {
+      let dpr = Math.min(window.devicePixelRatio || 1, this.dprCap);
+      const budget = 2_300_000;
+      while (dpr > 0.75 && this.a.w * this.a.h * dpr * dpr > budget) dpr -= 0.05;
+      return Math.max(0.75, Math.round(dpr * 20) / 20);
     }
 
     resize(w, h) {
       this.a.w = w;
       this.a.h = h;
-      const dpr = this.dprLevels[this.dprLevel] || 1.75;
-      this.renderer.setPixelRatio(dpr);
+      this.renderer.setPixelRatio(this.effectiveDpr());
       this.renderer.setSize(w, h, false);
       this.a.canvas.style.width = `${w}px`;
       this.a.canvas.style.height = `${h}px`;
@@ -1589,18 +1649,75 @@
     }
     setScene(name) {
       const a = this.a;
-      if (a.sceneName === name) return;
+      if (a.sceneName === name && a.bgCanvas) return;
       a.sceneName = name;
-      a.sceneReady = false;
-      const img = new Image();
-      img.onload = () => {
-        a.sceneImg = img;
-        a.sceneReady = true;
-      };
-      img.src = `./art/${name}.jpg`;
+      a.bgCanvas = this.paintBackdrop(name);
     }
     render() {
       this.a.draw2D();
+    }
+
+    /* The 2D backdrop is painted, never loaded: gradient sky, stars, mountain
+       silhouettes and an elemental horizon glow, themed per scene. No image
+       files, no network, no flash of empty background. */
+    paintBackdrop(name) {
+      const env = ENV3D[name] || ENV3D["bg-ember"];
+      const css = (n) => `#${n.toString(16).padStart(6, "0")}`;
+      const W = 640;
+      const H = 360;
+      const c = makeCanvas(W, H);
+      const g = c.getContext("2d");
+      const grad = g.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, "#04050c");
+      grad.addColorStop(0.4, css(env.sky));
+      grad.addColorStop(0.6, css(env.hemiSky));
+      grad.addColorStop(0.7, css(env.fog));
+      grad.addColorStop(1, css(env.ground));
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      for (let i = 0; i < 70; i += 1) {
+        g.fillStyle = `rgba(255,255,255,${rand(0.08, 0.5).toFixed(2)})`;
+        g.fillRect(Math.random() * W, Math.pow(Math.random(), 1.5) * H * 0.38, 1.6, 1.6);
+      }
+      const layer = (baseY, amp, color, seed) => {
+        g.fillStyle = color;
+        g.beginPath();
+        g.moveTo(0, H);
+        g.lineTo(0, baseY);
+        let x = 0;
+        while (x < W) {
+          x += rand(26, 70);
+          g.lineTo(x, baseY + Math.sin((x + seed) * 0.018) * amp + rand(-12, 12));
+        }
+        g.lineTo(W, H);
+        g.closePath();
+        g.fill();
+      };
+      layer(H * 0.64, 30, "rgba(12,14,30,0.85)", 40);
+      layer(H * 0.7, 20, "rgba(7,9,20,0.94)", 110);
+      // elemental glow along the horizon
+      const glow = g.createRadialGradient(W / 2, H * 0.72, 20, W / 2, H * 0.72, 330);
+      g.globalAlpha = 0.4;
+      glow.addColorStop(0, css(env.accent));
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = glow;
+      g.fillRect(0, H * 0.4, W, H * 0.5);
+      g.globalAlpha = 1;
+      // arena floor band + battle ring
+      g.fillStyle = css(env.ground);
+      g.fillRect(0, H * 0.74, W, H * 0.26);
+      g.strokeStyle = css(env.accent);
+      g.globalAlpha = 0.4;
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.ellipse(W / 2, H * 0.87, 250, 30, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = 0.18;
+      g.beginPath();
+      g.ellipse(W / 2, H * 0.87, 320, 40, 0, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = 1;
+      return c;
     }
   }
 
@@ -1629,25 +1746,75 @@
       this.buffer = null; // buffered attack/ability so taps never feel dropped
       this.cam = { x: 0, zoom: 1 };
       this.scene = null;
-      this.sceneReady = false;
+      this.bgCanvas = null;
       this.w = 640;
       this.h = 360;
       this.dpr = 1;
       this.groundYpx = this.h * 0.88;
 
-      // pick the renderer: 3D when WebGL + Three are available, 2D otherwise
+      // Renderer choice. 3D when WebGL + Three are available, 2D otherwise.
+      // Every failure path is survivable: a WebGL context that dies or a
+      // constructor that throws can never leave the player staring at a
+      // black canvas — the arena swaps to the 2D renderer on a fresh canvas.
+      this.rendererPref = (opts.rendererPref || "auto").toLowerCase();
+      this._cfgP = null;
+      this._cfgE = null;
       this.use3D = false;
-      if (typeof window.THREE !== "undefined" && window.THREE.WebGLRenderer) {
+      const want3D = this.rendererPref !== "2d";
+      if (want3D && typeof window.THREE !== "undefined" && window.THREE.WebGLRenderer && this.probeWebGL()) {
         try {
           this.r = new Renderer3D(this);
           this.use3D = true;
         } catch (err) {
           this.use3D = false;
+          this._rendererError = String((err && err.message) || err);
         }
+        if (!this.use3D) this.replaceCanvas(); // the dead GL context must not poison 2D
       }
       if (!this.use3D) {
         this.ctx = this.canvas.getContext("2d", { alpha: false });
         this.r = new Renderer2D(this);
+      }
+    }
+
+    /* A canvas can host exactly one context type. If a WebGL attempt failed
+       after binding a context, hand the 2D renderer a brand-new canvas node. */
+    replaceCanvas() {
+      const old = this.canvas;
+      const fresh = old.cloneNode(false);
+      if (old.parentNode) old.parentNode.replaceChild(fresh, old);
+      this.canvas = fresh;
+      return fresh;
+    }
+
+    /* Cheap up-front WebGL probe on the real canvas; THREE reuses the context. */
+    probeWebGL() {
+      try {
+        const gl = this.canvas.getContext("webgl2") || this.canvas.getContext("webgl");
+        return !!gl;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    /* Last-resort graphics safety: move the duel to the 2D renderer. */
+    swapTo2D() {
+      if (!this.use3D) return;
+      this.use3D = false;
+      try { this.r.renderer.dispose(); } catch (_) { /* already gone */ }
+      try { this.r.disposeRigs(); } catch (_) { /* already gone */ }
+      this.replaceCanvas();
+      this.ctx = this.canvas.getContext("2d", { alpha: false });
+      this.r = new Renderer2D(this);
+      this.sceneName = null;
+      if (this._cfgP && this._cfgE) {
+        const running = this.running;
+        const scene = this.scene;
+        this.setFighters(this._cfgP, this._cfgE);
+        if (scene) this.setScene(scene);
+        this.resize(this.w, this.h);
+        if (running) this.start();
+        else this.draw();
       }
     }
 
@@ -1657,6 +1824,8 @@
     }
 
     setFighters(playerCfg, enemyCfg) {
+      this._cfgP = playerCfg;
+      this._cfgE = enemyCfg;
       if (this.use3D) this.r.disposeRigs(); // free GPU memory from the previous cast
       this.player = new Fighter({ ...playerCfg, x: -220, facing: 1, isPlayer: true });
       this.enemy = new Fighter({ ...enemyCfg, x: 220, facing: -1, isPlayer: false });
@@ -2463,9 +2632,9 @@
     drawScene(ctx) {
       const w = this.w;
       const h = this.h;
-      if (this.sceneReady && this.sceneImg) {
-        // parallax: the backdrop drifts a fraction of the camera
-        const img = this.sceneImg;
+      if (this.bgCanvas) {
+        // parallax: the painted backdrop drifts a fraction of the camera
+        const img = this.bgCanvas;
         const scale = Math.max(w / img.width, h / img.height) * 1.14;
         const dw = img.width * scale;
         const dh = img.height * scale;

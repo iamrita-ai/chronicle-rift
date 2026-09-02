@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from telegram import Update
@@ -110,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 LOGGER.info("Telegram polling started for local development")
 
             app.state.game_service = game_service
+            app.state.narrator = narrator
             app.state.telegram_application = telegram_application
             app.state.settings = runtime_settings
             yield
@@ -149,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: https://t.me https://*.t.me https://*.telesco.pe; "
             "connect-src 'self'; "
+            "media-src 'self' blob:; "
             "base-uri 'self'; form-action 'self'",
         )
         if request.url.path.startswith("/api/"):
@@ -238,6 +240,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "effects": turn.effects or {},
             },
         }
+
+    @app.post("/api/voice", tags=["mini-app"])
+    async def voice_narration(
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> Response:
+        """Speak the player's latest stored narrative with Groq Orpheus TTS.
+
+        The body is empty by design: the Mini App can only ask for its own
+        server-stored narrative, never submit arbitrary text to be voiced.
+        """
+        try:
+            player = await request.app.state.game_service.dashboard(identity)
+        except DatabaseUnavailable:
+            LOGGER.warning("Database unavailable while loading narration")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Game service unavailable."
+            ) from None
+        text = str(player["game"].get("last_narrative") or "").strip()
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Nothing has been narrated yet — clear a duel first.",
+            )
+        audio = await request.app.state.narrator.synthesize(text)
+        if not audio:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Voice narration is briefly unavailable.",
+            )
+        return Response(
+            content=audio,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
 
     @app.post("/api/arena/finish", tags=["mini-app"])
     async def arena_finish(

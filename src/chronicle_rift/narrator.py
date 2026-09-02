@@ -1,4 +1,4 @@
-"""Groq-backed, bounded narration for game turns."""
+"""Groq-backed, bounded narration and voice for game turns."""
 
 from __future__ import annotations
 
@@ -6,12 +6,15 @@ import logging
 import re
 from typing import Any
 
+import httpx
 from groq import APIError, AsyncGroq
 
 from .config import Settings
 
 LOGGER = logging.getLogger(__name__)
 _MAX_NARRATIVE_CHARACTERS = 650
+_MAX_SPEECH_CHARACTERS = 500
+_GROQ_SPEECH_URL = "https://api.groq.com/openai/v1/audio/speech"
 
 
 class GroqNarrator:
@@ -20,6 +23,9 @@ class GroqNarrator:
     def __init__(self, settings: Settings) -> None:
         self._client = AsyncGroq(api_key=settings.groq_api_key)
         self._model = settings.groq_model
+        self._api_key = settings.groq_api_key
+        self._tts_model = settings.groq_tts_model
+        self._tts_voice = settings.groq_tts_voice
 
     async def narrate(self, *, player: dict[str, Any], action: str, summary: str) -> str:
         """Generate a safe one-paragraph narration with a deterministic fallback."""
@@ -58,6 +64,35 @@ class GroqNarrator:
             LOGGER.warning("Unexpected Groq narration failure (type=%s)", type(exc).__name__)
 
         return _fallback_narrative(action, summary)
+
+    async def synthesize(self, text: str) -> bytes | None:
+        """Speak a passage with Groq's Orpheus TTS; None when unavailable.
+
+        The client never chooses the words — the server only ever voices its
+        own stored narrative, bounded to keep latency and cost predictable.
+        """
+        cleaned = " ".join(text.split())[:_MAX_SPEECH_CHARACTERS]
+        if not cleaned:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
+                response = await client.post(
+                    _GROQ_SPEECH_URL,
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json={
+                        "model": self._tts_model,
+                        "voice": self._tts_voice,
+                        "input": cleaned,
+                        "response_format": "mp3",
+                    },
+                )
+        except httpx.HTTPError:
+            LOGGER.warning("Groq TTS request failed (type=HTTPError)")
+            return None
+        if response.status_code == 200 and response.content:
+            return response.content
+        LOGGER.warning("Groq TTS unavailable (status=%s)", response.status_code)
+        return None
 
     async def close(self) -> None:
         await self._client.close()

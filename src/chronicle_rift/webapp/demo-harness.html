@@ -80,7 +80,8 @@
       arena.stop();
       for (let i = 0; i < n; i += 1) arena.update(dt || 1 / 60);
       arena.r.render(1 / 30);
-      return canvas.toDataURL("image/png");
+      // follow the arena's canvas — the 2D fallback may have swapped the node
+      return arena.canvas.toDataURL("image/png");
     };
   </script>
 </body>

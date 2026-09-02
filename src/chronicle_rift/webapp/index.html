@@ -90,6 +90,10 @@
               <div class="bar bar-xp"><span id="xp-bar"></span></div>
               <small id="xp-caption">— XP</small>
             </div>
+            <button class="voice-btn" id="quest-voice" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+              <span>Hear the chronicle</span>
+            </button>
           </div>
           <div class="quest-foe">
             <img id="quest-foe-art" src="./art/mob-ash-warden.png" alt="" />
@@ -289,6 +293,15 @@
             <div><b>Screen shake</b><small>Camera kick on heavy impacts</small></div>
             <input type="checkbox" id="set-shake" checked />
           </label>
+          <div class="setting setting-col">
+            <div><b>Graphics</b><small>3D arena with an automatic safety fallback, or the always-works 2D engine</small></div>
+            <div class="gfx-picker" role="group" aria-label="Graphics mode">
+              <button type="button" id="set-gfx-auto" data-mode="auto" class="is-on">Auto</button>
+              <button type="button" id="set-gfx-3d" data-mode="3d">3D</button>
+              <button type="button" id="set-gfx-2d" data-mode="2d">2D</button>
+            </div>
+            <small class="muted" id="gfx-note">Applies when you enter the arena</small>
+          </div>
           <button class="wide-btn" id="set-tutorial" type="button">Replay the How to Play guide</button>
           <p class="note" id="version-note">ChronicleRift</p>
         </div>

@@ -27,6 +27,11 @@ CONFIG_VARIABLES: Final[dict[str, str]] = {
     "MONGODB_URI": "Required. MongoDB Atlas or self-hosted MongoDB connection URI.",
     "GROQ_API_KEY": "Required. API key from console.groq.com.",
     "GROQ_MODEL": "Optional Groq model ID. Default: openai/gpt-oss-20b.",
+    "GROQ_TTS_MODEL": (
+        "Optional Groq text-to-speech model for the narrator's voice. "
+        "Default: canopylabs/orpheus-v1-english."
+    ),
+    "GROQ_TTS_VOICE": "Optional Orpheus voice name for narration. Default: tara.",
     "MONGODB_DATABASE": "Optional MongoDB database name. Default: chronicle_rift.",
     "BOT_MODE": "webhook on Render; polling for a local development process.",
     "RENDER_EXTERNAL_URL": "Automatically set by Render. Do not create it manually.",
@@ -65,6 +70,8 @@ class Settings:
     mongodb_uri: str = field(repr=False)
     groq_api_key: str = field(repr=False)
     groq_model: str = "openai/gpt-oss-20b"
+    groq_tts_model: str = "canopylabs/orpheus-v1-english"
+    groq_tts_voice: str = "tara"
     mongodb_database: str = "chronicle_rift"
     bot_mode: Literal["webhook", "polling"] = "polling"
     public_base_url: str | None = None
@@ -112,6 +119,9 @@ class Settings:
             raise ConfigurationError("MONGODB_URI must begin with mongodb:// or mongodb+srv://.")
 
         groq_api_key = _required("GROQ_API_KEY")
+        groq_tts_voice = _optional("GROQ_TTS_VOICE") or "tara"
+        if not _SECRET_PATTERN.fullmatch(groq_tts_voice.replace(" ", "")):
+            raise ConfigurationError("GROQ_TTS_VOICE must be a simple voice name such as 'tara'.")
         public_base_url = _normalise_https_url(
             _optional("PUBLIC_BASE_URL") or _optional("RENDER_EXTERNAL_URL"),
             name="PUBLIC_BASE_URL",
@@ -154,6 +164,8 @@ class Settings:
             mongodb_uri=mongodb_uri,
             groq_api_key=groq_api_key,
             groq_model=_optional("GROQ_MODEL") or "openai/gpt-oss-20b",
+            groq_tts_model=_optional("GROQ_TTS_MODEL") or "canopylabs/orpheus-v1-english",
+            groq_tts_voice=groq_tts_voice,
             mongodb_database=_optional("MONGODB_DATABASE") or "chronicle_rift",
             bot_mode=bot_mode,
             public_base_url=public_base_url,

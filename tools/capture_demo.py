@@ -82,7 +82,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default="docs/assets", help="output directory")
     parser.add_argument("--fps", type=float, default=15.0, help="capture rate")
-    parser.add_argument("--seconds", type=float, default=13.0, help="clip length")
+    parser.add_argument("--seconds", type=float, default=16.0, help="clip length")
     parser.add_argument("--still", action="store_true", help="also capture matchup stills")
     args = parser.parse_args()
 
@@ -121,9 +121,12 @@ async def main() -> int:
         ticks_per_frame = max(1, round(60 / args.fps))
         total_frames = int(args.seconds * args.fps)
 
-        # scene plan: stalker duel → boss entrance (by frame index)
-        plan = [(0, ("fire", "Rift Stalker", "shadow", "beast", 1.22)),
-                (int(total_frames * 0.5), ("fire", "Ebon Colossus", "shadow", "brute", 1.5))]
+        # scene plan, three acts: opening duel → clash of opposites → boss finale
+        plan = [
+            (0, ("fire", "Ash Warden", "fire", "brute", 1.26)),
+            (int(total_frames * 0.45), ("wind", "Frost Revenant", "ice", "brute", 1.3)),
+            (int(total_frames * 0.75), ("shadow", "Ebon Colossus", "shadow", "brute", 1.5)),
+        ]
         current = None
 
         await page.evaluate("window.__pause()")

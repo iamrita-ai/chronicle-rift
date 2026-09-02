@@ -60,30 +60,6 @@ _FEEDBACK_KINDS = {
     "other": "💬 Something else",
 }
 
-OWNER_HANDLE = "TechnicalSerena"
-COOWNER_HANDLE = "XioquiXan"
-
-DEPLOY_GUIDE = (
-    "🚀 DEPLOY CHRONICLERIFT — anywhere in minutes\n\n"
-    "You need three secrets: a bot token from @BotFather, a MongoDB URI "
-    "(Atlas free tier works) and a Groq API key.\n\n"
-    "1️⃣ LOCAL (fastest way to try it)\n"
-    "git clone the repo → copy .env.example to .env and fill the three secrets → "
-    "pip install -e \".[dev]\" → chronicle-rift. BOT_MODE stays polling.\n\n"
-    "2️⃣ RENDER (free tier, one click)\n"
-    "New Web Service → connect the repo → Start: chronicle-rift → add the env vars → "
-    "set BOT_MODE=webhook. Render provides RENDER_EXTERNAL_URL automatically and HTTPS.\n\n"
-    "3️⃣ DOCKER (any host)\n"
-    "docker build -t chronicle-rift . → docker run with the env vars and PORT exposed. "
-    "Pair with any reverse proxy that terminates HTTPS.\n\n"
-    "4️⃣ VPS (Ubuntu: systemd + nginx + Certbot)\n"
-    "Install Docker or a venv, run the app under a systemd unit, proxy your domain to "
-    "PORT with nginx, issue a free certificate with certbot --nginx, then set "
-    "BOT_MODE=webhook and PUBLIC_BASE_URL=https://your.domain.\n\n"
-    "The full walkthrough with copy-paste commands for every platform:\n"
-    "https://github.com/iamrita-ai/chronicle-rift#-deploy-your-own"
-)
-
 
 def art_url(settings: Settings, name: str) -> str | None:
     """Public HTTPS URL of a bundled illustration, served by our own Mini App."""
@@ -141,18 +117,6 @@ def build_telegram_application(
             return
         await chat.send_message(
             TERMS,
-            reply_markup=_launch_keyboard(
-                mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
-            ),
-        )
-
-    async def deploy_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        del context
-        chat = update.effective_chat
-        if not chat:
-            return
-        await chat.send_message(
-            DEPLOY_GUIDE,
             reply_markup=_launch_keyboard(
                 mini_app_url=settings.mini_app_url, include_mini_app=chat.type == "private"
             ),
@@ -344,16 +308,6 @@ def build_telegram_application(
                 ),
             )
             return
-        if data == "deploy":
-            await query.answer()
-            await query.message.reply_text(
-                DEPLOY_GUIDE,
-                reply_markup=_home_keyboard(
-                    mini_app_url=settings.mini_app_url,
-                    include_mini_app=query.message.chat.type == "private",
-                ),
-            )
-            return
         if data == "about":
             await query.answer()
             _, plain = about_message(version=__version__)
@@ -523,7 +477,6 @@ def build_telegram_application(
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("rules", rules_command))
     application.add_handler(CommandHandler("terms", terms_command))
-    application.add_handler(CommandHandler("deploy", deploy_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("shop", shop_command))
     application.add_handler(CommandHandler("app", app_command))
@@ -535,7 +488,7 @@ def build_telegram_application(
     application.add_handler(
         CallbackQueryHandler(
             callback_menu,
-            pattern=r"^(rules|about|howto|terms|deploy|bag|noop|dashboard|shop:.*)$",
+            pattern=r"^(rules|about|howto|terms|bag|noop|dashboard|shop:.*)$",
         )
     )
     application.add_handler(
@@ -556,8 +509,6 @@ def home_caption(version: str) -> str:
         "five heroes with their own weapons and abilities, five monsters and bosses, "
         "loot, relics, a marketplace and an AI-narrated world. Lose a duel and you "
         "simply wake at camp — progress is never lost.\n\n"
-        f"👑 Owner: @{OWNER_HANDLE}\n"
-        f"🤝 Co-owner: @{COOWNER_HANDLE}\n"
         "🤖 Tap a button below — each one opens its own screen inside the arena app."
     )
 
@@ -696,7 +647,6 @@ def _launch_keyboard(
             row.append(InlineKeyboardButton("🐙  GitHub", url=repo_url, style=_STYLE_PRIMARY))
         if row:
             rows.append(row)
-        rows.append([_styled_button("🚀  Deploy Guide", "deploy", _STYLE_PRIMARY)])
     return InlineKeyboardMarkup(rows)
 
 

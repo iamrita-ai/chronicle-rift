@@ -50,6 +50,16 @@ def _signed_header(bot_token: str) -> str:
     return urlencode(fields)
 
 
+class StubNarrator:
+    def __init__(self, audio: bytes | None = b"ID3\x03fake-mp3-audio") -> None:
+        self.audio = audio
+        self.voiced: list[str] = []
+
+    async def synthesize(self, text: str) -> bytes | None:
+        self.voiced.append(text)
+        return self.audio
+
+
 class StubGameService:
     def __init__(self) -> None:
         self.player = new_player(user_id=77, first_name="Verified", username=None)
@@ -67,6 +77,10 @@ class StubGameService:
             narrative="A verified turn is written.",
             victory=False,
         )
+
+    async def dashboard(self, identity):
+        assert identity.user_id == 77
+        return self.player
 
     async def buy_item(self, identity, item_id):
         assert identity.user_id == 77
@@ -177,3 +191,39 @@ async def test_webhook_requires_secret_and_queues_a_valid_update() -> None:
     assert forbidden.status_code == 403
     assert accepted.status_code == 200
     assert (await queued_updates.get()).update_id == 123
+
+
+@pytest.mark.asyncio
+async def test_voice_endpoint_speaks_only_the_stored_narrative(monkeypatch) -> None:
+    bot_token = "123:test"
+    settings = Settings(
+        bot_token=bot_token,
+        mongodb_uri="mongodb://localhost:27017",
+        groq_api_key="test",
+        bot_mode="polling",
+    )
+    app = create_app(settings)
+    service = StubGameService()
+    service.player["game"]["last_narrative"] = "Fire meets shadow on the ridge."
+    narrator = StubNarrator()
+    app.state.game_service = service
+    app.state.narrator = narrator
+    monkeypatch.setattr("chronicle_rift.security.time.time", lambda: 1_800_000_000)
+    transport = httpx.ASGITransport(app=app)
+    headers = {"X-Telegram-Init-Data": _signed_header(bot_token)}
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
+        ok = await client.post("/api/voice", headers=headers)
+        service.player["game"].pop("last_narrative", None)
+        missing = await client.post("/api/voice", headers=headers)
+        service.player["game"]["last_narrative"] = "Stored but TTS is down."
+        app.state.narrator = StubNarrator(audio=None)
+        unavailable = await client.post("/api/voice", headers=headers)
+        anonymous = await client.post("/api/voice")
+
+    assert ok.status_code == 200
+    assert ok.headers["content-type"] == "audio/mpeg"
+    assert ok.content == b"ID3\x03fake-mp3-audio"
+    assert narrator.voiced == ["Fire meets shadow on the ridge."]
+    assert missing.status_code == 404
+    assert unavailable.status_code == 503
+    assert anonymous.status_code == 401

@@ -33,7 +33,7 @@ async def main() -> int:
 
     player = new_player(user_id=11, first_name="Rita", username="riftwalkrita")
     player["game"]["coins"] = 860
-    me = {"player": public_player_view(player), "version": "0.11.0"}
+    me = {"player": public_player_view(player), "version": "0.12.0"}
     payload = json.dumps(me)
 
     out_dir = REPO / args.out
@@ -71,6 +71,16 @@ async def main() -> int:
         await page.click("#topbar-profile")
         await page.wait_for_timeout(700)
         await page.screenshot(path=str(out_dir / "ui-profile.png"))
+
+        # settings with the graphics picker — go home first, then the More tile
+        await page.click("#screen-profile [data-goto='home']")
+        await page.wait_for_timeout(500)
+        await page.click(".home-tile[data-goto='settings']")
+        await page.wait_for_timeout(500)
+        await page.screenshot(path=str(out_dir / "ui-settings.png"))
+        modes = await page.locator(".gfx-picker button").all_text_contents()
+        print("graphics modes:", modes)
+        assert [m.strip().lower() for m in modes] == ["auto", "3d", "2d"], "graphics picker missing"
 
         # sanity: the hero shop shows damage numbers, not cooldowns
         moves = await page.locator(".hero-moves span").all_text_contents()

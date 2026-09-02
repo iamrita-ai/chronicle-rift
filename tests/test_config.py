@@ -69,3 +69,33 @@ def test_allows_an_https_mini_app_url_with_a_path(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("MINI_APP_URL", "https://chronicle.example/app")
 
     assert Settings.from_env().mini_app_url == "https://chronicle.example/app"
+
+def test_tts_defaults_to_orpheus_english_and_tara(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required(monkeypatch)
+    monkeypatch.delenv("GROQ_TTS_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_TTS_VOICE", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.groq_tts_model == "canopylabs/orpheus-v1-english"
+    assert settings.groq_tts_voice == "tara"
+
+
+def test_tts_voice_can_be_overridden_with_a_simple_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_required(monkeypatch)
+    monkeypatch.setenv("GROQ_TTS_MODEL", "canopylabs/orpheus-v1-english")
+    monkeypatch.setenv("GROQ_TTS_VOICE", "leah")
+
+    settings = Settings.from_env()
+
+    assert settings.groq_tts_voice == "leah"
+
+
+def test_tts_voice_rejects_injection_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required(monkeypatch)
+    monkeypatch.setenv("GROQ_TTS_VOICE", "tara'; drop table")
+
+    with pytest.raises(ConfigurationError):
+        Settings.from_env()

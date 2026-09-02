@@ -2754,3 +2754,66 @@ body.in-fight .app-topbar {
 .tg-account-copy small { font-size: 9.5px; letter-spacing: 0.16em; color: rgba(150, 160, 210, 0.8); }
 .tg-account-copy b { font-size: 14px; }
 .tg-account-copy span { font-size: 12px; color: var(--element, #7c6cff); }
+
+/* ==================== graphics picker + voice button ==================== */
+.setting-col { flex-direction: column; align-items: stretch; gap: 8px; }
+.gfx-picker {
+  display: flex;
+  gap: 6px;
+  background: rgba(10, 12, 26, 0.8);
+  border: 1px solid rgba(122, 136, 210, 0.25);
+  border-radius: 10px;
+  padding: 4px;
+}
+.gfx-picker button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: rgba(190, 198, 235, 0.75);
+  font: 700 12px/1.6 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  padding: 7px 0;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.gfx-picker button.is-on {
+  background: linear-gradient(135deg, var(--element, #7c6cff), #4d3fd8);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(124, 108, 255, 0.35);
+}
+
+.voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(122, 136, 210, 0.4);
+  background: rgba(16, 18, 38, 0.85);
+  color: #dfe4ff;
+  font: 700 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.2s ease, transform 0.1s ease;
+}
+.voice-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.voice-btn svg path:first-child { fill: currentColor; stroke: none; }
+.voice-btn:hover { border-color: var(--element, #7c6cff); box-shadow: 0 0 14px rgba(124, 108, 255, 0.25); }
+.voice-btn:active { transform: scale(0.97); }
+.voice-btn.is-busy { opacity: 0.55; pointer-events: none; }
+.voice-btn.is-playing {
+  border-color: var(--element, #7c6cff);
+  box-shadow: 0 0 16px rgba(124, 108, 255, 0.4);
+  animation: voicePulse 1.4s ease-in-out infinite;
+}
+.voice-btn.is-playing svg { animation: voiceWave 0.9s ease-in-out infinite; }
+@keyframes voicePulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(124, 108, 255, 0.25); }
+  50% { box-shadow: 0 0 20px rgba(124, 108, 255, 0.55); }
+}
+@keyframes voiceWave {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.25); }
+}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from telegram.constants import KeyboardButtonStyle
 
-from chronicle_rift.bot import DEPLOY_GUIDE, _launch_keyboard, home_caption
+from chronicle_rift.bot import _launch_keyboard, home_caption
 
 
 def test_launcher_has_colored_deep_link_buttons() -> None:
@@ -13,7 +13,7 @@ def test_launcher_has_colored_deep_link_buttons() -> None:
         share_url="https://t.me/share/url?url=https%3A%2F%2Ft.me%2Fdemo%2Fapp",
     )
     buttons = [b for row in kb.inline_keyboard for b in row]
-    assert len(buttons) == 11
+    assert len(buttons) == 10
 
     web = {b.text: b for b in buttons if b.web_app}
     assert web["▶️  PLAY — RIFT ARENA"].web_app.api_kwargs["start_parameter"] == "play"
@@ -34,12 +34,11 @@ def test_launcher_has_colored_deep_link_buttons() -> None:
     assert set(feedback) == {"💬  Feedback · Bugs · Ideas"}
     assert feedback["💬  Feedback · Bugs · Ideas"].style == KeyboardButtonStyle.DANGER
 
-    # share + repo + deploy
+    # share + repo — no deploy guide anymore
     urls = {b.text: b.url for b in buttons if b.url}
     assert urls["📢  Share Game"].startswith("https://t.me/share/url?url=")
     assert urls["🐙  GitHub"] == "https://github.com/iamrita-ai/chronicle-rift"
-    deploy = [b for b in buttons if b.callback_data == "deploy"]
-    assert deploy and deploy[0].style == KeyboardButtonStyle.PRIMARY
+    assert all(b.callback_data != "deploy" for b in buttons)
 
 
 def test_launcher_without_minapp_has_no_rows() -> None:
@@ -47,17 +46,11 @@ def test_launcher_without_minapp_has_no_rows() -> None:
     assert len(kb.inline_keyboard) == 0
 
 
-def test_home_caption_credits_the_owners() -> None:
+def test_home_caption_keeps_credits_in_the_readme_only() -> None:
     caption = home_caption("1.2.3")
     assert "ChronicleRift v1.2.3" in caption
-    assert "@TechnicalSerena" in caption
-    assert "@XioquiXan" in caption
-
-
-def test_deploy_guide_covers_every_platform() -> None:
-    upper = DEPLOY_GUIDE.upper()
-    for word in ("LOCAL", "RENDER", "DOCKER", "VPS"):
-        assert word in upper
-    for word in ("nginx", "certbot"):
-        assert word in DEPLOY_GUIDE
-    assert "iamrita-ai/chronicle-rift" in DEPLOY_GUIDE
+    # credits live in the README now, not on the bot home screen
+    assert "@TechnicalSerena" not in caption
+    assert "@XioQuiXan" not in caption
+    assert "Owner:" not in caption
+    assert "Co-owner:" not in caption
