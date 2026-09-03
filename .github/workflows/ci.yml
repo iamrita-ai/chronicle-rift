@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "23 2 * * *"  # nightly: keeps the badge fresh, catches regressions
 
 permissions:
   contents: read
