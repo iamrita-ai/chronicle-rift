@@ -142,6 +142,10 @@
             </div>
             <div class="hud-bar"><i class="ghost" id="hud-p-ghost"></i><i class="fill" id="hud-p-fill"></i></div>
             <div class="hud-stam"><i id="hud-p-stam"></i></div>
+            <button class="heal-chip" id="heal-chip" type="button" hidden title="Drink a healing potion">
+              <img id="heal-chip-img" alt="" />
+              <b id="heal-chip-qty">×0</b>
+            </button>
           </div>
           <div class="hud-mid">
             <span class="hud-chapter" id="hud-chapter">CH 1</span>
@@ -203,11 +207,6 @@
             <img src="./art/icon-attack.png" alt="Basic attack" />
             <span class="atk-ring"></span>
           </button>
-        </div>
-
-        <div class="rotate-hint" id="rotate-hint" hidden>
-          <svg viewBox="0 0 24 24"><path d="M7 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17.5 8.5 21 12l-3.5 3.5"/></svg>
-          <span>Turn your phone sideways for the full-screen arena</span>
         </div>
 
         <!-- pre-fight / post-fight overlay -->

@@ -58,6 +58,15 @@ class BuyRequest(BaseModel):
     item_id: str
 
 
+class PowerRequest(BaseModel):
+    """Trainable-power upgrade payload (attribute points or coins)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    attribute: str
+    source: str = "coins"
+
+
 class SellRequest(BaseModel):
     """Mini App satchel sale payload."""
 
@@ -391,6 +400,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return await _item_endpoint(
             request, request.app.state.game_service.upgrade_relic(identity, payload.item_id)
+        )
+
+    @app.post("/api/power", tags=["mini-app"])
+    async def upgrade_power_endpoint(
+        payload: PowerRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        return await _item_endpoint(
+            request,
+            request.app.state.game_service.upgrade_attribute(
+                identity, payload.attribute, payload.source
+            ),
         )
 
     @app.post("/api/character/buy", tags=["mini-app"])

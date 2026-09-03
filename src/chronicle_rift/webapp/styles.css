@@ -2066,6 +2066,48 @@ body.in-fight #app {
   justify-items: center;
   gap: 2px;
 }
+
+/* quick-heal chip pinned under the player's HP bar */
+.heal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 232, 160, 0.45);
+  background: linear-gradient(180deg, rgba(24, 46, 34, 0.92), rgba(10, 22, 16, 0.92));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease, box-shadow 0.12s ease;
+}
+.heal-chip:active {
+  transform: scale(0.92);
+}
+.heal-chip img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.25), transparent 65%);
+}
+.heal-chip b {
+  font-size: 13px;
+  font-weight: 800;
+  color: #9ff0b6;
+  letter-spacing: 0.02em;
+}
+.heal-chip.is-empty {
+  border-color: rgba(255, 176, 56, 0.5);
+  background: linear-gradient(180deg, rgba(52, 36, 14, 0.92), rgba(24, 16, 6, 0.92));
+}
+.heal-chip.is-empty b {
+  color: #ffce7a;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
 .hud-chapter {
   font-size: 9px;
   letter-spacing: 0.18em;
@@ -2294,7 +2336,14 @@ body.in-fight #app {
   max-width: 150px;
   height: 156px;
   object-fit: contain;
-  mix-blend-mode: screen;
+  object-position: 50% 100%; /* feet on the ground, never cropped */
+  border-radius: 16px;
+  padding: 4px 2px 0;
+  background:
+    radial-gradient(120% 95% at 50% 100%, rgba(139, 160, 255, 0.14), rgba(6, 8, 20, 0) 58%),
+    linear-gradient(180deg, rgba(10, 13, 30, 0.35), rgba(6, 8, 18, 0.62));
+  box-shadow: inset 0 0 0 1px rgba(150, 165, 255, 0.16);
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.55));
   animation: float-idle 3.4s ease-in-out infinite;
 }
 .mu-side b {
@@ -2332,38 +2381,6 @@ body.in-fight #app {
   width: 100%;
   height: 100%;
 }
-.rotate-hint {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 74px);
-  transform: translateX(-50%);
-  z-index: 19;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(6, 8, 22, 0.82);
-  border: 1px solid var(--line);
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  animation: rot-pulse 2.6s ease-in-out infinite;
-  pointer-events: none;
-}
-.rotate-hint svg {
-  width: 17px;
-  height: 17px;
-  color: var(--element);
-  animation: rot-turn 2.6s ease-in-out infinite;
-}
-@keyframes rot-turn {
-  40% { transform: rotate(90deg); }
-  90% { transform: rotate(90deg); }
-}
-@keyframes rot-pulse {
-  50% { opacity: 0.55; }
-}
 /* landscape: shrink the overlay so the matchup + FIGHT button always fit */
 .force-landscape .fight-overlay {
   padding: 10px 16px;
@@ -2372,6 +2389,7 @@ body.in-fight #app {
 .force-landscape .mu-side img {
   height: 104px;
   max-width: 110px;
+  padding: 3px 2px 0;
 }
 .force-landscape .mu-side b { font-size: 13px; }
 .force-landscape .heal-rail { padding: 6px 10px; }

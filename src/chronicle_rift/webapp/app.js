@@ -180,7 +180,6 @@
       const section = $("screen-battle");
       const portrait = window.innerHeight > window.innerWidth;
       section.classList.toggle("force-landscape", portrait);
-      $("rotate-hint").hidden = !portrait;
       if (this.arena) this.arena.resize(section.offsetWidth, section.offsetHeight);
     },
 
@@ -268,9 +267,10 @@
       document.documentElement.style.setProperty("--element", view.character.element_color);
       document.documentElement.style.setProperty("--foe-element", view.enemy.element_color);
       const scenes = { fire: "bg-ember", ice: "bg-frost", shadow: "bg-void", arcane: "bg-arcane", wind: "bg-arcane" };
-      this.arena.setScene(view.enemy.boss ? "bg-void" : scenes[view.enemy.element] || "bg-ember");
+      this.arena.setScene(view.enemy.boss ? "bg-gate" : scenes[view.enemy.element] || "bg-ember");
       this.renderAbilityButtons(view);
       renderHealRail(view);
+      refreshHealChip();
       $("fight-overlay").classList.add("is-open");
       this.arena.setFighters(p, e);
       this.arena.stop();
@@ -290,12 +290,14 @@
       $("fight-overlay").classList.remove("is-open");
       window.ChronicleArena.setMuted(!state.settings.sound);
       this.arena.start();
+      refreshHealChip();
       haptic("medium");
     },
 
     leave() {
       if (this.arena) this.arena.stop();
       this.started = false;
+      $("heal-chip").hidden = true;
       $("fight-overlay").classList.add("is-open");
     },
 
@@ -595,6 +597,32 @@
     return view.inventory.filter((c) => c.kind === "consumable" && (HEAL_IDS.includes(c.id) || /heal|hp|vital/i.test(c.ability)));
   }
 
+  /* in-fight quick-heal chip pinned to the player's HP bar */
+  function refreshHealChip() {
+    const chip = $("heal-chip");
+    if (!chip) return;
+    const fighting = Fight.arena && Fight.started && !Fight.settling && !Fight.arena.over;
+    const heals = fighting && state.player ? healingItems(state.player) : [];
+    const best = heals.slice().sort((a, b) => (b.rarity || 0) - (a.rarity || 0))[0];
+    if (!best) {
+      if (fighting) {
+        chip.hidden = false;
+        chip.classList.add("is-empty");
+        $("heal-chip-img").removeAttribute("src");
+        $("heal-chip-qty").textContent = "+";
+        chip.title = "No potions — tap to restock";
+      } else {
+        chip.hidden = true;
+      }
+      return;
+    }
+    chip.hidden = false;
+    chip.classList.remove("is-empty");
+    $("heal-chip-img").src = ART(best.art || "item-heal", "png");
+    $("heal-chip-qty").textContent = `×${best.quantity}`;
+    chip.title = `${best.name} — ${best.ability}`;
+  }
+
   function renderHealRail(view) {
     const strip = $("rail-strip");
     if (!strip) return;
@@ -608,6 +636,7 @@
       strip.appendChild(empty);
       return;
     }
+
     heals.forEach((card) => {
       const btn = el("button", "rail-item");
       btn.type = "button";
@@ -802,6 +831,7 @@
     const data = await itemCall("/api/use", { item_id: card.id });
     if (!data) return;
     UI.heal();
+    refreshHealChip();
     const healed = (data.player.hero.hp || 0) - before;
     // a potion drunk before or between rounds also tops up the arena fighter
     if (healed > 0 && Fight.arena?.player) {
@@ -1043,6 +1073,12 @@
     $("fight-exit").addEventListener("click", () => goto("home"));
     $("fight-leave").addEventListener("click", () => goto("home"));
     $("fight-start").addEventListener("click", () => Fight.begin());
+    $("heal-chip").addEventListener("click", async () => {
+      const heals = state.player ? healingItems(state.player) : [];
+      if (!heals.length) { openRestock(); return; }
+      const best = heals.slice().sort((a, b) => (b.rarity || 0) - (a.rarity || 0))[0];
+      await useItem(best);
+    });
     $("fight-help").addEventListener("click", openTutorial);
     $("fight-sound").addEventListener("click", () => {
       state.settings.sound = !state.settings.sound;

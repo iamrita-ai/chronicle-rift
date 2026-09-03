@@ -13,6 +13,7 @@ from .game_engine import (
     TurnResolution,
     buy_character,
     resolve_arena,
+    resolve_attribute_upgrade,
     resolve_purchase,
     resolve_turn,
     select_character,
@@ -239,6 +240,16 @@ class GameService:
     async def upgrade_relic(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
         """Spend coins to raise a relic's level and persist the result."""
         return await self._apply_item_op(identity, item_id, lambda p: upgrade_relic(p, item_id))
+
+    async def upgrade_attribute(
+        self, identity: TelegramIdentity, attribute: str, source: str
+    ) -> PurchaseResult:
+        """Train one of the four powers with boss points or coins."""
+        return await self._apply_item_op(
+            identity,
+            attribute,
+            lambda p: resolve_attribute_upgrade(p, attribute, source),
+        )
 
     async def buy_character(self, identity: TelegramIdentity, character_id: str) -> PurchaseResult:
         """Buy a playable character with coins."""

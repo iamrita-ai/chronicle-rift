@@ -40,8 +40,8 @@ def test_strike_is_immutable_and_applies_both_sides() -> None:
 
     assert player == original
     assert result.player["game"]["energy"] == 4
-    assert result.player["game"]["enemy"]["hp"] == 11  # 5 roll + level 1 + power 1
-    assert result.player["game"]["hp"] == 19
+    assert result.player["game"]["enemy"]["hp"] == 27  # 5 roll + level 1 + power 1
+    assert result.player["game"]["hp"] == 17
     assert result.victory is False
 
 
@@ -67,8 +67,8 @@ def test_guard_reduces_incoming_damage_and_restores_energy() -> None:
     result = resolve_turn(player, "guard", FixedRandom(5))
 
     assert result.player["game"]["energy"] == 3
-    assert result.player["game"]["hp"] == 24
-    assert "swallows" in result.summary
+    assert result.player["game"]["hp"] == 22  # 7 slash - 5 warded
+    assert "ward" in result.summary
 
 
 def test_victory_awards_coins_and_points() -> None:
@@ -129,7 +129,7 @@ def test_perfect_strike_roll_is_a_critical_hit() -> None:
     # Damage: round((8 + level 1 + power 1) * 1.5) = 15; enemy 18 - 15 = 3.
     assert result.effects["crit"] is True
     assert result.effects["damage"] == 15
-    assert game["enemy"]["hp"] == 3
+    assert game["enemy"]["hp"] == 19
     assert "CRITICAL" in result.summary
 
 
@@ -155,8 +155,8 @@ def test_perfect_ward_reflects_damage() -> None:
     result = resolve_turn(player, "guard", QueuedRandom([5, 2]))
 
     assert result.effects["reflect"] == 2
-    assert result.player["game"]["enemy"]["hp"] == 16
-    assert result.player["game"]["hp"] == 24
+    assert result.player["game"]["enemy"]["hp"] == 32
+    assert result.player["game"]["hp"] == 22
 
 
 def test_every_fifth_chapter_spawns_a_boss_with_double_rewards() -> None:
@@ -202,13 +202,13 @@ def test_enemy_intent_is_telegraphed_and_follows_a_fixed_pattern() -> None:
     # Ash Warden rotation is slash, slash, heavy — after one turn the next
     # telegraphed move is the second Slash.
     assert intent["id"] == "slash"
-    assert intent["damage"] == 5
+    assert intent["damage"] == 7
 
     second = resolve_turn(
         resolve_turn(player, "scout", FixedRandom(2)).player, "scout", FixedRandom(2)
     )
     assert second.effects["enemy_intent"]["id"] == "heavy"
-    assert second.effects["enemy_intent"]["damage"] == 9
+    assert second.effects["enemy_intent"]["damage"] == 11
     assert "Heavy Blow" in second.summary
 
 
@@ -219,8 +219,8 @@ def test_guard_blocks_the_telegraphed_heavy_blow() -> None:
     result = resolve_turn(player, "guard", FixedRandom(4))
 
     assert result.effects["blocked"] == 4
-    assert result.effects["enemy_damage"] == 5
-    assert result.player["game"]["hp"] == 19
+    assert result.effects["enemy_damage"] == 7
+    assert result.player["game"]["hp"] == 17
 
 
 def test_focus_builds_on_setup_moves_and_is_spent_by_strike() -> None:
@@ -438,7 +438,7 @@ def test_attacks_are_refused_without_enough_energy() -> None:
 
     assert result.effects["blocked_action"] is True
     assert result.player["game"]["energy"] == 2
-    assert result.player["game"]["enemy"]["hp"] == 18
+    assert result.player["game"]["enemy"]["hp"] == 34
 
 
 def test_monsters_scale_and_carry_their_own_ability() -> None:

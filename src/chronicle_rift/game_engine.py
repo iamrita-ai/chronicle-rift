@@ -46,15 +46,19 @@ from random import SystemRandom
 from typing import Any, Protocol
 
 from .models import (
+    ATTRIBUTES,
     CHARACTERS,
     DEFAULT_ENEMY,
     ELEMENTS,
     ITEMS,
     LOOT_TABLE,
+    MAX_ATTR_LEVEL,
     MAX_RELIC_LEVEL,
     MONSTERS,
     add_item,
     apply_relic_bonuses,
+    attribute_coin_cost,
+    attributes_of,
     character_of,
     ensure_game_defaults,
     monster_for_chapter,
@@ -269,6 +273,10 @@ def _victory(
     game["exposed_strikes"] = 0
     game["focus"] = 0
     game["burn"] = 0
+    # Every boss defeat grants attribute points for the trainable powers.
+    attr_gain = 3 if was_boss else 0
+    if attr_gain:
+        game["attr_points"] = int(game.get("attr_points", 0)) + attr_gain
     effects["victory"] = True
     effects.update(
         {
@@ -276,6 +284,7 @@ def _victory(
             "coins_gained": coin_reward,
             "points_gained": point_reward,
             "xp_gained": 12,
+            "attr_points_gained": attr_gain,
         }
     )
     # Reward chest: several random items every time a chapter is cleared.
@@ -297,13 +306,20 @@ def _victory(
 
     if game["xp"] >= game["level"] * 20:
         game["level"] += 1
-        game["base_max_hp"] = int(game.get("base_max_hp", game["max_hp"])) + 4
+        game["base_max_hp"] = int(game.get("base_max_hp", game["max_hp"])) + 8
         apply_relic_bonuses(game)
         game["hp"] = game["max_hp"]
         effects["leveled_up"] = True
     game["enemy"] = _next_enemy(game["chapter"])
+    seen = game.get("seen_monsters") if isinstance(game.get("seen_monsters"), list) else []
+    returning = game["enemy"]["id"] in seen
+    game["enemy"]["returning"] = returning
+    if game["enemy"]["id"] not in seen:
+        seen.append(game["enemy"]["id"])
+    game["seen_monsters"] = seen[-64:]
     sync_intent(game["enemy"])
     effects["enemy_intent"] = game["enemy"]["intent"]
+    effects["enemy_returning"] = returning
     title = CHAPTER_TITLES[(game["chapter"] - 1) % len(CHAPTER_TITLES)]
     game["quest_title"] = f"Chapter {game['chapter']}: {title}"
     game["quest_objective"] = (
@@ -315,10 +331,22 @@ def _victory(
         loot_note = f" The reward chest holds: {names}."
     boss_note = " Boss bounties double the haul!" if was_boss else ""
     level_note = " You rise a level, vitality renewed!" if effects["leveled_up"] else ""
+    attr_note = (
+        f" The fallen guardian yields {attr_gain} attribute points — train your powers!"
+        if attr_gain
+        else ""
+    )
+    next_foe = game["enemy"]
+    returning_note = (
+        f" The {next_foe['name']} returns at level {next_foe['level']},"
+        " stronger than before!"
+        if returning
+        else ""
+    )
     summary = (
         f"Victory! The {fallen_name} falls. You claim {reward} gold, "
         f"{coin_reward} coins, and {point_reward} points as a new chapter opens."
-        f"{loot_note}{boss_note}{level_note}"
+        f"{loot_note}{boss_note}{level_note}{attr_note}{returning_note}"
     )
     game["last_narrative"] = summary
     return TurnResolution(updated, action, summary, victory=True, effects=effects)
@@ -585,6 +613,66 @@ class ItemResolution:
     success: bool
     reason: str | None = None
     effects: dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_attribute_upgrade(
+    player: dict[str, Any], attribute: str, source: str
+) -> ItemResolution:
+    """Raise one trainable power by a level.
+
+    ``source="points"`` spends hard-won boss attribute points; ``source="coins"``
+    buys the next level outright at a price that climbs every level. Each power
+    is tracked separately and caps at ``MAX_ATTR_LEVEL``.
+    """
+
+    spec = ATTRIBUTES.get(attribute)
+    if spec is None:
+        return ItemResolution(
+            player, attribute, "Unknown power",
+            "That power does not exist.", False, reason="unknown_attribute",
+        )
+    if source not in ("points", "coins"):
+        source = "coins"
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    attrs = attributes_of(game)
+    level = attrs[attribute]
+    name = spec["name"]
+    if level >= MAX_ATTR_LEVEL:
+        return ItemResolution(
+            updated, attribute, name,
+            f"{name} is already mastered at level {MAX_ATTR_LEVEL}.", False, reason="max_level",
+        )
+    if source == "points":
+        held = int(game.get("attr_points", 0))
+        if held < 1:
+            return ItemResolution(
+                updated, attribute, name,
+                "No attribute points left — defeat gate bosses to earn more.",
+                False, reason="no_points",
+            )
+        game["attr_points"] = held - 1
+        spent = "1 attribute point"
+    else:
+        price = attribute_coin_cost(level)
+        if int(game["coins"]) < price:
+            return ItemResolution(
+                updated, attribute, name,
+                f"You need {price} coins, but you have {game['coins']}.",
+                False, reason="insufficient_coins",
+            )
+        game["coins"] -= price
+        spent = f"{price} coins"
+    levels = dict(attrs)
+    levels[attribute] = level + 1
+    game["attributes"] = levels
+    apply_relic_bonuses(game)
+    if attribute == "health":
+        game["hp"] = min(game["max_hp"], int(game.get("hp", 0)) + 12)
+    summary = f"You train {name} to level {level + 1} for {spent}. {spec['desc']}."
+    game["last_narrative"] = summary
+    return ItemResolution(updated, attribute, name, summary, True)
 
 
 def resolve_purchase(player: dict[str, Any], item_id: str) -> PurchaseResolution:

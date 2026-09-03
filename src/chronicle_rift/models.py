@@ -7,10 +7,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 DEFAULT_ENEMY = {
+    "id": "ash_warden",
     "name": "Ash Warden",
-    "hp": 18,
-    "max_hp": 18,
-    "attack": 5,
+    "hp": 34,
+    "max_hp": 34,
+    "attack": 7,
     "art": "🔥",
     "sprite": "mob-ash-warden",
     "element": "fire",
@@ -21,9 +22,55 @@ DEFAULT_ENEMY = {
     "intent_index": 0,
 }
 
-BASE_MAX_HP = 24
+BASE_MAX_HP = 24  # legacy floor; real vitality comes from the character spec
 BASE_MAX_ENERGY = 5
-LEVEL_HP_GAIN = 4
+LEVEL_HP_GAIN = 8
+
+# --------------------------------------------------------------------------- #
+# Trainable powers: every boss defeat grants attribute points, and each power
+# can also be ground up with coins. Levels are tracked separately per power,
+# each caps at 100, and the coin price climbs with every level.
+# --------------------------------------------------------------------------- #
+MAX_ATTR_LEVEL = 100
+ATTR_COIN_BASE = 20
+ATTR_COIN_STEP = 8
+ATTRIBUTES: dict[str, dict[str, Any]] = {
+    "strength": {
+        "name": "Strength",
+        "icon": "⚔️",
+        "desc": "+2 attack power per level",
+    },
+    "stamina": {
+        "name": "Stamina",
+        "icon": "🛡️",
+        "desc": "+2 defense and +1 energy per 10 levels",
+    },
+    "health": {
+        "name": "Health",
+        "icon": "❤️",
+        "desc": "+12 max HP per level",
+    },
+    "speed": {
+        "name": "Speed",
+        "icon": "⚡",
+        "desc": "+1 luck per level (crit & haste)",
+    },
+}
+
+
+def attribute_coin_cost(level: int) -> int:
+    """Rising coin price to take an attribute from ``level`` to ``level + 1``."""
+    return ATTR_COIN_BASE + ATTR_COIN_STEP * max(0, int(level))
+
+
+def attributes_of(game: dict[str, Any]) -> dict[str, int]:
+    """Sanitized attribute levels (0..MAX_ATTR_LEVEL) for a game state."""
+    raw = game.get("attributes")
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        aid: max(0, min(MAX_ATTR_LEVEL, int(raw.get(aid, 0) or 0)))
+        for aid in ATTRIBUTES
+    }
 LEVEL_XP_FACTOR = 20
 MAX_RELIC_LEVEL = 5
 
@@ -305,6 +352,9 @@ GAME_DEFAULTS: dict[str, Any] = {
     "arena_losses": 0,
     "boss_kills": 0,
     "best_chapter": 1,
+    "attr_points": 0,
+    "attributes": {"strength": 0, "stamina": 0, "health": 0, "speed": 0},
+    "seen_monsters": [],
 }
 
 
@@ -333,6 +383,9 @@ def new_player(*, user_id: int, first_name: str, username: str | None) -> dict[s
             "gold": 25,
             "coins": 30,
             "points": 0,
+            "attr_points": 0,
+            "attributes": {"strength": 0, "stamina": 0, "health": 0, "speed": 0},
+            "seen_monsters": [DEFAULT_ENEMY["id"]],
             "hp": BASE_MAX_HP,
             "base_max_hp": BASE_MAX_HP,
             "max_hp": BASE_MAX_HP,
@@ -406,9 +459,21 @@ def ensure_game_defaults(player: dict[str, Any]) -> None:
     game["inventory"] = {k: int(v) for k, v in inventory.items() if k in ITEMS and int(v) > 0}
 
     game.setdefault("purchased", [])
+    game["attributes"] = attributes_of(game)
     enemy = game.setdefault("enemy", deepcopy(DEFAULT_ENEMY))
     enemy.setdefault("intent_index", 0)
     enemy.setdefault("boss", False)
+    seen = game.get("seen_monsters")
+    if not isinstance(seen, list):
+        seen = []
+    seen = [m for m in seen if isinstance(m, str)]
+    if not seen:
+        enemy_id = str(enemy.get("id") or "")
+        if not enemy_id and enemy.get("sprite"):
+            enemy_id = str(enemy["sprite"]).removeprefix("mob-").replace("-", "_")
+        if enemy_id in MONSTERS:
+            seen = [enemy_id]
+    game["seen_monsters"] = seen[-64:]
     game.setdefault("base_max_hp", game.get("max_hp", BASE_MAX_HP))
     apply_relic_bonuses(game)
 
@@ -421,16 +486,19 @@ def apply_relic_bonuses(game: dict[str, Any]) -> None:
         per_level = ITEMS[item_id].get("per_level", {})
         for stat, amount in per_level.items():
             totals[stat] += amount * int(level)
-    game["attack_bonus"] = totals["attack"]
-    game["ward_bonus"] = totals["ward"]
-    game["luck_bonus"] = totals["luck"]
-    game["luck"] = totals["luck"] > 0
+    attrs = attributes_of(game)
+    game["attack_bonus"] = totals["attack"] + attrs["strength"] * 2
+    game["ward_bonus"] = totals["ward"] + attrs["stamina"] * 2
+    game["luck_bonus"] = totals["luck"] + attrs["speed"]
+    game["luck"] = (totals["luck"] + attrs["speed"]) > 0
     character = character_of(game)
     hero_level = max(1, int(game.get("level", 1)))
     game["power"] = int(character["power"])
     game["base_max_hp"] = int(character["hp"]) + LEVEL_HP_GAIN * (hero_level - 1)
-    game["max_hp"] = game["base_max_hp"] + totals["max_hp"]
-    game["max_energy"] = int(character["energy"]) + totals["max_energy"]
+    game["max_hp"] = game["base_max_hp"] + totals["max_hp"] + attrs["health"] * 12
+    game["max_energy"] = (
+        int(character["energy"]) + totals["max_energy"] + attrs["stamina"] // 10
+    )
     game["hp"] = min(int(game.get("hp", game["max_hp"])), game["max_hp"])
     game["energy"] = min(int(game.get("energy", game["max_energy"])), game["max_energy"])
 
@@ -521,6 +589,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     enemy = game["enemy"]
     intent = sync_intent(enemy)
     threshold = level_threshold(game)
+    attrs = attributes_of(game)
     shop = [
         item_card(item_id, level=int((game.get("relics") or {}).get(item_id, 0)))
         for item_id in BUYABLE_IDS
@@ -564,6 +633,23 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "max_focus": MAX_FOCUS,
             "power": int(game.get("power", 0)),
         },
+        "attributes": {
+            "points": int(game.get("attr_points", 0)),
+            "max_level": MAX_ATTR_LEVEL,
+            "list": [
+                {
+                    "id": aid,
+                    "name": spec["name"],
+                    "icon": spec["icon"],
+                    "desc": spec["desc"],
+                    "level": lvl,
+                    "max": MAX_ATTR_LEVEL,
+                    "coin_cost": attribute_coin_cost(lvl) if lvl < MAX_ATTR_LEVEL else None,
+                }
+                for aid, spec in ATTRIBUTES.items()
+                for lvl in (attrs[aid],)
+            ],
+        },
         "quest": {
             "chapter": game["chapter"],
             "title": game["quest_title"],
@@ -581,6 +667,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "ability": enemy.get("ability", ""),
             "level": enemy.get("level", game["chapter"]),
             "boss": bool(enemy.get("boss", False)),
+            "returning": bool(enemy.get("returning", False)),
             "intent": intent,
         },
         "battle": {
@@ -830,10 +917,10 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "fire",
         "art": "mob-ash-warden",
         "emoji": "🔥",
-        "hp": 18,
-        "attack": 5,
-        "hp_growth": 6,
-        "attack_growth": 1,
+        "hp": 34,
+        "attack": 7,
+        "hp_growth": 10,
+        "attack_growth": 2,
         "ability": "Cinder Aura — its Heavy Blow leaves you scorched.",
         "pattern": ("slash", "slash", "heavy"),
     },
@@ -842,10 +929,10 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "arcane",
         "art": "mob-obsidian-herald",
         "emoji": "🗿",
-        "hp": 20,
-        "attack": 5,
-        "hp_growth": 6,
-        "attack_growth": 1,
+        "hp": 38,
+        "attack": 7,
+        "hp_growth": 10,
+        "attack_growth": 2,
         "ability": "Rift Drain — siphons your Energy so you cannot swing.",
         "pattern": ("slash", "drain", "heavy"),
     },
@@ -854,10 +941,10 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "shadow",
         "art": "mob-rift-stalker",
         "emoji": "🜂",
-        "hp": 22,
-        "attack": 6,
-        "hp_growth": 7,
-        "attack_growth": 1,
+        "hp": 42,
+        "attack": 8,
+        "hp_growth": 11,
+        "attack_growth": 2,
         "ability": "Mend — it knits itself back together if you let it.",
         "pattern": ("slash", "heavy", "mend"),
     },
@@ -866,10 +953,10 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "ice",
         "art": "mob-frost-revenant",
         "emoji": "❄️",
-        "hp": 26,
-        "attack": 6,
-        "hp_growth": 7,
-        "attack_growth": 2,
+        "hp": 50,
+        "attack": 9,
+        "hp_growth": 12,
+        "attack_growth": 3,
         "ability": "Rime Grip — heavy, slow, and it drains Energy too.",
         "pattern": ("heavy", "slash", "drain"),
     },
@@ -878,10 +965,10 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "shadow",
         "art": "mob-ebon-colossus",
         "emoji": "🌑",
-        "hp": 40,
-        "attack": 8,
-        "hp_growth": 11,
-        "attack_growth": 2,
+        "hp": 90,
+        "attack": 12,
+        "hp_growth": 18,
+        "attack_growth": 3,
         "boss": True,
         "ability": "Rift Quake — a boss slam that flattens an unguarded hero.",
         "pattern": ("slash", "heavy", "drain", "quake"),
