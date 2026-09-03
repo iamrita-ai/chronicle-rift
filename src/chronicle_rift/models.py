@@ -7,25 +7,86 @@ from datetime import UTC, datetime
 from typing import Any
 
 DEFAULT_ENEMY = {
+    "id": "ash_warden",
     "name": "Ash Warden",
-    "hp": 18,
-    "max_hp": 18,
-    "attack": 5,
+    "hp": 26,
+    "max_hp": 26,
+    "attack": 6,
     "art": "🔥",
     "sprite": "mob-ash-warden",
     "element": "fire",
     "ability": "Cinder Aura",
     "level": 1,
     "boss": False,
+    "scene": "bg-ember",
+    "gate": "The Ember Gate",
+    "evil_level": 1,
     # Index into the enemy's fixed, telegraphed attack rotation.
     "intent_index": 0,
 }
 
-BASE_MAX_HP = 24
+BASE_MAX_HP = 44
 BASE_MAX_ENERGY = 5
-LEVEL_HP_GAIN = 4
+LEVEL_HP_GAIN = 6
 LEVEL_XP_FACTOR = 20
 MAX_RELIC_LEVEL = 5
+
+# --------------------------------------------------------------------------- #
+# TRAINING & POWERS
+#
+# Two parallel progression tracks, each capped at level 100 and every track
+# upgraded separately (never combined):
+#   attributes — trained for free with Attribute Points, the minimal reward
+#                every boss/victory drops. Strength, Vitality, Vigor, Speed.
+#   powers     — bought with coins. Every next level costs more than the last.
+# Both feed the same derived stats (attack bonus, max hp, max energy) and the
+# arena modifiers the client reads from the player view.
+# --------------------------------------------------------------------------- #
+MAX_POWER_LEVEL = 100
+
+ATTRIBUTES: dict[str, dict[str, Any]] = {
+    "might": {
+        "name": "Strength",
+        "icon": "⚔️",
+        "desc": "+1 damage per level in turns, +0.8% arena damage per level.",
+    },
+    "vitality": {
+        "name": "Health",
+        "icon": "❤️",
+        "desc": "+4 maximum Vitality per level.",
+    },
+    "vigor": {
+        "name": "Stamina",
+        "icon": "⚡",
+        "desc": "+1 Rift Energy per 6 levels, faster arena stamina regen.",
+    },
+    "swiftness": {
+        "name": "Speed",
+        "icon": "🌀",
+        "desc": "+1.5 arena movement per level.",
+    },
+}
+
+ATTRIBUTE_IDS = tuple(ATTRIBUTES)
+POWER_IDS = ATTRIBUTE_IDS
+
+
+def power_cost(level: int) -> int:
+    """Coin cost to raise a coin-bought power from ``level`` to ``level + 1``."""
+    return int(30 * (level + 1) ** 1.35)
+
+
+def power_effect(level: int, *, attribute: bool) -> dict[str, float]:
+    """Derived bonuses for one track's level (attributes and powers stack)."""
+    _ = attribute  # both tracks grant the same per-level effect; only the currency differs
+    return {
+        "attack": level,
+        "max_hp": 4 * level,
+        "max_energy": level // 6,
+        "damage_mul": 1 + 0.008 * level,
+        "speed_add": 1.5 * level,
+        "stamina_regen_mul": 1 + 0.004 * level,
+    }
 
 # --------------------------------------------------------------------------- #
 # ITEM CATALOGUE
@@ -305,6 +366,15 @@ GAME_DEFAULTS: dict[str, Any] = {
     "arena_losses": 0,
     "boss_kills": 0,
     "best_chapter": 1,
+    # Progression tracks (see TRAINING & POWERS above).
+    "attribute_points": 0,
+    "attributes": {key: 0 for key in ATTRIBUTE_IDS},
+    "powers": {key: 0 for key in POWER_IDS},
+    # Evil rotation: a slain monster never guards the rift again until the
+    # realm's Evil tier rises — which happens automatically once every evil at
+    # the current tier has fallen, or on demand for gold via /api/evil/ascend.
+    "evil_tier": 1,
+    "evil_slain": [],
 }
 
 
@@ -351,6 +421,12 @@ def new_player(*, user_id: int, first_name: str, username: str | None) -> dict[s
             "chapter": 1,
             "quest_title": "The Ember Gate",
             "quest_objective": "Empty the Ash Warden's HP bar to open Chapter 2.",
+            # The four chapter evils that have fallen at the current tier.
+            "evil_tier": 1,
+            "evil_slain": [],
+            "attribute_points": 0,
+            "attributes": {key: 0 for key in ATTRIBUTE_IDS},
+            "powers": {key: 0 for key in POWER_IDS},
             "character": DEFAULT_CHARACTER,
             "owned_characters": [DEFAULT_CHARACTER],
             "enemy": deepcopy(DEFAULT_ENEMY),
@@ -409,19 +485,68 @@ def ensure_game_defaults(player: dict[str, Any]) -> None:
     enemy = game.setdefault("enemy", deepcopy(DEFAULT_ENEMY))
     enemy.setdefault("intent_index", 0)
     enemy.setdefault("boss", False)
+    if "id" not in enemy:  # legacy documents only carried the sprite name
+        sprite = str(enemy.get("sprite", ""))
+        guess = sprite.removeprefix("mob-").replace("-", "_")
+        if guess in MONSTERS:
+            enemy["id"] = guess
+    spec = MONSTERS.get(str(enemy.get("id", ""))) or {}
+    enemy.setdefault("scene", spec.get("scene", DEFAULT_ENEMY["scene"]))
+    enemy.setdefault("gate", spec.get("gate", DEFAULT_ENEMY["gate"]))
+    enemy.setdefault("evil_level", int(game.get("evil_tier", 1)))
     game.setdefault("base_max_hp", game.get("max_hp", BASE_MAX_HP))
+    for key in ("attributes", "powers"):
+        track = game.get(key)
+        if not isinstance(track, dict):
+            track = {}
+        ids = ATTRIBUTE_IDS if key == "attributes" else POWER_IDS
+        game[key] = {
+            **{k: 0 for k in ids},
+            **{k: max(0, min(int(v), MAX_POWER_LEVEL)) for k, v in track.items() if k in ids},
+        }
+    slain = game.get("evil_slain")
+    if not isinstance(slain, list):
+        slain = []
+    game["evil_slain"] = [s for s in slain if isinstance(s, str)]
     apply_relic_bonuses(game)
 
 
+def training_totals(game: dict[str, Any]) -> dict[str, float]:
+    """Sum the per-level bonuses of every attribute track and every power track.
+
+    Attributes (trained with Attribute Points) and powers (bought with coins)
+    stack on the same four lines and are capped at ``MAX_POWER_LEVEL`` each.
+    """
+    totals: dict[str, float] = {
+        "attack": 0.0, "max_hp": 0, "max_energy": 0,
+        "damage_mul": 1.0, "speed_add": 0.0, "stamina_regen_mul": 1.0,
+    }
+    for key in ("attributes", "powers"):
+        track = game.get(key) or {}
+        for stat_id, raw_level in track.items():
+            if stat_id not in ATTRIBUTE_IDS:
+                continue
+            level = max(0, min(int(raw_level), MAX_POWER_LEVEL))
+            effect = power_effect(level, attribute=key == "attributes")
+            totals["attack"] += effect["attack"]
+            totals["max_hp"] += effect["max_hp"]
+            totals["max_energy"] += effect["max_energy"]
+            totals["damage_mul"] = totals["damage_mul"] * effect["damage_mul"]
+            totals["speed_add"] += effect["speed_add"]
+            totals["stamina_regen_mul"] = totals["stamina_regen_mul"] * effect["stamina_regen_mul"]
+    return totals
+
+
 def apply_relic_bonuses(game: dict[str, Any]) -> None:
-    """Recompute every derived stat from the hero's relic levels."""
+    """Recompute every derived stat from relics, trained attributes and powers."""
     relics = game.get("relics") or {}
     totals = {"attack": 0, "ward": 0, "luck": 0, "max_hp": 0, "max_energy": 0}
     for item_id, level in relics.items():
         per_level = ITEMS[item_id].get("per_level", {})
         for stat, amount in per_level.items():
             totals[stat] += amount * int(level)
-    game["attack_bonus"] = totals["attack"]
+    training = training_totals(game)
+    game["attack_bonus"] = int(totals["attack"] + training["attack"])
     game["ward_bonus"] = totals["ward"]
     game["luck_bonus"] = totals["luck"]
     game["luck"] = totals["luck"] > 0
@@ -429,8 +554,10 @@ def apply_relic_bonuses(game: dict[str, Any]) -> None:
     hero_level = max(1, int(game.get("level", 1)))
     game["power"] = int(character["power"])
     game["base_max_hp"] = int(character["hp"]) + LEVEL_HP_GAIN * (hero_level - 1)
-    game["max_hp"] = game["base_max_hp"] + totals["max_hp"]
-    game["max_energy"] = int(character["energy"]) + totals["max_energy"]
+    game["max_hp"] = game["base_max_hp"] + totals["max_hp"] + int(training["max_hp"])
+    game["max_energy"] = (
+        int(character["energy"]) + totals["max_energy"] + int(training["max_energy"])
+    )
     game["hp"] = min(int(game.get("hp", game["max_hp"])), game["max_hp"])
     game["energy"] = min(int(game.get("energy", game["max_energy"])), game["max_energy"])
 
@@ -510,6 +637,43 @@ def relics_view(game: dict[str, Any]) -> list[dict[str, Any]]:
     return [item_card(item_id, level=int(relics.get(item_id, 0))) for item_id in RELIC_IDS]
 
 
+def training_view(game: dict[str, Any]) -> dict[str, Any]:
+    """Attribute tracks (trained with earned points) and power tracks (bought
+    with coins). Each line levels separately, each caps at MAX_POWER_LEVEL,
+    and every coin upgrade costs more than the one before it."""
+    attributes = game.get("attributes") or {}
+    powers = game.get("powers") or {}
+    training = training_totals(game)
+
+    def card(key: str) -> dict[str, Any]:
+        spec = ATTRIBUTES[key]
+        attr_level = max(0, min(int(attributes.get(key, 0)), MAX_POWER_LEVEL))
+        power_level = max(0, min(int(powers.get(key, 0)), MAX_POWER_LEVEL))
+        return {
+            "key": key,
+            "name": spec["name"],
+            "icon": spec["icon"],
+            "desc": spec["desc"],
+            "attribute_level": attr_level,
+            "power_level": power_level,
+            "level": attr_level + power_level,
+            "max_level": MAX_POWER_LEVEL * 2,
+            "track_max": MAX_POWER_LEVEL,
+            "next_cost": power_cost(power_level) if power_level < MAX_POWER_LEVEL else None,
+        }
+
+    return {
+        "attribute_points": int(game.get("attribute_points", 0)),
+        "attributes": [card(key) for key in ATTRIBUTE_IDS],
+        "powers": [card(key) for key in POWER_IDS],
+        "arena": {
+            "damage_mul": round(training["damage_mul"], 4),
+            "speed_add": round(training["speed_add"], 2),
+            "stamina_regen_mul": round(training["stamina_regen_mul"], 4),
+        },
+    }
+
+
 def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
     """Return only the Mini App fields that a player is allowed to see."""
     # Imported lazily: game_engine imports this module, so a top-level import
@@ -540,6 +704,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "boss_kills": int(game.get("boss_kills", 0)),
             "chapter": game["chapter"],
             "best_chapter": int(game.get("best_chapter", 1)),
+            "evil_tier": int(game.get("evil_tier", 1)),
         },
         "character": character,
         "roster": [character_card(cid, game) for cid in CHARACTERS],
@@ -563,6 +728,7 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "focus": int(game.get("focus", 0)),
             "max_focus": MAX_FOCUS,
             "power": int(game.get("power", 0)),
+            **training_view(game),
         },
         "quest": {
             "chapter": game["chapter"],
@@ -581,6 +747,11 @@ def public_player_view(player: dict[str, Any]) -> dict[str, Any]:
             "ability": enemy.get("ability", ""),
             "level": enemy.get("level", game["chapter"]),
             "boss": bool(enemy.get("boss", False)),
+            # The gate this evil guards decides the arena backdrop, and the
+            # evil level scales its stats — the UI shows both.
+            "scene": enemy.get("scene", DEFAULT_ENEMY["scene"]),
+            "gate": enemy.get("gate", DEFAULT_ENEMY["gate"]),
+            "evil_level": int(enemy.get("evil_level", game.get("evil_tier", 1))),
             "intent": intent,
         },
         "battle": {
@@ -652,9 +823,9 @@ CHARACTERS: dict[str, dict[str, Any]] = {
         "element": "fire",
         "art": "char-emberblade",
         "cost": 0,
-        "hp": 24,
+        "hp": 44,
         "energy": 5,
-        "power": 1,
+        "power": 2,
         "blurb": "A balanced brawler whose specials set the enemy alight.",
         "attacks": {
             "strike": {
@@ -686,9 +857,9 @@ CHARACTERS: dict[str, dict[str, Any]] = {
         "element": "ice",
         "art": "char-frostward",
         "cost": 260,
-        "hp": 30,
+        "hp": 56,
         "energy": 4,
-        "power": 0,
+        "power": 2,
         "blurb": "Tanky. Her special freezes the enemy so it loses a whole turn.",
         "attacks": {
             "strike": {
@@ -720,9 +891,9 @@ CHARACTERS: dict[str, dict[str, Any]] = {
         "element": "wind",
         "art": "char-stormcaller",
         "cost": 420,
-        "hp": 22,
+        "hp": 40,
         "energy": 6,
-        "power": 1,
+        "power": 3,
         "blurb": "Fast and cheap to run: the special strikes twice and gives Energy back.",
         "attacks": {
             "strike": {
@@ -754,9 +925,9 @@ CHARACTERS: dict[str, dict[str, Any]] = {
         "element": "arcane",
         "art": "char-arcanist",
         "cost": 640,
-        "hp": 22,
+        "hp": 42,
         "energy": 6,
-        "power": 2,
+        "power": 4,
         "blurb": "Glass cannon. Her special pierces wards and heals her for half the damage.",
         "attacks": {
             "strike": {
@@ -788,9 +959,9 @@ CHARACTERS: dict[str, dict[str, Any]] = {
         "element": "shadow",
         "art": "char-voidreaper",
         "cost": 950,
-        "hp": 26,
+        "hp": 50,
         "energy": 5,
-        "power": 3,
+        "power": 5,
         "blurb": "Late-game monster: the special drains life and charges Focus instantly.",
         "attacks": {
             "strike": {
@@ -830,10 +1001,12 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "fire",
         "art": "mob-ash-warden",
         "emoji": "🔥",
-        "hp": 18,
-        "attack": 5,
-        "hp_growth": 6,
+        "hp": 26,
+        "attack": 6,
+        "hp_growth": 7,
         "attack_growth": 1,
+        "scene": "bg-ember",
+        "gate": "The Ember Gate",
         "ability": "Cinder Aura — its Heavy Blow leaves you scorched.",
         "pattern": ("slash", "slash", "heavy"),
     },
@@ -842,10 +1015,12 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "arcane",
         "art": "mob-obsidian-herald",
         "emoji": "🗿",
-        "hp": 20,
-        "attack": 5,
-        "hp_growth": 6,
+        "hp": 28,
+        "attack": 6,
+        "hp_growth": 7,
         "attack_growth": 1,
+        "scene": "bg-arcane",
+        "gate": "The Obsidian Gate",
         "ability": "Rift Drain — siphons your Energy so you cannot swing.",
         "pattern": ("slash", "drain", "heavy"),
     },
@@ -854,10 +1029,12 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "shadow",
         "art": "mob-rift-stalker",
         "emoji": "🜂",
-        "hp": 22,
-        "attack": 6,
-        "hp_growth": 7,
+        "hp": 30,
+        "attack": 7,
+        "hp_growth": 8,
         "attack_growth": 1,
+        "scene": "bg-void",
+        "gate": "The Rift Gate",
         "ability": "Mend — it knits itself back together if you let it.",
         "pattern": ("slash", "heavy", "mend"),
     },
@@ -866,10 +1043,12 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "ice",
         "art": "mob-frost-revenant",
         "emoji": "❄️",
-        "hp": 26,
-        "attack": 6,
-        "hp_growth": 7,
+        "hp": 34,
+        "attack": 7,
+        "hp_growth": 9,
         "attack_growth": 2,
+        "scene": "bg-frost",
+        "gate": "The Frost Gate",
         "ability": "Rime Grip — heavy, slow, and it drains Energy too.",
         "pattern": ("heavy", "slash", "drain"),
     },
@@ -878,10 +1057,12 @@ MONSTERS: dict[str, dict[str, Any]] = {
         "element": "shadow",
         "art": "mob-ebon-colossus",
         "emoji": "🌑",
-        "hp": 40,
-        "attack": 8,
-        "hp_growth": 11,
+        "hp": 52,
+        "attack": 10,
+        "hp_growth": 13,
         "attack_growth": 2,
+        "scene": "bg-colossus",
+        "gate": "The Colossus Gate",
         "boss": True,
         "ability": "Rift Quake — a boss slam that flattens an unguarded hero.",
         "pattern": ("slash", "heavy", "drain", "quake"),

@@ -1,16 +1,25 @@
-/* ChronicleRift — Arena v4
- * A real-time, landscape, 3D fighting engine.
+/* ChronicleRift — Arena v5
+ * A real-time, landscape fighting engine with Shadow-Fight-style fighters.
  *
- * Fighters are low-poly jointed puppets (pelvis, torso, neck, head, two-bone
- * arms and legs, cloth cape and a weapon welded to the hand) rendered with
- * Three.js when WebGL is available, with a full 2D canvas fallback otherwise.
- * Every animation moves real joints: the sword travels with the arm, abilities
- * carry the body across the floor, and hits land only when an active hitbox
- * overlaps a hurtbox.
+ * Every fighter is a fully articulated rig drawn layer by layer with real
+ * volume — head + hair, chest plate, pauldrons, two-bone arms with fists,
+ * two-bone legs with feet, a flowing cape and a weapon welded to the hand
+ * (sword, spear + shield, twin sabers, grimoire or scythe; monsters get
+ * claws, horns, tails and stone gauntlets). Nothing is a flat picture: legs
+ * march with heel-lifts, arms swing from the shoulder, the chest breathes,
+ * body weight shifts, and the weapon keeps moving while you idle.
+ *
+ * The rig is shared by both renderers: the 2D engine draws it straight to the
+ * canvas (crisp at any resolution, always works), the 3D engine billsboards
+ * the same animated rig inside a lit Three.js arena. The 2D backdrop reacts
+ * to which gate the boss guards — embers, snow, rain, fireflies and petals
+ * drift past fog banks with flickering torch light.
  *
  * The simulation runs on a fixed 120 Hz step (rendered every frame) so the
  * fight stays smooth even on phones, and attack inputs are buffered so a tap
- * during recover chains into the next swing instead of being dropped.
+ * during recover chains into the next swing instead of being dropped. Heavy
+ * hits punch the camera; ultimates slow time and zoom in for one cinematic
+ * frame before the explosion lands.
  */
 (() => {
   "use strict";
@@ -19,7 +28,11 @@
   const GRAVITY = 1800;
   const FIGHTER_H = 116; // world units tall for a 1.0-scale hero
   const HURT_W = 46;
-  const POSE_KEYS = ["head", "torso", "armF", "armB", "legF", "legB", "bob", "rot", "dip", "breath"];
+  const POSE_KEYS = [
+    "head", "headZ", "torso", "torsoY", "armF", "armFE", "handF",
+    "armB", "armBE", "handB", "legF", "legFK", "footF",
+    "legB", "legBK", "footB", "bob", "rot", "dip", "breath", "glow", "crouch",
+  ];
 
   const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -37,13 +50,36 @@
    * skins — shared by the 2D and 3D renderers
    * ================================================================== */
   const SKINS = {
-    fire:   { armor: "#7a4229", armorHi: "#c07a41", armorLo: "#2e150f", cloth: "#a3391b", steel: "#8a7360" },
-    ice:    { armor: "#2f5673", armorHi: "#6f9fc4", armorLo: "#10202c", cloth: "#1d6f92", steel: "#7f95a8" },
-    wind:   { armor: "#33654c", armorHi: "#6fb08a", armorLo: "#132a1f", cloth: "#2f7d55", steel: "#8aa08c" },
-    arcane: { armor: "#463871", armorHi: "#8474c4", armorLo: "#1b1530", cloth: "#5a3f96", steel: "#8d86a8" },
-    shadow: { armor: "#4d2747", armorHi: "#96518a", armorLo: "#1c0e1b", cloth: "#7a1f52", steel: "#a2839a" },
+    fire: {
+      armor: "#7a4229", armorHi: "#c07a41", armorLo: "#2e150f", cloth: "#a3391b", steel: "#8a7360",
+      rim: "#ffb46e", hair: "#3a1207", flesh: "#c98a5e", glow: "#ff7a2a", weapon: "sword",
+    },
+    ice: {
+      armor: "#2f5673", armorHi: "#6f9fc4", armorLo: "#10202c", cloth: "#1d6f92", steel: "#7f95a8",
+      rim: "#aee6ff", hair: "#d9f2ff", flesh: "#cfe0ee", glow: "#6fd2ff", weapon: "spear",
+    },
+    wind: {
+      armor: "#33654c", armorHi: "#6fb08a", armorLo: "#132a1f", cloth: "#2f7d55", steel: "#8aa08c",
+      rim: "#b6ffcf", hair: "#1d3a28", flesh: "#c9a06e", glow: "#6cff9e", weapon: "sabers",
+    },
+    arcane: {
+      armor: "#463871", armorHi: "#8474c4", armorLo: "#1b1530", cloth: "#5a3f96", steel: "#8d86a8",
+      rim: "#cfb6ff", hair: "#241645", flesh: "#d2b8e6", glow: "#a97aff", weapon: "tome",
+    },
+    shadow: {
+      armor: "#4d2747", armorHi: "#96518a", armorLo: "#1c0e1b", cloth: "#7a1f52", steel: "#a2839a",
+      rim: "#ff9fd6", hair: "#180a15", flesh: "#b9a8c9", glow: "#ff5ec0", weapon: "scythe",
+    },
   };
   const skinFor = (el) => SKINS[el] || SKINS.arcane;
+
+  /* Monster silhouettes — beasts run lower on clawed paws, brutes tower in
+     stone plates. The rig picks a body plan from `build`. */
+  const BODIES = {
+    hero:  { torso: 1.0, shoulder: 0.98, hip: 1.0, leg: 1.0, arm: 1.0, head: 1.0, hunch: 0.02, horn: 0, tail: 0, claws: 0 },
+    beast: { torso: 0.92, shoulder: 0.86, hip: 0.94, leg: 0.88, arm: 0.9, head: 1.06, hunch: 0.16, horn: 1, tail: 1, claws: 1 },
+    brute: { torso: 1.22, shoulder: 1.24, hip: 1.02, leg: 0.92, arm: 1.16, head: 0.86, hunch: 0.08, horn: 1, tail: 0, claws: 0 },
+  };
 
   /* angle convention: 0 points straight down, positive swings forward (+x) */
   function jointAt(p, ang, len) {
@@ -271,6 +307,7 @@
       this.isPlayer = !!cfg.isPlayer;
       this.build = cfg.build || "hero";
       this.stats = cfg.stats;
+      this.staminaRegenMul = (cfg.stats && cfg.stats.staminaRegenMul) || 1;
       this.artFacing = cfg.artFacing || 1; // which way the artwork looks
       this.art = cfg.art || null; // official key art used as the fighter sprite
       this.scale = cfg.scale || 1; // heroes 1.0, monsters larger, bosses largest
@@ -308,10 +345,24 @@
       this.stepT = 0;
       this.ghosts = [];
       this.squash = 0; // landing squash-and-stretch
+      this.roar = 0; // heavy-weapon ignition glow, decays in stepFighter
+      this.trail = [];
       this.wasAir = false;
-      // skeletal pose (radians, except bob/dip in world units and breath as a scale)
-      this.pose = { head: 0, torso: 0, armF: 0, armB: 0, legF: 0, legB: 0, bob: 0, rot: 0, dip: 0, breath: 1 };
-      this.target = { ...this.pose };
+      // skeletal pose (radians; bob/dip in world units, breath as a scale)
+      this.pose = {};
+      this.target = {};
+      for (const key of POSE_KEYS) { this.pose[key] = 0; this.target[key] = 0; }
+      this.pose.breath = 1;
+      this.target.breath = 1;
+      this.skin = skinFor(cfg.element);
+      this.body = BODIES[cfg.build] || BODIES.hero;
+      this.weapon = (BODIES[cfg.build] || BODIES.hero).claws ? "claws" : (this.skin.weapon || "sword");
+      // verlet cloth: cape anchors at the neck, hair at the crown — each is a
+      // small chain of points that lag behind the body for secondary motion
+      this.cape = [];
+      this.hair = [];
+      for (let i = 0; i < 5; i += 1) this.cape.push({ x: 0, y: 0, px: 0, py: 0, init: false });
+      for (let i = 0; i < 3; i += 1) this.hair.push({ x: 0, y: 0, px: 0, py: 0, init: false });
     }
 
     get busy() {
@@ -329,10 +380,11 @@
    * 3D renderer (Three.js) — low-poly jointed puppets, GPU particles
    * ================================================================== */
   const ENV3D = {
-    "bg-ember":  { sky: 0x201009, fog: 0x150b07, ground: 0x181009, accent: 0xff8a3c, mote: 0xffb066, hemiSky: 0xffb27a },
-    "bg-frost":  { sky: 0x0a1522, fog: 0x08111c, ground: 0x0d1622, accent: 0x7fd8ff, mote: 0xbfeaff, hemiSky: 0x9fd4ff },
-    "bg-arcane": { sky: 0x130d24, fog: 0x0e091a, ground: 0x131020, accent: 0xb48bff, mote: 0xd0b8ff, hemiSky: 0xb9a4ff },
-    "bg-void":   { sky: 0x170a1c, fog: 0x0f0714, ground: 0x130b16, accent: 0xff6ac1, mote: 0xffa8d8, hemiSky: 0xd89adf },
+    "bg-ember":    { sky: 0x201009, fog: 0x150b07, ground: 0x181009, accent: 0xff8a3c, mote: 0xffb066, hemiSky: 0xffb27a, moteVy: 14, rain: 0 },
+    "bg-frost":    { sky: 0x0a1522, fog: 0x08111c, ground: 0x0d1622, accent: 0x7fd8ff, mote: 0xbfeaff, hemiSky: 0x9fd4ff, moteVy: -26, rain: 0 },
+    "bg-arcane":   { sky: 0x130d24, fog: 0x0e091a, ground: 0x131020, accent: 0xb48bff, mote: 0xd0b8ff, hemiSky: 0xb9a4ff, moteVy: -8, rain: 0 },
+    "bg-void":     { sky: 0x170a1c, fog: 0x0f0714, ground: 0x130b16, accent: 0xff6ac1, mote: 0xffa8d8, hemiSky: 0xd89adf, moteVy: 2, rain: 0 },
+    "bg-colossus": { sky: 0x120a12, fog: 0x0b060d, ground: 0x120d14, accent: 0xff4d5e, mote: 0xff9a86, hemiSky: 0xa6789f, moteVy: -4, rain: 1 },
   };
 
   class Renderer3D {
@@ -583,8 +635,8 @@
         env.add(peak);
       }
 
-      // drifting ambient motes (embers / frost / sparks)
-      const COUNT = 110;
+      // drifting ambient motes (embers rise, snow falls, fireflies blink)
+      const COUNT = 130;
       const pos = new Float32Array(COUNT * 3);
       this.moteData = [];
       for (let i = 0; i < COUNT; i += 1) {
@@ -595,6 +647,24 @@
         pos[i * 3 + 1] = y;
         pos[i * 3 + 2] = z;
         this.moteData.push({ vy: rand(6, 26), ph: rand(0, Math.PI * 2) });
+      }
+      // rain streaks (activated by the Colossus Gate scene)
+      {
+        const R = 260;
+        const rp = new Float32Array(R * 6);
+        this.rainData = [];
+        for (let i = 0; i < R; i += 1) {
+          const x = rand(-900, 900); const y = rand(0, 520); const z = rand(-460, 260);
+          rp[i * 6] = x; rp[i * 6 + 1] = y; rp[i * 6 + 2] = z;
+          rp[i * 6 + 3] = x + 5; rp[i * 6 + 4] = y - 26; rp[i * 6 + 5] = z;
+          this.rainData.push({ x, y, z });
+        }
+        const rg = new T.BufferGeometry();
+        rg.setAttribute("position", new T.BufferAttribute(rp, 3));
+        this.rainMat = new T.LineBasicMaterial({ color: 0x9fb8ff, transparent: true, opacity: 0 });
+        this.rain = new T.LineSegments(rg, this.rainMat);
+        this.rain.frustumCulled = false;
+        env.add(this.rain);
       }
       const moteGeo = new T.BufferGeometry();
       moteGeo.setAttribute("position", new T.BufferAttribute(pos, 3));
@@ -681,6 +751,9 @@
       if (this.sceneName === name) return;
       this.sceneName = name;
       const env = ENV3D[name] || ENV3D["bg-ember"];
+      this.moteVy = env.moteVy || 14;
+      this.moteBlink = name === "bg-void";
+      if (this.rainMat) this.rainMat.opacity = env.rain ? 0.34 : 0;
       this.scene.background = new window.THREE.Color(env.sky);
       this.scene.fog.color.set(env.fog);
       if (this.skyMat.map) this.skyMat.map.dispose();
@@ -704,6 +777,21 @@
     stepEnv(dt, t) {
       const d = dt || 1 / 60;
       this.pillarGroup.rotation.y += d * 0.02;
+      // gate ambience: the Colossus Gate hurls rain, others drift motes only
+      const envDef = ENV3D[this.sceneName] || ENV3D["bg-ember"];
+      if (envDef.rain && this.rain) {
+        const rp = this.rain.geometry.attributes.position.array;
+        for (let i = 0; i < this.rainData.length; i += 1) {
+          const r = this.rainData[i];
+          r.y -= 1250 * d;
+          r.x += 190 * d;
+          if (r.y < -10) { r.y = rand(420, 620); r.x = rand(-1000, 700); }
+          if (r.x > 950) r.x -= 1900;
+          rp[i * 6] = r.x; rp[i * 6 + 1] = r.y; rp[i * 6 + 2] = r.z;
+          rp[i * 6 + 3] = r.x + 5; rp[i * 6 + 4] = r.y - 26; rp[i * 6 + 5] = r.z;
+        }
+        this.rain.geometry.attributes.position.needsUpdate = true;
+      }
       for (let i = 0; i < this.rockList.length; i += 1) {
         const r = this.rockList[i];
         r.a += r.sp * d * 2;
@@ -937,33 +1025,39 @@
       return { core, halo, active: false, owner: null };
     }
 
-    /* ---------------- fighter rigs — official art on animated 3D planes ---- *
-     * The fighters you see are the game's real key art, mounted on camera-  *
-     * facing planes inside the 3D stage. Every state (windup, swing, dash,  *
-     * knockback, KO) animates the whole sprite with anticipation, squash &  *
-     * stretch, lean and fall — so hero and monster always look "original".  *
-     * --------------------------------------------------------------------- */
+    /* ---------------- fighter rigs — the animated Shadow rig on a lit
+     * billboard plane. The SAME articulated skeleton the 2D engine paints
+     * (legs marching, elbows swinging, cloth flying, weapon glowing) is
+     * rendered to a small canvas every frame and pasted onto a camera-facing
+     * plane inside the 3D arena, so limbs truly move in both renderers. */
     buildRig(f) {
       const T = window.THREE;
       const H = FIGHTER_H * f.scale;
+      // offscreen canvas: ~2.5 px per world unit keeps the rig crisp when the
+      // camera closes in, without wasting fill on weak phones
+      const PX = Math.max(160, Math.round(H * 2.5));
+      const c = makeCanvas(Math.round(PX * 0.92), PX);
+      const rigCtx = c.getContext("2d");
+      const tex = new T.CanvasTexture(c);
+      if (T.SRGBColorSpace) tex.colorSpace = T.SRGBColorSpace;
+      tex.minFilter = T.LinearFilter;
+      tex.generateMipmaps = false;
 
-      const root = new T.Group(); // feet pivot; carries fall/lean in screen space
-      const mir = new T.Group();  // facing mirror + squash & stretch
-      const spr = new T.Group();  // art plane + overlays
+      const root = new T.Group(); // feet pivot in the 3D stage
+      const mir = new T.Group();
+      const spr = new T.Group();
       root.add(mir);
       mir.add(spr);
 
       const geo = new T.PlaneGeometry(1, 1);
       const bodyMat = new T.MeshBasicMaterial({
-        transparent: true, depthWrite: false, alphaTest: 0.02, toneMapped: false,
+        map: tex, transparent: true, depthWrite: false, alphaTest: 0.02, toneMapped: false,
       });
       const body = new T.Mesh(geo, bodyMat);
-      const flashMat = new T.MeshBasicMaterial({
-        transparent: true, opacity: 0, depthWrite: false, alphaTest: 0.02, toneMapped: false,
-      });
-      const flash = new T.Mesh(geo, flashMat);
-      flash.position.z = 3;
-      // elemental rim aura behind the art sells the "living" feel
+      body.position.y = (PX / 2.5) * 0.5;
+      body.scale.set((PX * 0.92) / 2.5, PX / 2.5, 1);
+      mir.add(body);
+      // elemental rim aura behind the rig sells the "living" feel
       const auraMat = new T.SpriteMaterial({
         map: this.glowTex, color: f.kit.color, transparent: true, opacity: 0,
         blending: T.AdditiveBlending, depthWrite: false,
@@ -971,7 +1065,7 @@
       const aura = new T.Sprite(auraMat);
       aura.position.set(0, H * 0.52, -8);
       aura.scale.set(H * 1.5, H * 1.5, 1);
-      spr.add(body, flash, aura);
+      spr.add(aura);
 
       // grounded blob shadow that shrinks as the fighter rises
       const blobGeo = new T.PlaneGeometry(1, 1);
@@ -987,24 +1081,33 @@
       const wardMat = new T.MeshBasicMaterial({
         color: 0x7fd8ff, transparent: true, opacity: 0.1, depthWrite: false, side: T.DoubleSide,
       });
-      const ward = new T.Mesh(new T.SphereGeometry(0.52 * H, 20, 16), wardMat);
+      const ward = new T.Mesh(new T.SphereGeometry(0.60 * H, 20, 16), wardMat);
       ward.position.set(0, 0.55 * H, 0);
       ward.visible = false;
       this.scene.add(ward);
 
       this.scene.add(root);
       const rig = {
-        f, H, root, mir, spr, body, bodyMat, flash, flashMat, aura, auraMat,
-        blob, blobMat, ward, wardMat, geo, blobGeo, textured: false, frozen: false,
+        f, H, root, mir, spr, body, bodyMat, aura, auraMat,
+        blob, blobMat, ward, wardMat, geo, blobGeo, tex, c, rigCtx, px: PX,
       };
       rig.dispose = () => {
         this.scene.remove(root, blob, ward);
         geo.dispose();
         blobGeo.dispose();
         ward.geometry.dispose();
-        [bodyMat, flashMat, auraMat, blobMat, wardMat].forEach((m) => m.dispose());
+        tex.dispose();
+        [bodyMat, auraMat, blobMat, wardMat].forEach((m) => m.dispose());
       };
       return rig;
+    }
+
+    /* Repaint the rig's offscreen canvas and hand it to the GPU. */
+    paintRig(rig, dt) {
+      const { rigCtx: g, c, px, f } = rig;
+      g.clearRect(0, 0, c.width, c.height);
+      drawRig(g, f, c.width * 0.52, c.height - 4, px * 0.94, { dt: dt || 1 / 60 });
+      rig.tex.needsUpdate = true;
     }
 
     rigFor(f) {
@@ -1034,62 +1137,28 @@
       this.trailArc = new WeakMap();
     }
 
-    /* Attach the (already preloaded & decoded) key art once it is ready. */
-    textureRig(rig) {
-      if (rig.textured) return;
-      const T = window.THREE;
-      const entry = loadFighterArt(rig.f.art);
-      if (!entry.ready) return;
-      rig.textured = true;
-      const tex = new T.CanvasTexture(entry.img);
-      if (T.SRGBColorSpace) tex.colorSpace = T.SRGBColorSpace;
-      tex.anisotropy = 4;
-      rig.bodyMat.map = tex;
-      rig.bodyMat.needsUpdate = true;
-      rig.flashTexWhite = new T.CanvasTexture(entry.white);
-      rig.flashTexIce = new T.CanvasTexture(entry.cyan);
-      rig.flashMat.map = rig.flashTexWhite;
-      rig.flashMat.needsUpdate = true;
-      // size the plane to the art; the painted figure fills ~92% of the frame
-      const aspect = entry.img.width / entry.img.height;
-      const ph = rig.H * 1.22;
-      rig.sprH = ph;
-      rig.body.scale.set(ph * aspect, ph, 1);
-      rig.body.position.y = ph * 0.5 - rig.H * 0.05;
-      rig.flash.scale.copy(rig.body.scale);
-      rig.flash.position.copy(rig.body.position);
-    }
-
     updateRig(f, dt) {
-      void dt;
       const rig = this.rigFor(f);
-      this.textureRig(rig);
-      if (!rig.textured) rig.auraMat.opacity = 0.3; // visible as a glow until art lands
       const sp = spritePose(f);
       const H = rig.H;
 
+      // the articulated rig already carries lean, squash, fall and twirl —
+      // the billboard plane only tracks the fighter and keeps a landing stretch
+      this.paintRig(rig, dt);
       rig.root.position.set(f.x, f.y, 0);
-      rig.root.rotation.z = f.facing * (sp.lean - sp.rot);
-      rig.root.rotation.y = sp.spin;
-      rig.mir.scale.x = (f.facing * (f.artFacing || 1)) * sp.squashX;
+      rig.mir.scale.x = sp.squashX;
       rig.mir.scale.y = sp.squashY;
-      rig.spr.position.y = sp.bob;
 
       const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
       rig.bodyMat.opacity = alpha;
 
-      // hit flash / freeze coat: a pre-tinted copy of the exact silhouette
-      const frozen = f.freeze > 0;
-      const fo = Math.max(f.flash * 0.85, frozen ? 0.4 : 0) * alpha;
-      if (frozen !== rig.frozen) {
-        rig.frozen = frozen;
-        if (rig.flashTexWhite) {
-          rig.flashMat.map = frozen ? rig.flashTexIce : rig.flashTexWhite;
-          rig.flashMat.needsUpdate = true;
-        }
+      // cinematic push-in mirrors the 2D engine on heavy/ultimate impacts
+      if (this.a.cineT > 0) {
+        const k = Math.sin(Math.min(1, this.a.cineT / Math.max(0.01, this.a.cineDur)) * Math.PI);
+        rig.root.scale.setScalar(1 + k * 0.06);
+      } else if (rig.root.scale.x !== 1) {
+        rig.root.scale.setScalar(1);
       }
-      rig.flashMat.opacity = fo;
-      rig.flash.visible = fo > 0.02;
 
       // elemental aura: empower, burn, or casting
       const casting = f.state === "ability" && f.phase === "windup";
@@ -1145,37 +1214,8 @@
         this.charge.get(f).visible = false;
       }
 
-      // blade trail sweeps in front of the sprite while the swing is active
-      const swing = (f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-        f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !sp.spin;
-      if (swing) {
-        const a = f.attack;
-        const prog = clamp((f.stateT - a.windup) / (a.active || 0.12), 0, 1);
-        this.tmp.set(f.x + f.facing * H * 0.3, f.y + H * 0.6, 18);
-        let arc = this.trailArc.get(f);
-        if (!arc) {
-          const T = window.THREE;
-          const m = new T.Mesh(
-            new T.RingGeometry(0.5, 0.82, 26, 1, 0, 1.6),
-            new T.MeshBasicMaterial({
-              color: f.kit.glow, transparent: true, opacity: 0.6, side: T.DoubleSide,
-              blending: T.AdditiveBlending, depthWrite: false,
-            })
-          );
-          this.scene.add(m);
-          arc = { m };
-          this.trailArc.set(f, arc);
-          this.trailArcs.push(arc);
-        }
-        arc.m.visible = true;
-        arc.m.position.copy(this.tmp);
-        arc.m.rotation.z = (Math.PI / 2) - (0.9 - prog * 1.8) * f.facing;
-        const sc = H * (1.15 - prog * 0.4);
-        arc.m.scale.set(sc, sc, 1);
-        arc.m.material.opacity = 0.6 * (1 - prog);
-      } else if (this.trailArc.has(f)) {
-        this.trailArc.get(f).m.visible = false;
-      }
+      // the weapon's light trail is painted inside the rig texture itself,
+      // so it stays locked to the blade from every camera angle
     }
 
     /* ---------------- camera ---------------- */
@@ -1196,10 +1236,18 @@
       const shake = a.shake;
       const sx = shake ? rand(-shake, shake) * 0.5 : 0;
       const sy = shake ? rand(-shake, shake) * 0.25 : 0;
-      this.camera.position.set(this.cam.x + sx, this.cam.y + sy, this.cam.dist);
-      this.camera.lookAt(this.cam.x, 58, 0);
+      // cinematic beat pulls the camera in (kept gentle so mobile aiming
+      // never fights the stick)
+      let cineK = 0;
+      if (a.cineT > 0) {
+        cineK = Math.sin(Math.min(1, a.cineT / Math.max(0.01, a.cineDur)) * Math.PI);
+      }
+      this.cam.dist = Math.max(360, this.cam.dist * (1 - cineK * 0.07));
+      this.camera.position.set(this.cam.x + sx, this.cam.y + sy + cineK * 10, this.cam.dist);
+      this.camera.lookAt(this.cam.x, 58 + cineK * 6, 0);
       // impact zoom: heavy blows punch the lens in for a frame or two
-      this.camera.fov = 42 - (a.fovPunch || 0);
+      this.camera.fov = 42 - (a.fovPunch || 0) - cineK * 3.2;
+      this.camera.rotation.z = cineK * 0.014 * (a.player && a.player.x < a.enemy.x ? 1 : -1);
       this.camera.updateProjectionMatrix();
     }
 
@@ -1258,9 +1306,11 @@
         const win = !a.player.dead;
         this.banner.classList.toggle("is-win", win);
         this.banner.classList.toggle("is-lose", !win);
-        if (this.banner.firstChild.textContent !== (win ? "K.O.!" : "DEFEAT")) {
-          this.banner.firstChild.textContent = win ? "K.O.!" : "DEFEAT";
-          this.banner.lastChild.textContent = win ? "Chapter cleared" : "You wake at camp, fully healed";
+        if (this.banner.firstChild.textContent !== (win ? "VICTORY!" : "DEFEAT")) {
+          this.banner.firstChild.textContent = win ? "VICTORY!" : "DEFEAT";
+          this.banner.lastChild.textContent = win
+            ? `The ${a.enemy ? a.enemy.name : "gate guardian"} falls — chapter cleared`
+            : "You wake at camp, fully healed";
           this.banner.classList.remove("is-shown");
           void this.banner.offsetWidth;
         }
@@ -1296,16 +1346,29 @@
         }
       }
 
-      // ambient motes drift
+      // ambient motes drift with the scene's weather
       const pos = this.moteGeo.attributes.position.array;
       const t = a.time;
+      const vy = this.moteVy || 14;
       for (let i = 0; i < this.moteData.length; i += 1) {
         const m = this.moteData[i];
-        pos[i * 3 + 1] += m.vy * (dt || 1 / 60);
-        pos[i * 3] += Math.sin(t * 0.6 + m.ph) * 0.3;
-        if (pos[i * 3 + 1] > 360) pos[i * 3 + 1] = 0;
+        pos[i * 3 + 1] += (vy * (0.5 + ((i % 7) / 10)) + m.vy * 0.25) * (dt || 1 / 60);
+        pos[i * 3] += Math.sin(t * 0.6 + m.ph) * 0.3 + (vy < 0 ? 0.2 : 0);
+        if (pos[i * 3 + 1] > 360) pos[i * 3 + 1] = -4;
+        if (pos[i * 3 + 1] < -6) pos[i * 3 + 1] = 358;
+      }
+      if (this.moteBlink) {
+        this.moteMat.opacity = 0.45 + Math.sin(t * 2.6) * 0.18;
+      } else {
+        this.moteMat.opacity = 0.55;
       }
       this.moteGeo.attributes.position.needsUpdate = true;
+      // Colossus Gate lightning: the whole arena strobes for a beat
+      if ((a.lightningFlash || 0) > 0 && this.sceneName === "bg-colossus") {
+        this.accentLight.intensity = 6 + a.lightningFlash * 22 + Math.random() * 3;
+      } else {
+        this.accentLight.intensity = approach(this.accentLight.intensity, 2.2, 6, dt || 1 / 60);
+      }
 
       // consume sim fx
       for (let i = 0; i < a.fx.length; i += 1) {
@@ -1580,21 +1643,666 @@
     return o;
   }
 
-  /* Draw one fighter's key art with the full transform stack. `image` may
-     be the original art or a pre-tinted silhouette (flash / after-image). */
-  function drawArtFighter(ctx, f, entry, image, o, H, zoom, alpha) {
-    if (!image) return;
-    const aspect = image.width / image.height;
-    const ph = H * 1.22;
+  /* ================================================================== *\
+   * the rig — Shadow-Fight-style articulated fighter, shared by 2D + 3D
+   *
+   * Everything is computed in a normalized space: feet at (0, 0), the crown
+   * of the head at y = -100. Renderers just multiply by their own pixel
+   * height, so the same skeleton marches, swings and breathes identically in
+   * the crisp 2D canvas and inside the lit 3D arena (billboarded plane).
+   * Layers back-to-front: aura → back limbs → cape/tail → torso armor →
+   * front leg → head + hair → front arm + weapon → rim light → glow.
+   * ================================================================== */
+  const DOWN = (a) => ({ x: Math.sin(a), y: Math.cos(a) }); // 0 = hangs down, + = toward foe
+  const UP = (a) => ({ x: Math.sin(a), y: -Math.cos(a) }); // 0 = straight up
+  const add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
+  const bobFor = (f) => f.pose.bob;
+
+  /* pose world-unit bob/dip are tuned for a 116-unit tall fighter; scale
+     them into the 100-unit normalized rig space */
+  const K = 100 / FIGHTER_H;
+
+  function rigSkeleton(f) {
+    const p = f.pose;
+    const b = f.body;
+    const s = {
+      hipX: p.torsoY * 3.2, hipY: -46 - p.bob * K + p.dip * K * 0.7 + p.crouch * 4.2,
+    };
+    // spine: pelvis → chest → neck, tilted by torso lean
+    const chestV = UP(p.torso);
+    s.chest = add({ x: s.hipX, y: s.hipY }, chestV, 20 * b.torso);
+    s.neck = add(s.chest, chestV, 5.5 * b.torso);
+    const headV = UP(p.torso * 0.5 + p.head * 0.6);
+    s.head = add(s.neck, headV, (5.2 + 1.1 * p.breath) * b.head);
+    const shoulderV = DOWN(p.torso); // perpendicular-ish to the spine, toward the foe
+    s.shF = add(s.chest, { x: shoulderV.y, y: -shoulderV.x }, 2.6 * b.shoulder);
+    s.shF = { x: s.shF.x + 1.6, y: s.chest.y - 6.4 * b.shoulder + chestV.x * 1.5 };
+    s.shB = { x: s.chest.x - 3.4, y: s.chest.y - 5.6 * b.shoulder + chestV.x * 1.5 };
+    // arms: shoulder angles are DOWN-convention, elbows relative
+    const aFU = DOWN(p.armF);
+    s.elF = add(s.shF, aFU, 12.2 * b.arm);
+    const aFL = DOWN(p.armF + p.armFE);
+    s.haF = add(s.elF, aFL, 11.6 * b.arm);
+    const aBU = DOWN(p.armB);
+    s.elB = add(s.shB, aBU, 12.2 * b.arm);
+    const aBL = DOWN(p.armB + p.armBE);
+    s.haB = add(s.elB, aBL, 11.6 * b.arm);
+    // legs: hip angles DOWN-convention, knees relative (negative = heel up)
+    const lFU = DOWN(p.legF);
+    s.knF = add({ x: s.hipX + 1.6, y: s.hipY }, lFU, 15.6 * b.leg);
+    const lFL = DOWN(p.legF + p.legFK);
+    s.anF = add(s.knF, lFL, 15.4 * b.leg);
+    const lBU = DOWN(p.legB);
+    s.knB = add({ x: s.hipX - 2.2, y: s.hipY }, lBU, 15.6 * b.leg);
+    const lBL = DOWN(p.legB + p.legBK);
+    s.anB = add(s.knB, lBL, 15.4 * b.leg);
+    // the weapon lives in the front fist, welded along the forearm line
+    s.weaponAng = p.armF + p.armFE + p.handF;
+    return s;
+  }
+
+  /* Verlet chains for the cape / tail / hair — anchored to the skeleton,
+     gravity + wind + lag give them secondary motion for free. */
+  function solveChain(pts, ax, ay, seg, dt, opts) {
+    const step = Math.min(1 / 30, Math.max(1 / 240, dt || 1 / 60));
+    if (!pts.length) return;
+    pts[0].x = ax; pts[0].y = ay;
+    if (!pts[0].init) {
+      for (const q of pts) { q.x = ax; q.y = ay + seg * pts.indexOf(q); q.px = q.x; q.py = q.y; q.init = true; }
+    }
+    const g = opts.gravity ?? 430;
+    const wind = (opts.wind || 0) + (opts.flutter || 0) * Math.sin((opts.t || 0) * (opts.flutRate || 7));
+    for (let i = 1; i < pts.length; i += 1) {
+      const q = pts[i];
+      const vx = (q.x - q.px) * 0.86;
+      const vy = (q.y - q.py) * 0.86;
+      q.px = q.x; q.py = q.y;
+      q.x += vx - wind * step * step * 38 * (i / pts.length);
+      q.y += vy + g * step * step;
+      q.x -= (opts.drag || 0) * step * (i / pts.length);
+    }
+    for (let it = 0; it < 3; it += 1) {
+      for (let i = 0; i < pts.length - 1; i += 1) {
+        const a = pts[i]; const b = pts[i + 1];
+        const dx = b.x - a.x; const dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.0001;
+        const diff = (seg - d) / d / 2;
+        if (i === 0) { b.x += dx * diff * 2; b.y += dy * diff * 2; }
+        else {
+          a.x -= dx * diff; a.y -= dy * diff;
+          b.x += dx * diff; b.y += dy * diff;
+        }
+      }
+      pts[0].x = ax; pts[0].y = ay;
+    }
+  }
+
+  /* A bone with real depth: dark outline, base fill, and an offset light
+     core — reads as rounded volume instead of a flat bar. */
+  function bone(ctx, x0, y0, x1, y1, w0, w1, base, dark, hi) {
+    const mx = (x0 + x1) / 2; const my = (y0 + y1) / 2;
+    const ang = Math.atan2(y1 - y0, x1 - x0);
+    const len = Math.hypot(x1 - x0, y1 - y0);
     ctx.save();
-    ctx.globalAlpha *= alpha;
-    ctx.scale((f.facing * (f.artFacing || 1)) * o.squashX, o.squashY);
-    ctx.rotate(o.lean);
-    ctx.translate(0, -o.bob * zoom);
-    const w = ph * aspect;
-    ctx.drawImage(image, -w / 2, -ph + H * 0.05, w, ph);
+    ctx.translate(mx, my);
+    ctx.rotate(ang);
+    const g = ctx.createLinearGradient(0, -w0, 0, w1);
+    g.addColorStop(0, hi);
+    g.addColorStop(0.42, base);
+    g.addColorStop(1, dark);
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-len / 2 - w0 * 0.2, -w0 - 0.7);
+    ctx.quadraticCurveTo(0, -w1 - 1.4, len / 2 + w1 * 0.2, -w1 - 0.7);
+    ctx.quadraticCurveTo(0, w1 + 1.4, -len / 2 - w0 * 0.2, w0 + 0.7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(-len / 2, -w0);
+    ctx.quadraticCurveTo(0, -w1, len / 2, -w1);
+    ctx.quadraticCurveTo(0, w1, -len / 2, w0);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
+
+  function blob(ctx, x, y, r, base, dark) {
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(x, y, r + 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = base;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  /* the whole fighter — limbs, armor, head, hair, weapon, glow and trail.
+     `flash` (>0) paints the exact silhouette hot white like an impact coat;
+     `freeze` tints it icy. opts.alpha fades for deaths and ghosts. */
+  function drawRig(ctx, f, ox, oy, h, opts) {
+    opts = opts || {};
+    const p = f.pose;
+    const sk = f.skin;
+    const b = f.body;
+    const alpha = opts.alpha === undefined ? 1 : opts.alpha;
+    const dt = opts.dt || 1 / 60;
+    const s = rigSkeleton(f);
+    const shade = f.facing >= 0 ? 1 : 1; // rig is drawn mirrored by the ctx scale
+    void shade;
+    // breathing swells the chest plate
+    const chestR = 8.6 * b.torso * p.breath;
+
+    ctx.save();
+    ctx.globalAlpha *= alpha;
+    ctx.translate(ox, oy);
+    if (p.rot) {
+      // fall/twirl pivots at the hips so the feet leave the floor naturally
+      ctx.translate(s.hipX, s.hipY);
+      ctx.rotate(-p.rot);
+      ctx.translate(-s.hipX, -s.hipY);
+    }
+    ctx.scale(f.facing || 1, 1);
+    ctx.scale(h / 100, h / 100);
+
+    const isFlash = p.glow !== undefined && (f.flash > 0.04 || f.freeze > 0);
+    const armor = sk.armor, armorHi = sk.armorHi, armorLo = sk.armorLo;
+    const back = "rgba(8,7,16,0.92)";
+    const backHi = "rgba(64,60,96,0.9)";
+    const dark = "rgba(4,4,10,0.96)";
+
+    /* ---- 1. aura behind the body (empower / burn / casting) ---- */
+    if (opts.glow !== false && (p.glow > 0.05 || f.burn > 0 || f.shield > 0)) {
+      const warm = f.burn > 0 ? "#ff8a3c" : sk.glow;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.min(0.5, 0.14 + p.glow * 0.26 + (f.burn > 0 ? 0.1 : 0));
+      ctx.fillStyle = warm;
+      ctx.beginPath();
+      ctx.ellipse(s.chest.x, s.chest.y - 2, 26 + p.glow * 8, 44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    /* ---- 2. back limbs (deep shade) ---- */
+    bone(ctx, s.shB.x, s.shB.y, s.elB.x, s.elB.y, 3.4, 2.8, back, dark, backHi);
+    bone(ctx, s.elB.x, s.elB.y, s.haB.x, s.haB.y, 2.7, 2.2, back, dark, backHi);
+    blob(ctx, s.haB.x, s.haB.y, b.claws ? 3.0 : 2.6, back, dark);
+    bone(ctx, s.knB.x, s.knB.y, s.anB.x, s.anB.y, 3.6, 2.7, back, dark, backHi);
+    // back foot planted
+    bone(ctx, s.anB.x, s.anB.y, s.anB.x + 4.4 * Math.cos(p.footB * 0.5) + DOWN(p.legB + p.legBK).y * 1.6,
+      s.anB.y + 1.4 + p.footB, 2.1, 1.6, back, dark, backHi);
+
+    /* ---- 3. cape / tail (verlet cloth anchored to the spine) ---- */
+    solveChain(f.cape, s.chest.x - 2.4, s.chest.y - 3.2, 7.6, dt, {
+      wind: -0.5 + (f.vx * 0.004 * (f.facing || 1)), drag: Math.abs(f.vx) * 0.012,
+      t: f.animT, flutRate: 5.6, flutter: 0.55,
+    });
+    if (opts.cloth !== false) {
+      ctx.save();
+      ctx.beginPath();
+      const c0 = f.cape[0];
+      ctx.moveTo(c0.x - 5.4, c0.y - 2.2);
+      for (let qi = 0; qi < f.cape.length; qi += 1) ctx.lineTo(f.cape[qi].x - 6.5 - qi * 0.7, f.cape[qi].y);
+      for (let i = f.cape.length - 1; i >= 0; i -= 1) ctx.lineTo(f.cape[i].x + 1.5, f.cape[i].y);
+      ctx.closePath();
+      const cg = ctx.createLinearGradient(s.chest.x, s.chest.y, f.cape[f.cape.length - 1].x, f.cape[f.cape.length - 1].y);
+      cg.addColorStop(0, sk.cloth);
+      cg.addColorStop(1, "rgba(6,5,12,0.94)");
+      ctx.fillStyle = cg;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.09)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.restore();
+      if (b.tail) {
+        // beast tail: a simple springy curve that lags the hips
+        const lag = clamp(-f.vx * 0.02, -7, 7);
+        const sway = Math.sin(f.animT * 5.2) * 2.4 + bobFor(f) * 0.4;
+        ctx.save();
+        ctx.strokeStyle = dark;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(s.hipX - 3, s.hipY - 1);
+        ctx.quadraticCurveTo(s.hipX - 11 - lag, s.hipY - 4 + sway, s.hipX - 15 - lag * 1.5, s.hipY - 11 + sway * 1.6);
+        ctx.lineWidth = 4.6;
+        ctx.stroke();
+        ctx.strokeStyle = armor;
+        ctx.lineWidth = 2.6;
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    /* ---- 4. torso: pelvis, chest plate, pauldrons, belt ---- */
+    bone(ctx, s.hipX, s.hipY + 1.5, s.chest.x, s.chest.y + 4, 6.4, 7.4, armorLo, dark, armor);
+    // chest plate
+    ctx.save();
+    ctx.translate(s.chest.x, s.chest.y - 1.5);
+    ctx.rotate(-Math.asin(clamp(UP(p.torso).x, -1, 1)) * 0.55);
+    const pg = ctx.createLinearGradient(-chestR, -chestR, chestR, chestR);
+    pg.addColorStop(0, armorHi);
+    pg.addColorStop(0.5, armor);
+    pg.addColorStop(1, armorLo);
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-chestR - 1.6, -9.2);
+    ctx.quadraticCurveTo(0, -13.5, chestR + 2.6, -8.6);
+    ctx.quadraticCurveTo(chestR + 1.6, 3.5, 0, 7.2);
+    ctx.quadraticCurveTo(-chestR - 0.6, 3.5, -chestR - 1.6, -9.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = pg;
+    ctx.beginPath();
+    ctx.moveTo(-chestR, -8.6);
+    ctx.quadraticCurveTo(0, -12.5, chestR + 1.8, -8);
+    ctx.quadraticCurveTo(chestR + 0.8, 2.8, 0, 6.2);
+    ctx.quadraticCurveTo(-chestR, 2.8, -chestR, -8.6);
+    ctx.closePath();
+    ctx.fill();
+    // elemental core light in the breastplate
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = sk.glow;
+    ctx.globalAlpha = 0.42 + p.glow * 0.5;
+    ctx.beginPath();
+    ctx.arc(1.8, -1.6, 2.1 + p.glow, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    // belt
+    bone(ctx, s.hipX - 5, s.hipY - 1.6, s.hipX + 5.4, s.hipY - 1.6, 2.4, 2.2, "rgba(24,20,30,0.95)", dark, "rgba(120,110,140,0.5)");
+
+    /* ---- 5. front leg + foot ---- */
+    bone(ctx, s.knF.x, s.knF.y, s.anF.x, s.anF.y, 4.2, 3.0, armor, armorLo, armorHi);
+    const footAng = p.footF;
+    ctx.save();
+    ctx.translate(s.anF.x, s.anF.y);
+    ctx.rotate(-footAng * 0.6);
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(-2.2, -1.4);
+    ctx.lineTo(6.4, -2.2);
+    ctx.quadraticCurveTo(8.4, 0.4, 6.2, 2.0);
+    ctx.lineTo(-2.0, 2.0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = b.claws ? sk.cloth : armorHi;
+    ctx.beginPath();
+    ctx.moveTo(-1.8, -0.6);
+    ctx.lineTo(5.6, -1.3);
+    ctx.quadraticCurveTo(7.0, 0.2, 5.4, 1.0);
+    ctx.lineTo(-1.6, 1.0);
+    ctx.closePath();
+    ctx.fill();
+    if (b.claws) {
+      ctx.strokeStyle = "#e8e2f0";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 3; i += 1) {
+        ctx.beginPath(); ctx.moveTo(5.4 + i * 0.7, 0.6); ctx.lineTo(7.6 + i, 2.2); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // thigh plate
+    bone(ctx, s.hipX + 1.6, s.hipY, s.knF.x, s.knF.y, 5.6, 4.4, armor, armorLo, armorHi);
+
+    /* ---- 6. head: helmet/face, hair, horns, eyes ---- */
+    const headR = (b.head * 5.4) * (1 + 0.01);
+    // hair first (behind the skull), verlet-anchored at the crown
+    solveChain(f.hair, s.head.x - 2.2, s.head.y - 4.0, 3.6, dt, {
+      wind: -0.3 + (f.vx * 0.003 * (f.facing || 1)), drag: Math.abs(f.vx) * 0.01,
+      t: f.animT, flutRate: 9, flutter: 1.1, gravity: 320,
+    });
+    if (opts.cloth !== false && !b.claws) {
+      ctx.save();
+      ctx.strokeStyle = sk.hair;
+      ctx.lineCap = "round";
+      for (let w = 0; w < 3; w += 1) {
+        ctx.lineWidth = 3.4 - w * 0.7;
+        ctx.beginPath();
+        ctx.moveTo(s.head.x - 2.6, s.head.y - 3.2);
+        for (const q of f.hair) ctx.lineTo(q.x + (w - 1) * 1.6, q.y + w * 0.6);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // neck + skull
+    bone(ctx, s.neck.x, s.neck.y, s.head.x, s.head.y + 2, 2.6, 2.4, armorLo, dark, armor);
+    ctx.save();
+    ctx.translate(s.head.x, s.head.y);
+    ctx.rotate(-p.headZ * 0.55 - UP(p.torso * 0.5 + p.head * 0.6).x * 0.5);
+    blob(ctx, 0, 0, headR, b.claws ? "#241a2c" : armor, dark);
+    // face plate / snout
+    ctx.fillStyle = b.claws ? "#38283e" : "rgba(18,14,26,0.95)";
+    ctx.beginPath();
+    if (b.claws) {
+      ctx.moveTo(-1, -headR * 0.4);
+      ctx.lineTo(headR + 3.4, headR * 0.1);
+      ctx.lineTo(headR + 1.4, headR * 0.8);
+      ctx.lineTo(-1, headR * 0.85);
+      ctx.closePath();
+    } else {
+      ctx.moveTo(headR * 0.25, -headR * 0.55);
+      ctx.quadraticCurveTo(headR + 1.8, -headR * 0.1, headR * 0.4, headR * 0.72);
+      ctx.lineTo(headR * 0.1, headR * 0.8);
+      ctx.closePath();
+    }
+    ctx.fill();
+    // glowing eyes — the signature shadow-fight spark
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = sk.glow;
+    ctx.globalAlpha = 0.85 + p.glow * 0.15;
+    ctx.beginPath();
+    ctx.ellipse(headR * (b.claws ? 0.6 : 0.42), -headR * 0.12, 1.7, 0.9, 0.24, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(headR * 0.42, -headR * 0.1, 3.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (b.horn) {
+      ctx.save();
+      ctx.strokeStyle = "#d9d2e6";
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(s.head.x - headR * 0.5, s.head.y - headR * 0.8);
+      ctx.quadraticCurveTo(s.head.x - headR * 1.5, s.head.y - headR * 1.9, s.head.x - headR * 0.4, s.head.y - headR * 2.3);
+      ctx.moveTo(s.head.x + headR * 0.2, s.head.y - headR * 0.95);
+      ctx.quadraticCurveTo(s.head.x + headR * 0.9, s.head.y - headR * 2.1, s.head.x + headR * 1.9, s.head.y - headR * 1.9);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // pauldron on the front shoulder (armor silhouette)
+    if (!b.claws) {
+      ctx.save();
+      const pgd = ctx.createLinearGradient(s.shF.x, s.shF.y - 4, s.shF.x, s.shF.y + 4);
+      pgd.addColorStop(0, armorHi);
+      pgd.addColorStop(1, armorLo);
+      ctx.fillStyle = pgd;
+      ctx.beginPath();
+      ctx.ellipse(s.shF.x - 0.4, s.shF.y - 2.2, 5.6 * b.shoulder, 3.6 * b.shoulder, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* ---- 7. front arm + gauntlet ---- */
+    bone(ctx, s.shF.x, s.shF.y, s.elF.x, s.elF.y, 3.8, 3.0, armor, armorLo, armorHi);
+    bone(ctx, s.elF.x, s.elF.y, s.haF.x, s.haF.y, 3.0, 2.5, armorLo, dark, armor);
+    blob(ctx, s.haF.x, s.haF.y, b.claws ? 3.2 : 2.8, armor, armorLo);
+
+    /* ---- 8. the weapon, welded to the fist, lit by the fighter's element ---- */
+    drawWeapon(ctx, f, s, armor, armorLo, armorHi);
+
+    /* ---- 9. rim light down the back edge (backlight from the arena) ---- */
+    if (opts.rim !== false) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = sk.rim;
+      ctx.globalAlpha = 0.34;
+      ctx.lineWidth = 1.15;
+      ctx.beginPath();
+      ctx.moveTo(s.shB.x - 2.4, s.shB.y - 3);
+      ctx.quadraticCurveTo(s.hipX - 7.6, (s.chest.y + s.hipY) / 2, s.knB.x - 3.4, s.knB.y);
+      ctx.moveTo(s.head.x - headR * 0.9, s.head.y - headR * 0.5);
+      ctx.quadraticCurveTo(s.neck.x - 4.5, s.neck.y, s.shB.x - 2, s.shB.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* ---- 10. hit flash / freeze coat over the exact silhouette ---- */
+    if (isFlash) {
+      const coat = f.freeze > 0 ? "rgba(150,220,255," : "rgba(255,255,255,";
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha *= Math.min(0.85, (f.freeze > 0 ? 0.4 : f.flash * 0.8));
+      ctx.strokeStyle = coat + "0.9)";
+      ctx.fillStyle = coat + "0.55)";
+      ctx.lineWidth = 1.6;
+      const hipPt = { x: s.hipX, y: s.hipY };
+      for (const segPair of [
+        [s.shB, s.elB], [s.elB, s.haB], [s.shF, s.elF], [s.elF, s.haF],
+        [s.chest, hipPt], [s.knB, s.anB], [s.knF, s.anF],
+      ]) {
+        ctx.beginPath();
+        ctx.moveTo(segPair[0].x, segPair[0].y);
+        ctx.lineTo(segPair[1].x, segPair[1].y);
+        ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(s.head.x, s.head.y, headR + 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    /* ---- 11. the blade's light trail (written in rig space while swinging) ---- */
+    if (f.trail && f.trail.length > 1 && opts.trail !== false) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      for (let i = 1; i < f.trail.length; i += 1) {
+        const a = f.trail[i - 1]; const b2 = f.trail[i];
+        const k = i / f.trail.length;
+        ctx.strokeStyle = sk.glow;
+        ctx.globalAlpha = (b2.life / 0.16) * k * 0.6;
+        ctx.lineWidth = 1 + k * 4.4;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b2.x, b2.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /* Per-kit weapons: sword, spear+shield, twin sabers, grimoire, scythe —
+     plus monster claws. The blade keeps a subtle idle drift and ignites
+     with `glow` while swinging or empowered. */
+  function drawWeapon(ctx, f, s, armor, armorLo, armorHi) {
+    const p = f.pose;
+    const sk = f.skin;
+    const b = f.body;
+    const wA = p.armF + p.armFE + p.handF;
+    const wv = DOWN(wA - Math.PI * 0.62); // blade rides ~110° off the forearm
+    const glow = clamp(p.glow, 0, 1);
+    ctx.save();
+
+    if (b.claws) {
+      // monster claws from both fists — slashes carry the glow on both hands
+      ctx.strokeStyle = "#e9e3f2";
+      ctx.lineWidth = 1.0;
+      ctx.lineCap = "round";
+      for (const hand of [s.haF, s.haB]) {
+        const hv = DOWN(hand === s.haF ? wA : p.armB + p.armBE);
+        for (let i = -1; i <= 1; i += 1) {
+          ctx.beginPath();
+          ctx.moveTo(hand.x + i * 1.1, hand.y + i * 0.4);
+          ctx.quadraticCurveTo(
+            hand.x + hv.x * 5 + i * 1.4, hand.y + hv.y * 5 - 1,
+            hand.x + hv.x * 7.4 + i * 2.2, hand.y + hv.y * 7.4 - 0.4 + i
+          );
+          ctx.stroke();
+        }
+      }
+      if (glow > 0.05) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = sk.glow;
+        ctx.globalAlpha = glow * 0.5;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(s.haF.x, s.haF.y);
+        ctx.lineTo(s.haF.x + wv.x * 9, s.haF.y + wv.y * 9);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+
+    const hx = s.haF.x; const hy = s.haF.y;
+    ctx.translate(hx, hy);
+    ctx.rotate(Math.atan2(wv.y, wv.x));
+
+    const steelG = ctx.createLinearGradient(0, -2.4, 0, 2.4);
+    steelG.addColorStop(0, "#f2effa");
+    steelG.addColorStop(0.5, sk.steel);
+    steelG.addColorStop(1, "#201b28");
+
+    if (f.weapon === "sword") {
+      // hilt + burning greatsword
+      ctx.fillStyle = "#241c14";
+      ctx.fillRect(-5.6, -1.2, 5.2, 2.4);
+      ctx.fillStyle = armorHi;
+      ctx.fillRect(-0.9, -3.4, 1.9, 6.8);
+      const bl = 30 + glow * 2;
+      ctx.fillStyle = steelG;
+      ctx.beginPath();
+      ctx.moveTo(0.9, -2.4);
+      ctx.lineTo(bl - 3.2, -1.9);
+      ctx.lineTo(bl, 0);
+      ctx.lineTo(bl - 3.2, 1.9);
+      ctx.lineTo(0.9, 2.4);
+      ctx.closePath();
+      ctx.fill();
+      if (glow > 0.02) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = sk.glow;
+        ctx.globalAlpha = glow * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(0.9, -3.4); ctx.lineTo(bl, -1.6); ctx.lineTo(bl, 1.6); ctx.lineTo(0.9, 3.4);
+        ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = glow * 0.85;
+        ctx.fillStyle = "#fff2cf";
+        ctx.beginPath();
+        ctx.ellipse(bl * 0.55, 0, bl * 0.42, 1.1 + glow, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (f.weapon === "spear") {
+      const bl = 36;
+      ctx.fillStyle = "#3a2c1d";
+      ctx.fillRect(-14, -1.1, bl, 2.2);
+      ctx.fillStyle = steelG;
+      ctx.beginPath();
+      ctx.moveTo(bl - 14.5, -2.6);
+      ctx.lineTo(bl - 2, 0);
+      ctx.lineTo(bl - 14.5, 2.6);
+      ctx.closePath();
+      ctx.fill();
+      if (glow > 0.02) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = sk.glow;
+        ctx.globalAlpha = glow * 0.75;
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.moveTo(bl - 14.5, 0); ctx.lineTo(bl - 2, 0);
+        ctx.stroke();
+      }
+      // frostward carries the tower shield on the back arm
+      ctx.save();
+      ctx.translate(hx - 3.5, hy - 1);
+      ctx.rotate(-0.12);
+      const sg = ctx.createLinearGradient(-6, -9, 6, 9);
+      sg.addColorStop(0, "#9fd6f2");
+      sg.addColorStop(0.5, "#31597a");
+      sg.addColorStop(1, "#101f2d");
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.moveTo(-5.5, -9.5);
+      ctx.lineTo(6.5, -8.5);
+      ctx.quadraticCurveTo(8.8, 0, 6.2, 8.6);
+      ctx.lineTo(-5.4, 9.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(220,245,255,0.5)";
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      if (glow > 0.03) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = sk.glow;
+        ctx.globalAlpha = glow * 0.5;
+        ctx.beginPath();
+        ctx.arc(0.5, 0, 3.4 + glow * 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (f.weapon === "sabers") {
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.rotate(side * 0.18);
+        ctx.fillStyle = "#241c14";
+        ctx.fillRect(-4.4, -1, 4, 2);
+        ctx.fillStyle = steelG;
+        const bl = 17 + glow * 1.4;
+        ctx.beginPath();
+        ctx.moveTo(0, -1.6); ctx.lineTo(bl, -1.1); ctx.lineTo(bl + 1.6, 0); ctx.lineTo(bl, 1.1); ctx.lineTo(0, 1.6);
+        ctx.closePath(); ctx.fill();
+        if (glow > 0.02) {
+          ctx.globalCompositeOperation = "lighter";
+          ctx.strokeStyle = sk.glow;
+          ctx.globalAlpha = glow * 0.7;
+          ctx.lineWidth = 2.2;
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bl + 1.4, 0); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    } else if (f.weapon === "tome") {
+      // grimoire hovers beside the hand, runes orbit while casting
+      ctx.fillStyle = armor;
+      ctx.beginPath();
+      ctx.roundRect(-4, -8.5, 9.5, 13.5, 1.4);
+      ctx.fill();
+      ctx.fillStyle = "rgba(235,228,255,0.92)";
+      ctx.fillRect(-2.4, -7, 7, 10.5);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = sk.glow;
+      for (let i = 0; i < 3; i += 1) {
+        const a = f.animT * (1.6 + i * 0.4) + i * 2.1;
+        ctx.globalAlpha = 0.35 + glow * 0.5;
+        ctx.beginPath();
+        ctx.arc(0.8 + Math.cos(a) * (6.5 + i), -1 + Math.sin(a) * (5 + i * 1.6), 1.05, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (f.weapon === "scythe") {
+      const shaft = 30;
+      ctx.fillStyle = "#221418";
+      ctx.fillRect(-12, -1.3, shaft, 2.6);
+      ctx.strokeStyle = steelG;
+      ctx.lineWidth = 2.6;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(shaft - 12, -1);
+      ctx.quadraticCurveTo(shaft + 10, -8, shaft + 13, -19);
+      ctx.stroke();
+      if (glow > 0.02) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.strokeStyle = sk.glow;
+        ctx.lineWidth = 4.4;
+        ctx.globalAlpha = glow * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(shaft - 12, -1);
+        ctx.quadraticCurveTo(shaft + 10, -8, shaft + 13, -19);
+        ctx.stroke();
+      }
+    } else {
+      // fallback iron sword
+      ctx.fillStyle = steelG;
+      ctx.fillRect(0, -1.8, 24, 3.6);
+    }
+    ctx.restore();
+
+    /* blade trail: the glowing tip writes a fading arc while swinging */
+    if (!f.trail) f.trail = [];
+    const tipX = hx + Math.cos(Math.atan2(wv.y, wv.x)) * 30;
+    const tipY = hy + Math.sin(Math.atan2(wv.y, wv.x)) * 30;
+    if (glow > 0.45) {
+      f.trail.push({ x: tipX, y: tipY, life: 0.16 });
+      if (f.trail.length > 9) f.trail.shift();
+    } else if (f.trail.length) {
+      for (let i = f.trail.length - 1; i >= 0; i -= 1) {
+        f.trail[i].life -= 1 / 60;
+        if (f.trail[i].life <= 0) f.trail.splice(i, 1);
+      }
+    }
+  }
+
   /* pre-rendered soft glow used for every 2D particle (no per-frame shadowBlur) */
   let GLOW = null;
   function glowSprite2D() {
@@ -1653,8 +2361,8 @@
       a.sceneName = name;
       a.bgCanvas = this.paintBackdrop(name);
     }
-    render() {
-      this.a.draw2D();
+    render(dt) {
+      this.a.draw2D(dt);
     }
 
     /* The 2D backdrop is painted, never loaded: gradient sky, stars, mountain
@@ -1703,6 +2411,69 @@
       g.fillStyle = glow;
       g.fillRect(0, H * 0.4, W, H * 0.5);
       g.globalAlpha = 1;
+      // the guarded gate itself — a landmark silhouette behind the stage
+      g.save();
+      g.translate(W / 2, H * 0.72);
+      g.globalAlpha = 0.9;
+      const gateCol = "rgba(9,10,22,0.96)";
+      if (name === "bg-colossus") {
+        // the Ebon Colossus: a mountain-sized warden straddling the arch
+        g.fillStyle = "rgba(15,12,20,0.94)";
+        g.beginPath();
+        g.moveTo(-150, 0); g.lineTo(-118, -150); g.lineTo(-64, -178);
+        g.lineTo(-52, -232); g.lineTo(-20, -240); g.lineTo(20, -238);
+        g.lineTo(34, -180); g.lineTo(104, -158); g.lineTo(150, 0);
+        g.closePath(); g.fill();
+        g.globalCompositeOperation = "lighter";
+        g.fillStyle = "rgba(255,77,94,0.85)";
+        g.beginPath(); g.arc(2, -222, 3.4, 0, Math.PI * 2); g.arc(16, -224, 3.4, 0, Math.PI * 2); g.fill();
+      } else if (name === "bg-void") {
+        // the Rift Gate: a torn eye of light hanging in the dark
+        g.globalCompositeOperation = "lighter";
+        const rg = g.createRadialGradient(0, -96, 4, 0, -96, 86);
+        rg.addColorStop(0, "rgba(255,106,193,0.5)");
+        rg.addColorStop(0.5, "rgba(122,31,82,0.24)");
+        rg.addColorStop(1, "rgba(0,0,0,0)");
+        g.fillStyle = rg;
+        g.beginPath(); g.ellipse(0, -96, 118, 40, 0.12, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = "rgba(255,168,216,0.55)";
+        g.lineWidth = 2.2;
+        g.beginPath(); g.ellipse(0, -96, 74, 22, 0.12, 0, Math.PI * 2); g.stroke();
+      } else {
+        // stone archway with an elemental keystone glow
+        g.fillStyle = gateCol;
+        g.beginPath();
+        g.moveTo(-96, 6); g.lineTo(-84, -116);
+        g.quadraticCurveTo(0, -176, 84, -116);
+        g.lineTo(96, 6); g.lineTo(72, 6); g.lineTo(64, -102);
+        g.quadraticCurveTo(0, -148, -64, -102);
+        g.lineTo(-72, 6); g.closePath(); g.fill();
+        for (let i = 0; i < 6; i += 1) {
+          const a0 = -2.6 + (i / 5) * 2.0;
+          g.beginPath();
+          g.arc(Math.cos(a0) * 78, -110 + Math.sin(a0) * 34, 3.2, 0, Math.PI * 2);
+          g.fillStyle = css(env.accent);
+          g.globalAlpha = 0.5;
+          g.fill();
+        }
+        g.globalAlpha = 1;
+        if (name === "bg-frost") {
+          g.fillStyle = "rgba(160,220,255,0.10)";
+          g.beginPath(); g.moveTo(-64, 6); g.lineTo(0, -120); g.lineTo(64, 6); g.closePath(); g.fill();
+        } else if (name === "bg-ember") {
+          g.globalCompositeOperation = "lighter";
+          const lgg = g.createLinearGradient(0, 40, 0, -60);
+          lgg.addColorStop(0, "rgba(255,138,60,0.35)");
+          lgg.addColorStop(1, "rgba(255,138,60,0)");
+          g.fillStyle = lgg;
+          g.fillRect(-64, -80, 128, 90);
+        } else if (name === "bg-arcane") {
+          g.globalCompositeOperation = "lighter";
+          g.fillStyle = "rgba(180,139,255,0.32)";
+          for (let i = 0; i < 4; i += 1) g.fillRect(-52 + i * 34, -142 - (i % 2) * 12, 10, 10);
+        }
+      }
+      g.restore();
       // arena floor band + battle ring
       g.fillStyle = css(env.ground);
       g.fillRect(0, H * 0.74, W, H * 0.26);
@@ -1772,9 +2543,52 @@
         if (!this.use3D) this.replaceCanvas(); // the dead GL context must not poison 2D
       }
       if (!this.use3D) {
+        // A canvas element can host only ONE context type for its whole life.
+        // If a previous renderer (the 3D engine, or a probe that failed) bound
+        // WebGL to this node, getContext("2d") returns null and forcing 2D
+        // would show a dead arena. Hand the 2D renderer a pristine node — this
+        // is why "Graphics → 2D" now always works, even after switching back.
+        this.replaceCanvas();
         this.ctx = this.canvas.getContext("2d", { alpha: false });
+        if (!this.ctx) this.ctx = this.canvas.getContext("2d");
         this.r = new Renderer2D(this);
       }
+      // scene-reactive ambience: embers / snow / rain / fireflies / petals
+      this.ambient = [];
+      this.ambientScene = null;
+      this.lightningT = 3;
+      this.lightningFlash = 0;
+      this.flashScreen = 0;
+      this.cineT = 0;
+      this.cineDur = 1;
+      this.cineZoom = 1;
+    }
+
+    /* one cinematic beat: slow-motion + push-in + optional white flash —
+       used by heavy/ultimate releases and the killing blow */
+    cinematic(dur = 0.34, zoom = 1.07, slow = 0.42, flash = 0) {
+      this.cineT = dur; this.cineDur = dur; this.cineZoom = zoom;
+      this.cineSlow = slow;
+      if (flash) this.flashScreen = Math.max(this.flashScreen, flash);
+    }
+
+    /* A potion drunk mid-duel: instantly top the fighter up and print the
+       healed amount in friendly green above the bar. */
+    healFighter(f, amount) {
+      if (!f || f.dead) return 0;
+      const before = f.hp;
+      f.hp = Math.min(f.maxHp, f.hp + amount);
+      const healed = Math.round(f.hp - before);
+      if (healed > 0) {
+        this.number(f, `+${healed}`, "#8ef0a8", false);
+        this.particles(f, 10, "#8ef0a8", 0.8);
+        this.fx.push({
+          type: "ring", color: "#8ef0a8", x: f.x, y: f.y + 50 * f.scale,
+          life: 0.5, max: 0.5, size: 12, grow: 150,
+        });
+        SFX.ward();
+      }
+      return healed;
     }
 
     /* A canvas can host exactly one context type. If a WebGL attempt failed
@@ -1821,6 +2635,84 @@
     setScene(name) {
       this.scene = name;
       this.r.setScene(name);
+      this.seedAmbient(name);
+    }
+
+    /* Scene ambience is chosen by WHICH GATE THE BOSS GUARDS: the Ember Gate
+       rains rising cinders, the Frost Gate snows, the Obsidian/Arcane gate
+       drifts glowing petals, the Rift Gate swarms with fireflies, and the
+       Colossus Gate storms with rain, wind and distant lightning. */
+    seedAmbient(name) {
+      if (this.ambientScene === name) return;
+      this.ambientScene = name;
+      const a = [];
+      const kinds = {
+        "bg-ember": [["ember", 34], ["smoke", 10]],
+        "bg-frost": [["snow", 44], ["mist", 8]],
+        "bg-arcane": [["petal", 22], ["sparkle", 14], ["mist", 5]],
+        "bg-void": [["firefly", 18], ["dust", 18]],
+        "bg-colossus": [["rain", 70], ["spray", 10], ["ember", 8]],
+      }[name] || [["ember", 26]];
+      for (const [kind, n] of kinds) {
+        for (let i = 0; i < n; i += 1) {
+          a.push({
+            kind,
+            x: Math.random(), y: Math.random(),
+            v: rand(0.02, 0.12), drift: rand(-0.03, 0.03),
+            size: kind === "rain" ? rand(9, 20) : rand(1.2, 3.4),
+            ph: rand(0, 6.28), speed: rand(0.6, 1.6),
+          });
+        }
+      }
+      this.ambient = a;
+    }
+
+    stepAmbient(dt) {
+      const windy = this.scene === "bg-colossus" ? 0.5 : 0.06;
+      for (const m of this.ambient) {
+        switch (m.kind) {
+          case "ember": case "sparkle":
+            m.y -= (m.v * 0.55 + 0.02) * dt * m.speed;
+            m.x += Math.sin(this.time * 1.7 + m.ph) * 0.015 * dt + windy * dt * 0.05;
+            if (m.y < -0.02) { m.y = 1.02; m.x = Math.random(); }
+            break;
+          case "snow": case "petal": {
+            const fall = m.kind === "petal" ? 0.16 : 0.22;
+            m.y += fall * dt * m.speed;
+            m.x += (Math.sin(this.time * (m.kind === "petal" ? 1.1 : 0.7) + m.ph) * 0.06 + windy * 0.12) * dt;
+            if (m.y > 1.02) { m.y = -0.02; m.x = Math.random(); }
+            break;
+          }
+          case "rain":
+            m.y += (0.85 + m.v) * dt * m.speed;
+            m.x += (0.16 + windy * 0.3) * dt;
+            if (m.y > 1.02) { m.y = -0.06; m.x = Math.random(); }
+            if (m.x > 1.02) m.x -= 1.04;
+            break;
+          case "firefly": case "dust": case "mist": case "spray":
+            m.x += Math.sin(this.time * 0.42 + m.ph) * 0.02 * dt + windy * 0.04 * dt;
+            m.y += Math.cos(this.time * 0.31 + m.ph * 1.7) * 0.012 * dt;
+            if (m.x > 1.03) m.x -= 1.06;
+            if (m.x < -0.03) m.x += 1.06;
+            if (m.y > 1.03) m.y -= 1.06;
+            if (m.y < -0.03) m.y += 1.06;
+            break;
+          default: break;
+        }
+      }
+      // distant lightning at the Colossus Gate
+      if (this.scene === "bg-colossus") {
+        this.lightningT -= dt;
+        if (this.lightningT <= 0) {
+          this.lightningT = rand(4.2, 9.5);
+          this.flashScreen = Math.max(this.flashScreen, 0.16);
+          this.lightningFlash = 0.34;
+          Audio2.noise({ dur: 1.1, gain: 0.07, type: "lowpass", freq: 220, sweep: -120, delay: 0.25 });
+        }
+      }
+      if (this.flashScreen > 0) this.flashScreen = Math.max(0, this.flashScreen - dt * 1.9);
+      if (this.lightningFlash > 0) this.lightningFlash = Math.max(0, (this.lightningFlash || 0) - dt * 2.4);
+      if (this.cineT > 0) this.cineT = Math.max(0, this.cineT - dt);
     }
 
     setFighters(playerCfg, enemyCfg) {
@@ -1896,7 +2788,10 @@
     /* ---------------- damage ---------------- */
     computeDamage(att, def, spec, mulOverride) {
       const mul = (mulOverride !== undefined ? mulOverride : spec.mul || 1) * att.empowerMul;
-      let base = att.stats.damage * mul * (0.9 + Math.random() * 0.2);
+      // reactive players are rewarded: every chained hit in the combo window
+      // escalates damage up to +30%, so fast attacks genuinely hit harder
+      const comboMul = 1 + Math.min(0.3, 0.05 * Math.max(0, att.combo - 1));
+      let base = att.stats.damage * mul * comboMul * (0.9 + Math.random() * 0.2);
       const crit = Math.random() < att.stats.crit;
       if (crit) base *= 1.75;
       if (!spec.pierceDef) {
@@ -1964,7 +2859,13 @@
       def.stateT = 0;
       def.attack = null;
 
-      this.number(def, `${dmg}`, crit ? "#ffd479" : "#ff7a86", crit);
+      // damage numbers are side-coded: YOUR hits burn in your element colour,
+      // the evil's hits bleed red, crits always flare gold, heals come green.
+      const sideColor = att.isPlayer ? att.kit.color : "#ff5f6d";
+      this.number(def, `${dmg}`, crit ? "#ffd479" : sideColor, crit);
+      if (att.combo >= 3 && (att.combo === 3 || att.combo % 4 === 0)) {
+        this.number(att, `${att.combo}× COMBO`, "#ffd479", false);
+      }
       this.impact(def, box.kind, crit, att);
       this.addShake(clamp((box.knock + dmg * 5) / 420, 0.25, 1.5) * (crit ? 14 : 9));
       this.hitStop = Math.max(this.hitStop, crit ? 0.05 : 0.032);
@@ -1983,8 +2884,9 @@
       f.vx += (f.facing > 0 ? -1 : 1) * 200;
       f.vy = 260;
       this.addShake(18);
-      this.hitStop = 0.11;
-      this.slowmo = 0.35; // the last blow lands in slow motion
+      this.hitStop = 0.13;
+      this.slowmo = 0.3; // the last blow lands in slow motion
+      this.cinematic(0.55, 1.1, 0.3, 0.22);
       SFX.ko();
       const winner = f === this.player ? this.enemy : this.player;
       winner.state = "victory";
@@ -2128,16 +3030,26 @@
       } else {
         const hits = spec.hits || 1;
         this.spawnHit(f, spec, { life: (spec.active || 0.12) / hits, kind: spec.type === "heavy" ? "heavy" : "slash", range: spec.range });
-        if (spec.type === "heavy") { this.addShake(spec.shake || 8); SFX.whoosh(); }
+        if (spec.type === "heavy") {
+          this.addShake(spec.shake || 8);
+          SFX.whoosh();
+          // ultimate rule: cinematic frame before a devastating blow lands
+          const isUlt = (spec.mul || 1) >= 2.1;
+          f.roar = 1;
+          this.fx.push({ type: "flash", color: f.kit.glow, x: f.x + f.facing * 40, y: f.y + 70 * f.scale, life: 0.2, max: 0.2, size: 70 });
+          if (isUlt && !this.over) this.cinematic(0.3, 1.075, 0.4, 0.1);
+        }
       }
     }
 
     /* ---------------- update ---------------- */
     update(dt) {
       if (this.hitStop > 0) { this.hitStop -= dt; dt *= 0.22; }
+      if (this.cineT > 0 && !this.over) dt *= this.cineSlow || 0.5; // ultimate slow-mo
       if (this.over && this.slowmo < 1) this.slowmo = approach(this.slowmo, 1, 1.4, dt);
       if (this.over) dt *= this.slowmo;
       this.time += dt;
+      this.stepAmbient(dt / (this.cineT > 0 ? (this.cineSlow || 0.5) : 1));
       const p = this.player;
       const e = this.enemy;
       if (!p || !e) return;
@@ -2264,7 +3176,11 @@
         }
       }
 
-      f.stamina = Math.min(f.maxStamina, f.stamina + (f.busy ? 7 : 18) * dt);
+      f.stamina = Math.min(f.maxStamina, f.stamina + (f.busy ? 7 : 18) * (f.staminaRegenMul || 1) * dt);
+      if (f.roar > 0) {
+        f.roar = Math.max(0, f.roar - dt * 2.1);
+        f.pose.glow = Math.max(f.pose.glow, f.roar * 0.9);
+      }
 
       const prevState = f.state;
       if (f.state === "attack" || f.state === "ability") {
@@ -2466,138 +3382,262 @@
       this.cam.x = approach(this.cam.x, clamp(mid, -limit, limit), 5.5, dt);
     }
 
-    /* ---------------- poses (two-part puppet) ---------------- */
+    /* ---------------- poses — a full articulated skeleton ---------------- *\
+     * Angles are radians; the convention: 0 hangs straight down, positive
+     * swings toward the enemy. Elbows/knees are RELATIVE to the upper bone,
+     * so a leg's shin angle is hip + knee (knee negative bends backwards,
+     * an arm's forearm is shoulder + elbow). Bob/dip are world-unit offsets,
+     * breath is a chest scale, `glow` drives the weapon's energy aura.
+     * Everything is driven to the target pose exponentially, which keeps the
+     * animation smooth at any frame rate while snapping fast on attacks.
+     * ================================================================ */
     poseFighter(f, dt) {
       const t = f.animT;
       const g = f.target;
       let rate = 13;
       const base = () => {
-        g.head = 0; g.torso = 0; g.armF = 0; g.armB = 0; g.legF = 0; g.legB = 0;
-        g.bob = 0; g.rot = 0; g.dip = 0; g.breath = 1;
+        // neutral guard stance: front hand up around the weapon, weight even
+        g.head = 0; g.headZ = 0; g.torso = 0; g.torsoY = 0;
+        g.armF = -0.55; g.armFE = -1.15; g.handF = 0;
+        g.armB = 0.34; g.armBE = -1.0; g.handB = 0;
+        g.legF = 0.16; g.legFK = -0.14; g.footF = -0.02;
+        g.legB = -0.18; g.legBK = -0.2; g.footB = 0.06;
+        g.bob = 0; g.rot = 0; g.dip = 0; g.crouch = 0; g.breath = 1; g.glow = 0;
       };
       const a = f.attack || {};
       const phaseT = f.stateT;
+      const kind = a.type || "slash";
 
       switch (f.state) {
         case "idle": {
           base();
-          // breathing: chest expands, shoulders lift, head drifts, weapon sways
+          // living guard: the chest breathes, the weapon hand sways, the head
+          // drifts and occasionally snaps toward the foe like a real fighter
           const br = Math.sin(t * 2.0);
-          g.breath = 1 + br * 0.026;
-          g.bob = br * 2.2;
-          g.head = br * 0.045 + Math.sin(t * 0.7) * 0.03;
-          g.torso = br * 0.022;
-          g.armF = -1.36 + Math.sin(t * 2.0 + 0.6) * 0.07;
-          g.armB = 0.05 + Math.sin(t * 2.0 + 1.1) * 0.07;
-          g.legF = Math.sin(t * 2.0) * 0.012;
-          g.legB = -Math.sin(t * 2.0) * 0.012;
-          rate = 6;
+          g.breath = 1 + br * 0.028;
+          g.bob = br * 1.9;
+          g.dip = (1 + Math.sin(t * 2.0 - 0.5)) * 1.2;
+          g.head = -0.05 + Math.sin(t * 0.7) * 0.04;
+          g.headZ = Math.sin(t * 2.0 + 0.4) * 0.02;
+          g.torso = 0.05 + br * 0.02;
+          g.torsoY = br * 0.04;
+          g.armF = -0.62 + Math.sin(t * 2.0 + 0.6) * 0.09;
+          g.armFE = -1.22 + Math.sin(t * 2.0 + 0.9) * 0.07;
+          g.handF = 0.14 + Math.sin(t * 2.0 + 1.2) * 0.1; // weapon keeps moving
+          g.armB = 0.32 + Math.sin(t * 2.0 + 1.5) * 0.07;
+          g.armBE = -0.95 + Math.sin(t * 2.0 + 1.8) * 0.05;
+          g.legF = 0.15 + Math.sin(t * 2.0) * 0.02;
+          g.legB = -0.17 - Math.sin(t * 2.0) * 0.02;
+          g.glow = f.empower > 0 ? 0.55 + Math.sin(t * 10) * 0.2 : 0;
+          rate = 7;
           break;
         }
         case "walk": {
           base();
+          // real marching: thighs swing opposite to the arms, the swinging leg
+          // lifts its heel (knee bends forward) and the plant leg compresses
           const dirSign = f.vx * f.facing > 0 ? 1 : -1;
-          const w = t * 10.5 * dirSign;
-          g.legF = Math.sin(w) * 0.62;
-          g.legB = -Math.sin(w) * 0.62;
-          g.armF = -1.2 - Math.sin(w) * 0.25;
-          g.armB = Math.sin(w) * 0.5;
-          g.bob = Math.abs(Math.sin(w)) * 5.5;
-          g.torso = 0.05 * dirSign + Math.sin(w * 2) * 0.02;
-          g.head = -0.04 * dirSign;
-          g.breath = 1 + Math.sin(t * 3.2) * 0.016;
-          rate = 15;
+          const w = t * 11.2 * dirSign;
+          const sw = Math.sin(w);
+          const cs = Math.cos(w);
+          g.legF = sw * 0.62;
+          g.legFK = -Math.max(0, -sw) * 1.15 - Math.max(0, sw) * 0.12;
+          g.footF = sw > 0 ? 0.4 * sw : -0.22;
+          g.legB = -sw * 0.62;
+          g.legBK = -Math.max(0, sw) * 1.15 - Math.max(0, -sw) * 0.12;
+          g.footB = -sw > 0 ? 0.4 * -sw : -0.22;
+          g.bob = Math.abs(cs) * 5.2 - 2;
+          g.dip = 2 + Math.max(0, -cs) * 2.6;
+          g.crouch = 0.16;
+          g.torso = 0.12 * dirSign;
+          g.torsoY = sw * 0.07;
+          g.head = -0.05 * dirSign + Math.sin(w * 2) * 0.03;
+          g.armF = -0.6 + sw * 0.34 * dirSign;
+          g.armFE = -1.18 - Math.max(0, sw) * 0.1;
+          g.handF = 0.12 - sw * 0.3 * dirSign;
+          g.armB = 0.34 - sw * 0.4 * dirSign;
+          g.armBE = -0.98 - Math.max(0, -sw) * 0.14;
+          g.breath = 1 + Math.sin(w * 2) * 0.016;
+          rate = 17;
           break;
         }
         case "attack": {
           base();
-          rate = 40;
-          if (f.phase === "windup") {
-            g.armF = -1.45; g.armB = 0.5; g.torso = -0.16; g.head = -0.08;
-            g.legB = -0.2; g.legF = 0.12; g.dip = 2;
-          } else if (f.phase === "active") {
-            g.armF = 1.35; g.armB = -0.55; g.torso = 0.3; g.head = 0.14;
-            g.legF = 0.55; g.legB = -0.42; g.dip = 4; g.bob = -2;
+          rate = 44;
+          const p = f.phase;
+          if (p === "windup") {
+            // coil: weapon hand rises behind the helmet, weight sinks back
+            const k = clamp(phaseT / Math.max(0.01, a.windup || 0.1), 0, 1);
+            g.torso = -0.3 - k * 0.1; g.torsoY = -0.35 * k;
+            g.armF = -0.55 - k * 2.2;         // shoulder rotates back-up
+            g.armFE = -1.15 - k * 0.6;        // elbow folds the blade behind
+            g.handF = 0.4 - k * 1.1;
+            g.armB = 0.34 + k * 0.5; g.armBE = -1.0 + k * 0.35;
+            g.head = -0.1 - k * 0.1; g.headZ = -k * 0.06;
+            g.legF = 0.05; g.legB = -0.34; g.legBK = -0.42 * k; g.crouch = 0.24 * k;
+            g.dip = 3 + k * 3;
+            g.glow = k * 0.5;
+          } else if (p === "active") {
+            // strike: whole body uncoils through the swing, fist leads
+            const k = clamp((phaseT - (a.windup || 0)) / Math.max(0.01, a.active || 0.1), 0, 1);
+            const snap = 1 - Math.pow(1 - k, 2.2);
+            g.torso = 0.42 * snap - 0.3 * (1 - snap); g.torsoY = 0.5 * snap;
+            g.armF = -2.75 + snap * 4.3;              // overhead -> down on the foe
+            g.armFE = -1.75 + snap * 1.15;
+            g.handF = -0.7 + snap * 1.05;
+            g.armB = 0.84 - snap * 1.5; g.armBE = -0.65 - snap * 0.4;
+            g.head = 0.16; g.headZ = 0.05;
+            g.legF = 0.72; g.legFK = -0.3; g.footF = 0.3;
+            g.legB = -0.55; g.legBK = -0.66; g.crouch = 0.4;
+            g.bob = -3; g.dip = 6;
+            g.glow = snap >= 0.99 ? 1 : 0.65;
           } else {
-            g.armF = -0.35; g.armB = -0.15; g.torso = 0.12; g.legF = 0.2; g.legB = -0.14;
+            // recover: momentum carries, then settles back toward guard
+            const k = clamp((phaseT - ((a.windup || 0) + (a.active || 0.1))) / Math.max(0.01, a.recover || 0.15), 0, 1);
+            const e = 1 - k;
+            g.torso = 0.2 * e; g.torsoY = 0.2 * e;
+            g.armF = 1.55 - 2.1 * k; g.armFE = -0.6 * e; g.handF = 0.3 * e;
+            g.armB = 0.34; g.armBE = -0.95;
+            g.legF = 0.5 * e + 0.16; g.legB = -0.4 * e - 0.18; g.crouch = 0.3 * e;
+            g.dip = 4 * e; g.glow = 0.5 * e;
           }
           break;
         }
         case "ability": {
           base();
-          rate = 34;
-          const kind = a.type;
+          rate = 36;
+          const p = f.phase;
           if (kind === "heavy" && (a.hits || 1) > 1) {
-            // cyclone: the whole body spins through the swing
-            if (f.phase === "windup") { g.torso = -0.3; g.armF = -1.6; g.armB = 1.2; g.dip = 8; }
-            else if (f.phase === "active") {
-              g.rot = -Math.PI * 2 * ((phaseT - a.windup) / Math.max(0.01, a.active));
-              g.armF = 1.5; g.armB = -1.5; g.legF = 0.7; g.legB = -0.7; g.bob = 6;
-            } else { g.armF = 0.4; g.legF = 0.2; }
-            rate = 40;
+            // cyclone whirl: the body spins on one leg, arms out wide
+            const spin = p === "active"
+              ? ((phaseT - (a.windup || 0)) / Math.max(0.01, a.active || 0.3)) * Math.PI * 2
+              : 0;
+            g.rot = -spin * (f.facing > 0 ? 1 : 1);
+            g.torso = 0.2; g.head = -0.1;
+            g.armF = p === "windup" ? -1.9 : 1.75 + Math.sin(spin) * 0.7;
+            g.armFE = -0.35; g.armB = -1.6 - Math.sin(spin) * 0.7; g.armBE = -0.3;
+            g.legF = p === "active" ? 1.35 : 0.2; g.legFK = -1.4; g.footF = 0.4;
+            g.legB = -0.15; g.legBK = -0.2;
+            g.bob = p === "active" ? 7 : -2; g.dip = 8; g.crouch = 0.3;
+            g.glow = p === "active" ? 1 : 0.4;
+            rate = 46;
           } else if (kind === "heavy") {
-            if (f.phase === "windup") {
-              g.armF = -2.6; g.armB = -1.2; g.torso = -0.42; g.head = -0.24;
-              g.legB = -0.55; g.legF = 0.18; g.dip = 12;
-            } else if (f.phase === "active") {
-              g.armF = 1.75; g.armB = -0.9; g.torso = 0.52; g.head = 0.3;
-              g.legF = 0.85; g.legB = -0.6; g.dip = 16; g.bob = -4;
+            if (p === "windup") {
+              // both hands raise the weapon high — legs sink under the load
+              const k = clamp(phaseT / Math.max(0.01, a.windup || 0.25), 0, 1);
+              g.torso = -0.5 - 0.15 * k; g.head = -0.3;
+              g.armF = -0.55 - 2.6 * k; g.armFE = -1.15 - 0.55 * k;
+              g.armB = 0.34 - 2.2 * k; g.armBE = -1.0 - 0.5 * k;
+              g.handF = -0.4; g.handB = -0.4;
+              g.legF = 0.1; g.legB = -0.42; g.legBK = -0.6; g.crouch = 0.55 * k;
+              g.dip = 4 + 8 * k; g.glow = k;
+            } else if (p === "active") {
+              const k = clamp((phaseT - (a.windup || 0)) / Math.max(0.01, a.active || 0.14), 0, 1);
+              const snap = 1 - Math.pow(1 - k, 2.6);
+              g.torso = 0.72 * snap - 0.65 * (1 - snap); g.head = 0.34;
+              g.armF = -3.15 + snap * 5.15; g.armFE = -1.7 + snap * 1.5;
+              g.armB = -1.86 + snap * 2.4; g.armBE = -1.5 + snap * 0.8;
+              g.legF = 0.95; g.legFK = -0.2; g.footF = 0.45;
+              g.legB = -0.7; g.legBK = -0.5; g.crouch = 0.65;
+              g.dip = 14; g.bob = -5; g.glow = 1;
             } else {
-              g.armF = 0.9; g.torso = 0.24; g.legF = 0.4; g.legB = -0.3; g.dip = 9;
+              g.torso = 0.34; g.armF = 2.1; g.armFE = -0.5; g.armB = 0.55; g.armBE = -0.8;
+              g.legF = 0.6; g.legB = -0.5; g.crouch = 0.4; g.dip = 9; g.glow = 0.6;
             }
           } else if (kind === "magic") {
-            if (f.phase === "windup") {
-              g.armF = -1.95 + Math.sin(t * 22) * 0.05; g.armB = -1.6;
-              g.torso = -0.2; g.head = -0.18; g.dip = 5; g.legB = -0.22;
-              g.breath = 1.03;
-            } else if (f.phase === "active") {
-              g.armF = -0.55; g.armB = -0.35; g.torso = 0.28; g.head = 0.12;
-              g.legF = 0.4; g.legB = -0.3; g.dip = 2;
+            if (p === "windup") {
+              // gathering: palms apart, energy pulls between them
+              const k = clamp(phaseT / Math.max(0.01, a.windup || 0.22), 0, 1);
+              g.torso = -0.24; g.head = -0.2;
+              g.armF = -2.35 + Math.sin(t * 24) * 0.06; g.armFE = -0.35;
+              g.armB = -2.75 - Math.sin(t * 24) * 0.06; g.armBE = 0.3;
+              g.handF = -0.6; g.handB = 0.5;
+              g.legF = 0.24; g.legB = -0.34; g.legBK = -0.34; g.crouch = 0.3 * k;
+              g.dip = 5; g.breath = 1.05; g.glow = k;
+            } else if (p === "active") {
+              // release: front palm thrusts the bolt out
+              g.torso = 0.3; g.head = 0.12;
+              g.armF = -0.95; g.armFE = 0.28; g.handF = -0.5;
+              g.armB = -1.9; g.armBE = 0.2;
+              g.legF = 0.52; g.legB = -0.5; g.legBK = -0.3; g.crouch = 0.4;
+              g.dip = 3; g.glow = 1;
             } else {
-              g.armF = -0.2; g.torso = 0.1; g.legF = 0.15;
+              g.torso = 0.1; g.armF = -1.2; g.armFE = -0.8; g.armB = -0.6; g.glow = 0.3;
             }
-          } else { // buff / ward
-            if (f.phase === "windup") { g.armF = -1.5; g.armB = -1.5; g.torso = -0.12; g.dip = 6; }
-            else { g.armF = -1.1; g.armB = -1.1; g.bob = 5; g.breath = 1.05; g.head = -0.16; }
+          } else {
+            // buff / ward — palms up, knees sink, chest lifts
+            if (p === "windup") {
+              g.armF = -2.5; g.armFE = -0.35; g.armB = -2.5; g.armBE = 0.35;
+              g.torso = -0.18; g.dip = 7; g.crouch = 0.4; g.breath = 1.06; g.glow = 0.8;
+            } else {
+              g.armF = -1.75; g.armFE = -1.2; g.armB = -1.75; g.armBE = -1.2;
+              g.torso = 0.12; g.head = -0.22; g.bob = 4; g.breath = 1.08; g.glow = 1;
+            }
           }
           break;
         }
         case "dash": {
           base();
-          g.torso = 0.34; g.head = 0.1; g.armF = -0.9; g.armB = 1.25;
-          g.legF = 0.95; g.legB = -0.85; g.dip = 8; g.rot = 0.1;
-          rate = 26;
+          // low sprint: torso over the front knee, arms driving back
+          g.torso = 0.62; g.head = 0.25; g.headZ = -0.1;
+          g.armF = -1.1; g.armFE = -1.7; g.handF = 0.2;
+          g.armB = 1.9; g.armBE = -1.3;
+          g.legF = 1.15; g.legFK = -1.5; g.footF = 0.5;
+          g.legB = -0.95; g.legBK = -0.5; g.footB = 0.3;
+          g.crouch = 0.5; g.dip = 10; g.bob = -2; g.rot = 0.06;
+          rate = 30;
           break;
         }
         case "hurt": {
           base();
-          g.torso = -0.34; g.head = -0.42; g.armF = -0.7; g.armB = -0.95;
-          g.legB = -0.35; g.legF = 0.18; g.dip = 6;
-          rate = 32;
+          // head-snapping recoil, arms flail up, front foot scrubs backwards
+          const k = clamp(1 - f.stateT / 0.17, 0, 1);
+          g.torso = -0.6 * k - 0.05; g.head = -0.85 * k; g.headZ = 0.2 * k;
+          g.armF = -1.35 * k - 0.6; g.armFE = -2.1 * k - 1.0;
+          g.armB = 1.2 * k + 0.3; g.armBE = -2.0 * k - 0.9;
+          g.legF = -0.4 * k + 0.16; g.legFK = -1.0 * k; g.footF = 0.5 * k;
+          g.legB = -0.15 - 0.35 * k; g.crouch = 0.3 * k; g.dip = 3 + 4 * k;
+          g.torsoY = -0.3 * k;
+          rate = 36;
           break;
         }
         case "knock": {
           base();
-          g.rot = -0.55 - Math.min(0.7, f.stateT * 1.4);
-          g.torso = -0.5; g.head = -0.6; g.armF = -1.5; g.armB = -1.8;
-          g.legF = -0.6; g.legB = 0.5;
-          rate = 18;
+          // launched: body pinwheels while airborne, limbs stream back
+          const air = clamp(f.y / 60, 0, 1);
+          g.rot = -0.5 - Math.min(0.85, f.stateT * 1.6) - air * 0.25;
+          g.torso = -0.5; g.head = -0.75;
+          g.armF = -2.0; g.armFE = -0.5; g.armB = -2.6; g.armBE = -0.4;
+          g.legF = -0.75; g.legFK = -0.3; g.legB = 0.6; g.legBK = -0.9;
+          g.dip = 4; g.glow = 0;
+          rate = 20;
           break;
         }
         case "dead": {
           base();
-          g.rot = -1.45; g.torso = -0.28; g.head = -0.5;
-          g.armF = -1.2; g.armB = -1.4; g.legF = -0.5; g.legB = 0.35; g.dip = 6;
-          rate = 5;
+          // topple past the fall and go flat, weapon hand slackens
+          const k = clamp(1 - Math.exp(-f.stateT * 3.2), 0, 1);
+          g.rot = -1.52 * k;
+          g.torso = -0.3 * k; g.head = -0.6 * k; g.headZ = 0.3 * k;
+          g.armF = -1.1 - 0.6 * k; g.armFE = -1.2 + 0.7 * k;
+          g.armB = -0.4 * k + 0.3; g.armBE = -1.3;
+          g.legF = -0.5; g.legFK = -0.2; g.legB = 0.4; g.legBK = -0.1;
+          g.dip = 4; g.glow = 0;
+          rate = 9;
           break;
         }
         case "victory": {
           base();
-          g.armF = -2.1 + Math.sin(t * 3.6) * 0.12;
-          g.armB = -1.4 + Math.sin(t * 3.6 + 0.5) * 0.1;
-          g.bob = Math.abs(Math.sin(t * 3.6)) * 10;
-          g.head = -0.12; g.breath = 1 + Math.sin(t * 3.6) * 0.04;
-          rate = 9;
+          // winning loop: weapon raised, one knee drives up, chest swells
+          const v = Math.abs(Math.sin(t * 3.4));
+          g.armF = -2.65 + Math.sin(t * 3.4) * 0.09; g.armFE = -0.35;
+          g.handF = -0.55;
+          g.armB = 0.6 + Math.sin(t * 3.4 + 0.6) * 0.2; g.armBE = -1.5;
+          g.bob = v * 11; g.dip = (1 - v) * 6;
+          g.legB = -0.42 - v * 0.3; g.legBK = -0.75 - v * 0.5;
+          g.head = -0.28; g.torso = 0.14; g.breath = 1 + v * 0.07;
+          g.glow = 0.75 + v * 0.25;
+          rate = 11;
           break;
         }
         default:
@@ -2605,8 +3645,8 @@
       }
 
       const k = 1 - Math.exp(-rate * dt);
-      const p = f.pose;
-      for (const key of POSE_KEYS) p[key] = lerp(p[key], g[key], k);
+      const p2 = f.pose;
+      for (const key of POSE_KEYS) p2[key] = lerp(p2[key], g[key], k);
     }
 
     /* ================================================================ *\
@@ -2616,20 +3656,60 @@
       this.r.render();
     }
 
-    draw2D() {
+    draw2D(dt) {
       const ctx = this.ctx;
-      this.drawScene(ctx);
+      if (!this.running && dt) {
+        // keep the world alive behind the match card — the arena should never
+        // feel like a paused screenshot
+        this.time += dt;
+        this.stepAmbient(dt);
+      }
+      // cinematic push-in (ultimates / the killing blow)
+      const cine = this.cineT > 0 ? 1 + (this.cineZoom - 1) * Math.sin(Math.min(1, this.cineT / this.cineDur) * Math.PI) : 1;
+      const zoomBefore = this.cam.zoom;
+      this.cam.zoom *= cine;
+      this.drawScene(ctx, dt);
       const order = [this.player, this.enemy];
       order.forEach((f) => this.drawShadow(ctx, f));
       this.drawGroundFx(ctx);
-      order.forEach((f) => this.drawFighter(ctx, f));
+      this.drawAmbient(ctx, "back");
+      order.forEach((f) => this.drawFighter(ctx, f, dt));
       this.drawShots(ctx);
       this.drawAirFx(ctx);
+      this.drawAmbient(ctx, "front");
+      // drifting foreground fog for depth
+      ctx.save();
+      ctx.globalAlpha = 0.05;
+      ctx.fillStyle = "#d5e2ff";
+      for (let i = 0; i < 3; i += 1) {
+        const fx = ((this.time * (8 + i * 5)) % (this.w + 400)) - 200;
+        ctx.beginPath();
+        ctx.ellipse(fx, this.h * (0.3 + i * 0.2), 240, 44 + i * 10, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      if (this.flashScreen > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = `rgba(255,246,222,${(this.flashScreen * 0.5).toFixed(3)})`;
+        ctx.fillRect(0, 0, this.w, this.h);
+        ctx.restore();
+      }
       this.drawNumbers(ctx);
+      // cinematic letterbox bars slide in during the slow-motion beat
+      if (cine > 1.002) {
+        const bar = (cine - 1) * 520;
+        ctx.save();
+        ctx.fillStyle = "rgba(3,4,10,0.92)";
+        ctx.fillRect(0, 0, this.w, bar);
+        ctx.fillRect(0, this.h - bar, this.w, bar);
+        ctx.restore();
+      }
+      this.cam.zoom = zoomBefore;
       if (this.over) this.drawEndBanner(ctx);
     }
 
-    drawScene(ctx) {
+    drawScene(ctx, dt) {
       const w = this.w;
       const h = this.h;
       if (this.bgCanvas) {
@@ -2644,6 +3724,41 @@
         ctx.fillStyle = "#0a0d22";
         ctx.fillRect(0, 0, w, h);
       }
+      // torch flicker — two warm pools of light pulse on the stage edges
+      const t = this.time;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (const side of [-1, 1]) {
+        const fx = w / 2 + side * w * 0.34 - this.cam.x * 0.2 * this.cam.zoom;
+        const flick = 0.10 + Math.sin(t * 11 + side * 2.4) * 0.03 + Math.random() * 0.012;
+        const g = ctx.createRadialGradient(fx, h * 0.62, 6, fx, h * 0.62, h * 0.5);
+        g.addColorStop(0, `rgba(255,190,110,${flick.toFixed(3)})`);
+        g.addColorStop(1, "rgba(255,190,110,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
+      this.drawAmbient(ctx, "back");
+      // rolling ground fog
+      ctx.save();
+      const fogG = ctx.createLinearGradient(0, h * 0.72, 0, h);
+      fogG.addColorStop(0, "rgba(140,160,220,0)");
+      fogG.addColorStop(1, "rgba(150,170,230,0.13)");
+      ctx.fillStyle = fogG;
+      const wob = Math.sin(t * 0.5) * 14;
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      ctx.lineTo(0, h * 0.86 + wob * 0.4);
+      for (let x = 0; x <= w; x += w / 6) {
+        ctx.quadraticCurveTo(
+          x + w / 12, h * 0.82 + Math.sin(t * 0.7 + x * 0.01) * 7 - wob * 0.3,
+          x + w / 6, h * 0.87 + Math.sin(t * 0.5 + x * 0.013) * 8
+        );
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
       // darken the middle band so fighters always read
       const grad = this.bandGrad || (this.bandGrad = (() => {
         const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -2654,6 +3769,84 @@
       })());
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, w, h);
+      void dt;
+    }
+
+    /* ambient particles — drawn behind or in front of the fighters */
+    drawAmbient(ctx, layer) {
+      const w = this.w;
+      const h = this.h;
+      const front = new Set(["rain", "ember", "sparkle", "firefly"]);
+      ctx.save();
+      for (const m of this.ambient) {
+        const isFront = front.has(m.kind);
+        if (isFront !== (layer === "front")) continue;
+        const x = m.x * w + Math.sin(this.time * 0.8 + m.ph) * 6 - this.cam.x * 0.12 * this.cam.zoom;
+        const y = m.y * h;
+        switch (m.kind) {
+          case "rain": {
+            ctx.strokeStyle = "rgba(174,196,255,0.34)";
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + 4.5, y + m.size * 1.6);
+            ctx.stroke();
+            break;
+          }
+          case "snow": {
+            ctx.globalAlpha = 0.75;
+            ctx.fillStyle = "#eef7ff";
+            ctx.beginPath();
+            ctx.arc(x, y, m.size * 0.9, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+          case "ember": {
+            ctx.globalCompositeOperation = "lighter";
+            ctx.globalAlpha = 0.55 + Math.sin(this.time * 6 + m.ph) * 0.2;
+            ctx.drawImage(tintedGlow2D("#ffb066"), x - m.size * 2.4, y - m.size * 2.4, m.size * 4.8, m.size * 4.8);
+            break;
+          }
+          case "sparkle": case "firefly": {
+            const col = m.kind === "firefly" ? "#ff8ad8" : "#c0a4ff";
+            ctx.globalCompositeOperation = "lighter";
+            const tw = Math.pow(Math.max(0, Math.sin(this.time * (m.kind === "firefly" ? 1.9 : 3.1) + m.ph)), 3);
+            ctx.globalAlpha = 0.15 + tw * 0.8;
+            ctx.drawImage(tintedGlow2D(col), x - m.size * 3, y - m.size * 3, m.size * 6, m.size * 6);
+            break;
+          }
+          case "petal": {
+            ctx.globalAlpha = 0.6;
+            ctx.fillStyle = "#c4b1ff";
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(m.ph + this.time * 1.4);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, m.size * 1.5, m.size * 0.7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            break;
+          }
+          case "mist": case "spray": {
+            ctx.globalAlpha = 0.05;
+            ctx.fillStyle = "#b9c8ff";
+            ctx.beginPath();
+            ctx.ellipse(x, y, m.size * 22, m.size * 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+          }
+          case "dust": {
+            ctx.globalAlpha = 0.22;
+            ctx.fillStyle = "#caa0e8";
+            ctx.fillRect(x, y, 1.4, 1.4);
+            break;
+          }
+          default: break;
+        }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
+      }
+      ctx.restore();
     }
 
     drawShadow(ctx, f) {
@@ -2670,86 +3863,68 @@
       ctx.restore();
     }
 
-    drawFighter(ctx, f) {
+    drawFighter(ctx, f, dt) {
       const zoom = this.cam.zoom;
       const [sx, sy] = this.project(f.x, f.y);
-      const o = spritePose(f);
-      const H = FIGHTER_H * f.scale * zoom;
-      const entry = loadFighterArt(f.art);
+      const o = spritePose(f); // whole-body accents: squash on landing, dash stretch
+      const H = FIGHTER_H * f.scale * zoom * 1.08;
       const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
 
-      // dash after-images: the real art flattened to the element colour
-      if (f.ghosts.length && entry.ready) {
-        const tint = entry.tint(f.kit.color);
-        if (tint) {
+      // dash after-images: the same rig burned into additive light behind the path
+      if (f.ghosts.length) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const gh of f.ghosts) {
+          const [gx, gy] = this.project(gh.x, f.y);
           ctx.save();
-          ctx.globalCompositeOperation = "lighter";
-          f.ghosts.forEach((gh) => {
-            const [gx, gy] = this.project(gh.x, f.y);
-            ctx.save();
-            ctx.translate(gx, gy);
-            ctx.globalAlpha = (gh.life / gh.max) * 0.3 * alpha;
-            drawArtFighter(ctx, f, entry, tint, o, H, zoom, 1);
-            ctx.restore();
-          });
+          ctx.translate(gx, gy);
+          drawRig(ctx, f, 0, 0, H, { alpha: (gh.life / gh.max) * 0.42, rim: true, cloth: false, trail: false, dt: 1 / 120 });
           ctx.restore();
         }
+        ctx.restore();
       }
 
       ctx.save();
       ctx.translate(sx, sy);
-      if (o.rot) {
-        // topple backwards around the hips
-        ctx.translate(0, -H * 0.45);
-        ctx.rotate(-f.facing * o.rot);
-        ctx.translate(0, H * 0.45);
-      }
-      if (entry.ready) {
-        drawArtFighter(ctx, f, entry, entry.img, o, H, zoom, alpha);
-        // white damage flash / freeze coat over the exact same silhouette
-        if (f.flash > 0.02 || f.freeze > 0) {
-          ctx.save();
-          ctx.globalAlpha = alpha * Math.max(f.flash * 0.8, f.freeze > 0 ? 0.4 : 0);
-          drawArtFighter(ctx, f, entry, f.freeze > 0 ? entry.cyan : entry.white, o, H, zoom, 1);
-          ctx.restore();
-        }
-      } else {
-        // art not ready yet (offline?) — elemental silhouette keeps play going
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = f.kit.color;
-        ctx.beginPath();
-        ctx.ellipse(0, -H * 0.5, H * 0.22, H * 0.5, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // squash & stretch around the landing point keeps feet on the floor
+      ctx.scale(o.squashX, o.squashY);
+      ctx.translate(0, -o.bob * zoom * 0.35);
+      drawRig(ctx, f, 0, 0, H, { alpha, dt: dt || 1 / 60 });
       ctx.restore();
 
       // ward bubble
       if (f.shield > 0) {
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.28 + Math.sin(f.animT * 8) * 0.07;
+        ctx.globalAlpha = 0.3 + Math.sin(f.animT * 8) * 0.08;
         ctx.strokeStyle = "#7fd8ff";
         ctx.lineWidth = 3 * zoom;
         ctx.beginPath();
-        ctx.ellipse(sx, sy - H * 0.5, H * 0.38, H * 0.58, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy - H * 0.5, H * 0.44, H * 0.6, 0, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.globalAlpha *= 0.35;
+        ctx.fillStyle = "#7fd8ff";
+        ctx.beginPath();
+        ctx.ellipse(sx, sy - H * 0.5, H * 0.42, H * 0.58, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
       }
       if (f.empower > 0 && Math.random() < 0.5) this.particles(f, 1, f.kit.color, 0.4);
+      if (f.burn > 0 && Math.random() < 0.34) this.particles(f, 1, "#ff8a3c", 0.5);
 
       // charge gathering at the casting hand
       if (f.state === "ability" && f.phase === "windup" &&
           (f.attack?.type === "magic" || f.attack?.type === "buff")) {
         const charge = clamp(f.stateT / Math.max(0.01, f.attack.windup), 0, 1);
-        const hx = sx + f.facing * H * 0.36;
+        const hx = sx + f.facing * H * 0.3;
         const hy = sy - H * 0.62;
-        const size = (14 + charge * 42) * zoom * f.scale;
+        const size = (14 + charge * 44) * zoom;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
         ctx.globalAlpha = 0.5 + charge * 0.45;
         ctx.drawImage(tintedGlow2D(f.kit.glow), hx - size / 2, hy - size / 2, size, size);
         ctx.restore();
-        if (Math.random() < 0.45) {
+        if (Math.random() < 0.5) {
           this.fx.push({
             type: "mote", color: f.kit.color,
             x: f.x + f.facing * 26 * f.scale + rand(-30, 30),
@@ -2759,27 +3934,8 @@
           });
         }
       }
-
-      // the swing leaves a glowing arc sweeping in front of the sprite
-      if ((f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-          f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !o.spin) {
-        const prog = clamp((f.stateT - f.attack.windup) / (f.attack.active || 0.12), 0, 1);
-        ctx.save();
-        ctx.translate(sx + f.facing * H * 0.12, sy - H * 0.58);
-        ctx.scale(f.facing, 1);
-        ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.55 * (1 - prog);
-        ctx.strokeStyle = f.kit.glow;
-        ctx.lineWidth = 7 * zoom * f.scale;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.arc(0, 0, H * 0.72, -1.2 + prog * 1.7, -0.25 + prog * 1.7);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      if (f.burn > 0 && Math.random() < 0.3) this.particles(f, 1, "#ff8a3c", 0.5);
     }
+
     drawGroundFx(ctx) {
       for (let i = 0; i < this.fx.length; i += 1) {
         const p = this.fx[i];
@@ -2874,11 +4030,22 @@
       ctx.globalAlpha = a;
       ctx.textAlign = "center";
       ctx.font = `900 ${Math.min(76, this.w * 0.12)}px system-ui, sans-serif`;
+      const label = win ? "VICTORY!" : "DEFEAT";
+      // the winning word stamps in with a slight overshoot, like a seal
+      const stamp = clamp((this.endT - 0.12) * 5, 0, 1);
+      const pop = 1 + (1 - stamp) * (1 - stamp) * 0.6;
+      ctx.save();
+      ctx.translate(this.w / 2, this.h / 2);
+      ctx.scale(pop, pop);
       ctx.fillStyle = win ? "#ffd479" : "#ff5f6d";
-      ctx.fillText(win ? "K.O.!" : "DEFEAT", this.w / 2, this.h / 2);
+      ctx.fillText(label, 0, 0);
+      ctx.restore();
       ctx.font = "600 14px system-ui";
       ctx.fillStyle = "rgba(255,255,255,0.85)";
-      ctx.fillText(win ? "Chapter cleared" : "You wake at camp, fully healed", this.w / 2, this.h / 2 + 30);
+      ctx.fillText(
+        win ? "Chapter cleared — the gate grinds open" : "You wake at camp, fully healed",
+        this.w / 2, this.h / 2 + 30
+      );
       ctx.restore();
     }
   }

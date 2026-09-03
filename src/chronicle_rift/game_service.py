@@ -12,18 +12,28 @@ from .game_engine import (
     PurchaseResolution,
     TurnResolution,
     buy_character,
+    level_up_evils,
     resolve_arena,
     resolve_purchase,
     resolve_turn,
     select_character,
     sell_item,
+    upgrade_attribute,
+    upgrade_power,
     upgrade_relic,
     use_item,
 )
 from .identity import TelegramIdentity
-from .models import CHARACTERS, MAX_RELIC_LEVEL, RELIC_IDS, public_player_view
+from .models import (
+    ATTRIBUTE_IDS,
+    CHARACTERS,
+    MAX_RELIC_LEVEL,
+    RELIC_IDS,
+    public_player_view,
+)
 
 OWNER_TEST_COINS = 100_000
+OWNER_TEST_POINTS = 1000
 
 
 def apply_owner_unlocks(game: dict[str, Any]) -> bool:
@@ -38,6 +48,15 @@ def apply_owner_unlocks(game: dict[str, Any]) -> bool:
         changed = True
     if int(game.get("coins", 0)) < OWNER_TEST_COINS:
         game["coins"] = OWNER_TEST_COINS
+        changed = True
+    if int(game.get("attribute_points", 0)) < OWNER_TEST_POINTS:
+        game["attribute_points"] = OWNER_TEST_POINTS
+        changed = True
+    attributes = dict(game.get("attributes") or {})
+    if any(int(attributes.get(key, 0)) <= 0 for key in ATTRIBUTE_IDS):
+        game["attributes"] = {key: 10 for key in ATTRIBUTE_IDS} | {
+            k: max(int(v), 10) for k, v in attributes.items() if k in ATTRIBUTE_IDS
+        }
         changed = True
     owned = list(dict.fromkeys(game.get("owned_characters") or []))
     if not set(CHARACTERS) <= set(owned):
@@ -239,6 +258,22 @@ class GameService:
     async def upgrade_relic(self, identity: TelegramIdentity, item_id: str) -> PurchaseResult:
         """Spend coins to raise a relic's level and persist the result."""
         return await self._apply_item_op(identity, item_id, lambda p: upgrade_relic(p, item_id))
+
+    async def train_attribute(self, identity: TelegramIdentity, stat_key: str) -> PurchaseResult:
+        """Spend one earned Attribute Point on a single training track."""
+        return await self._apply_item_op(
+            identity, stat_key, lambda p: upgrade_attribute(p, stat_key)
+        )
+
+    async def buy_power(self, identity: TelegramIdentity, power_key: str) -> PurchaseResult:
+        """Buy the next level of a single power with coins (cost rises per level)."""
+        return await self._apply_item_op(
+            identity, power_key, lambda p: upgrade_power(p, power_key)
+        )
+
+    async def ascend_evils(self, identity: TelegramIdentity) -> PurchaseResult:
+        """Pay gold to raise the realm's Evil tier so slain evils return levelled up."""
+        return await self._apply_item_op(identity, "evils", level_up_evils)
 
     async def buy_character(self, identity: TelegramIdentity, character_id: str) -> PurchaseResult:
         """Buy a playable character with coins."""

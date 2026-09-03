@@ -179,8 +179,8 @@
     fit() {
       const section = $("screen-battle");
       const portrait = window.innerHeight > window.innerWidth;
+      // portrait phones are force-rotated by CSS — no popup nagging the player
       section.classList.toggle("force-landscape", portrait);
-      $("rotate-hint").hidden = !portrait;
       if (this.arena) this.arena.resize(section.offsetWidth, section.offsetHeight);
     },
 
@@ -202,6 +202,9 @@
       const hero = view.hero;
       const kit = window.ChronicleArena.kitFor(view.character.element);
       const speedByElement = { wind: 268, shadow: 240, fire: 232, arcane: 224, ice: 206 };
+      // training totals from the backend: every attribute point and every gold
+      // power bought on the profile screen bends the live duel numbers
+      const arenaMods = hero.arena || {};
       return {
         name: view.character.name,
         element: view.character.element,
@@ -212,18 +215,23 @@
         build: "hero",
         stats: {
           hp: Math.max(30, Math.round(hero.hp * HP_SCALE)),
-          damage: 7 + hero.power * 2.2 + hero.level * 1.4 + hero.attack_bonus * 1.6,
-          speed: speedByElement[view.character.element] || 230,
+          damage: (7 + hero.power * 2.2 + hero.level * 1.4 + hero.attack_bonus * 1.6) * (arenaMods.damage_mul || 1),
+          speed: (speedByElement[view.character.element] || 230) + (arenaMods.speed_add || 0),
           atkSpeed: view.character.element === "wind" ? 1.35 : view.character.element === "ice" ? 0.85 : 1,
           range: kit.basic.range,
           crit: clamp(0.1 + (hero.luck + hero.luck_bonus) * 0.012, 0.05, 0.45),
           defense: 16 + hero.ward_bonus * 4 + hero.level,
+          staminaRegenMul: arenaMods.stamina_regen_mul || 1,
         },
       };
     },
 
     enemyStats(view) {
       const enemy = view.enemy;
+      // every Evil level deliberately raised on the profile screen makes THIS
+      // duel meaner: thicker hide, heavier blows, quicker feet
+      const evil = Math.max(1, enemy.evil_level || 1);
+      const k = 1 + (evil - 1) * 0.06;
       return {
         name: enemy.name,
         element: enemy.element,
@@ -231,15 +239,15 @@
         art: ART(enemy.sprite, "png"),
         artFacing: -1,
         // evil is always bigger than the hero, and bosses tower
-        scale: enemy.boss ? 1.55 : 1.22,
+        scale: (enemy.boss ? 1.55 : 1.22) * (1 + (evil - 1) * 0.015),
         build: enemy.boss ? "brute" : "beast",
         stats: {
-          hp: Math.round(enemy.max_hp * HP_SCALE),
-          damage: 5 + enemy.attack * 1.15,
-          speed: (enemy.boss ? 172 : 198) + enemy.level * 3,
+          hp: Math.round(enemy.max_hp * HP_SCALE * k),
+          damage: (5 + enemy.attack * 1.15) * (1 + (evil - 1) * 0.05),
+          speed: (enemy.boss ? 172 : 198) + enemy.level * 3 + (evil - 1) * 4,
           atkSpeed: enemy.boss ? 0.8 : 0.95,
           range: enemy.boss ? 122 : 98,
-          crit: 0.08 + enemy.level * 0.005,
+          crit: 0.08 + enemy.level * 0.005 + (evil - 1) * 0.004,
           defense: 12 + enemy.level * 2 + (enemy.boss ? 10 : 0),
         },
       };
@@ -262,15 +270,19 @@
       $("mu-foe-art").src = ART(view.enemy.sprite, "png");
       $("mu-foe-name").textContent = e.name;
       $("mu-foe-stats").textContent = `${e.stats.hp} HP · ${Math.round(e.stats.damage)} DMG · ${view.enemy.ability || "—"}`;
-      $("hud-chapter").textContent = `CH ${view.quest.chapter}`;
-      $("fight-start-sub").textContent = `${view.quest.title} · ${view.enemy.boss ? "BOSS FIGHT" : "Chapter duel"}`;
+      $("fight-start-sub").textContent = `${view.enemy.gate || view.quest.title} · ${view.enemy.boss ? "BOSS FIGHT" : "Chapter duel"}`
+        + (view.enemy.evil_level > 1 ? ` · EVIL LV ${view.enemy.evil_level}` : "");
       $("fight-start-label").textContent = "FIGHT";
       document.documentElement.style.setProperty("--element", view.character.element_color);
       document.documentElement.style.setProperty("--foe-element", view.enemy.element_color);
+      // the evil guarding THIS gate decides the arena backdrop (rain on the
+      // Colossus Gate, blizzards on the Frost Gate, embers at the Ember Gate…)
       const scenes = { fire: "bg-ember", ice: "bg-frost", shadow: "bg-void", arcane: "bg-arcane", wind: "bg-arcane" };
-      this.arena.setScene(view.enemy.boss ? "bg-void" : scenes[view.enemy.element] || "bg-ember");
+      this.arena.setScene(view.enemy.scene || (view.enemy.boss ? "bg-void" : scenes[view.enemy.element] || "bg-ember"));
+      $("hud-chapter").textContent = view.enemy.gate || `CH ${view.quest.chapter}`;
       this.renderAbilityButtons(view);
       renderHealRail(view);
+      this.renderHealDock(view);
       $("fight-overlay").classList.add("is-open");
       this.arena.setFighters(p, e);
       this.arena.stop();
@@ -289,8 +301,41 @@
       this.settling = false;
       $("fight-overlay").classList.remove("is-open");
       window.ChronicleArena.setMuted(!state.settings.sound);
+      this.renderHealDock(view);
       this.arena.start();
       haptic("medium");
+    },
+
+    /* Healing is usable WHILE the duel rages: little potion chips sit right
+       beside the health bar. Tap one mid-fight and the sip lands as a floating
+       green number over the fighter — no pausing, no leaving the arena. */
+    renderHealDock(view) {
+      const dock = $("heal-dock");
+      if (!dock) return;
+      dock.replaceChildren();
+      healingItems(view).forEach((card) => {
+        const btn = el("button", "heal-chip");
+        btn.type = "button";
+        btn.title = `${card.ability} — restores ${card.power || "HP"} mid-duel`;
+        const img = el("img");
+        img.src = ART(card.art || "item-heal");
+        img.alt = "";
+        btn.appendChild(img);
+        btn.appendChild(el("b", null, `×${card.quantity}`));
+        if (card.quantity <= 0) btn.disabled = true;
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          useItem(card);
+        });
+        dock.appendChild(btn);
+      });
+      if (!dock.children.length) {
+        const empty = el("button", "heal-chip heal-chip-empty");
+        empty.type = "button";
+        empty.textContent = "no potions";
+        empty.addEventListener("click", (ev) => { ev.stopPropagation(); openRestock(); });
+        dock.appendChild(empty);
+      }
     },
 
     leave() {
@@ -519,6 +564,7 @@
 
     renderTopbar(view);
     renderProfile(view);
+    renderTraining(view);
 
     renderHealRail(view);
     renderHeroStore(view);
@@ -586,6 +632,99 @@
     }
   }
 
+  /* Training: every slain evil grants Training points (Attribute track) and
+   * every power can be bought up to Lv 100 with gold, each level costing more
+   * than the last. Both live on the profile screen and feed the arena. */
+  function renderTraining(view) {
+    const box = document.getElementById("training-panel");
+    if (!box) return;
+    const hero = view.hero;
+    const attrs = hero.attributes || [];
+    const powers = hero.powers || [];
+    const set = (id, text) => { const n = $(id); if (n) n.textContent = text; };
+    set("train-points", hero.attribute_points ?? 0);
+
+    const attrList = $("train-attrs");
+    attrList.replaceChildren();
+    attrs.forEach((row) => {
+      const node = el("div", "train-row");
+      node.appendChild(el("span", "train-icon", row.icon || "✦"));
+      const copy = el("div", "train-copy");
+      copy.appendChild(el("b", null, row.name));
+      copy.appendChild(el("small", "muted", row.desc || ""));
+      copy.appendChild(el("small", "train-lvl", `Lv ${row.attribute_level} / ${row.track_max}`));
+      node.appendChild(copy);
+      const bar = el("i", "train-bar");
+      bar.style.width = `${Math.min(100, (row.attribute_level / row.track_max) * 100)}%`;
+      const wrap = el("div", "train-bar-wrap");
+      wrap.appendChild(bar);
+      node.appendChild(wrap);
+      const btn = el("button", "train-btn");
+      btn.type = "button";
+      btn.textContent = "+1";
+      btn.disabled = (hero.attribute_points ?? 0) <= 0 || row.attribute_level >= row.track_max;
+      btn.title = "Spend one Training point";
+      btn.addEventListener("click", () => trainAttribute(row.key));
+      node.appendChild(btn);
+      attrList.appendChild(node);
+    });
+
+    const powerList = $("train-powers");
+    powerList.replaceChildren();
+    powers.forEach((row) => {
+      const node = el("div", "train-row");
+      node.appendChild(el("span", "train-icon", row.icon || "✦"));
+      const copy = el("div", "train-copy");
+      copy.appendChild(el("b", null, row.name));
+      copy.appendChild(el("small", "muted", row.desc || ""));
+      copy.appendChild(el("small", "train-lvl", `Lv ${row.power_level} / ${row.track_max}`));
+      node.appendChild(copy);
+      const bar = el("i", "train-bar");
+      bar.style.width = `${Math.min(100, (row.power_level / row.track_max) * 100)}%`;
+      const wrap = el("div", "train-bar-wrap");
+      wrap.appendChild(bar);
+      node.appendChild(wrap);
+      const btn = el("button", "train-btn train-btn-gold");
+      btn.type = "button";
+      if (row.next_cost === null || row.next_cost === undefined) {
+        btn.textContent = "MAX";
+        btn.disabled = true;
+      } else {
+        btn.textContent = `${row.next_cost} 🪙`;
+        btn.disabled = hero.gold < row.next_cost;
+        btn.title = `Upgrade ${row.name} for ${row.next_cost} gold`;
+        btn.addEventListener("click", () => upgradePower(row.key));
+      }
+      node.appendChild(btn);
+      powerList.appendChild(node);
+    });
+
+    // Evils you have slain stay slain — face them again only by corrupting
+    // the rift (paying gold raises EVERY evil one level at once).
+    const row = $("ascend-row");
+    row.replaceChildren();
+    const tier = (view.record && view.record.evil_tier) || 1;
+    const cost = 25 * tier;
+    const info = el("div", "ascend-copy");
+    info.appendChild(el("b", null, `Evil Corruption · Tier ${tier}`));
+    info.appendChild(el("small", "muted",
+      `${view.enemy.name} is back at Evil Lv ${view.enemy.evil_level} — ascend the rift to make every evil deadlier and face slain foes again.`));
+    row.appendChild(info);
+    const btn = el("button", "btn-primary ascend-btn");
+    btn.type = "button";
+    btn.textContent = `Ascend — ${cost} gold`;
+    btn.disabled = hero.gold < cost;
+    btn.addEventListener("click", () => ascendEvils(cost));
+    row.appendChild(btn);
+  }
+
+  const trainAttribute = (key) => itemCall("/api/attribute/train", { item_id: key });
+  const upgradePower = (key) => itemCall("/api/power/upgrade", { item_id: key });
+  function ascendEvils(cost) {
+    if ((state.player?.hero.gold ?? 0) < cost) { toast("Not enough gold to corrupt the rift", "error"); return; }
+    itemCall("/api/evil/ascend", {}).then((d) => { if (d?.turn?.success) haptic("heavy"); });
+  }
+
   function telegramUser() {
     try { return tg?.initDataUnsafe?.user || null; } catch (_) { return null; }
   }
@@ -596,6 +735,7 @@
   }
 
   function renderHealRail(view) {
+    Fight?.renderHealDock?.(view);
     const strip = $("rail-strip");
     if (!strip) return;
     strip.replaceChildren();
@@ -805,8 +945,8 @@
     const healed = (data.player.hero.hp || 0) - before;
     // a potion drunk before or between rounds also tops up the arena fighter
     if (healed > 0 && Fight.arena?.player) {
-      const f = Fight.arena.player;
-      f.hp = Math.min(f.maxHp, f.hp + healed * HP_SCALE);
+      // number, ring and chime over the fighter — the player SEES the sip land
+      Fight.arena.healFighter(Fight.arena.player, healed * HP_SCALE);
     }
   }
   const buyItem = (card) => itemCall("/api/buy", { item_id: card.id }).then((d) => { if (d) UI.coin(); return d; });

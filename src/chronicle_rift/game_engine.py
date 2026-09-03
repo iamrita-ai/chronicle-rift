@@ -46,11 +46,15 @@ from random import SystemRandom
 from typing import Any, Protocol
 
 from .models import (
+    ATTRIBUTE_IDS,
+    ATTRIBUTES,
+    CHAPTER_MONSTERS,
     CHARACTERS,
     DEFAULT_ENEMY,
     ELEMENTS,
     ITEMS,
     LOOT_TABLE,
+    MAX_POWER_LEVEL,
     MAX_RELIC_LEVEL,
     MONSTERS,
     add_item,
@@ -58,6 +62,7 @@ from .models import (
     character_of,
     ensure_game_defaults,
     monster_for_chapter,
+    power_cost,
     relic_cost,
     remove_item,
 )
@@ -244,6 +249,9 @@ def _fresh_effects(action: str, enemy: dict[str, Any]) -> dict[str, Any]:
         "defeated": False,
         "revived": False,
         "boss": bool(enemy.get("boss", False)),
+        "attribute_points_gained": 0,
+        "next_scene": enemy.get("scene", "bg-ember"),
+        "next_gate": enemy.get("gate", ""),
     }
 
 
@@ -297,17 +305,33 @@ def _victory(
 
     if game["xp"] >= game["level"] * 20:
         game["level"] += 1
-        game["base_max_hp"] = int(game.get("base_max_hp", game["max_hp"])) + 4
+        game["base_max_hp"] = int(game.get("base_max_hp", game["max_hp"])) + 6
         apply_relic_bonuses(game)
         game["hp"] = game["max_hp"]
         effects["leveled_up"] = True
-    game["enemy"] = _next_enemy(game["chapter"])
+
+    # A fallen evil never guards its gate again until the realm's Evil tier
+    # rises — and every victory trains the body, so attribute points drop as a
+    # minimal reward (bosses pay out a full lesson).
+    slain = game.setdefault("evil_slain", [])
+    if game["enemy"].get("id") and not game["enemy"].get("boss") \
+            and game["enemy"]["id"] not in slain:
+        slain.append(game["enemy"]["id"])
+    attribute_gain = 3 if was_boss else 1
+    game["attribute_points"] = int(game.get("attribute_points", 0)) + attribute_gain
+    effects["attribute_points_gained"] = attribute_gain
+
+    game["enemy"] = _next_enemy(game["chapter"], game)
     sync_intent(game["enemy"])
     effects["enemy_intent"] = game["enemy"]["intent"]
+    effects["next_scene"] = game["enemy"].get("scene", "bg-ember")
+    effects["next_gate"] = game["enemy"].get("gate", "")
     title = CHAPTER_TITLES[(game["chapter"] - 1) % len(CHAPTER_TITLES)]
     game["quest_title"] = f"Chapter {game['chapter']}: {title}"
     game["quest_objective"] = (
-        f"Defeat the {game['enemy']['name']} to open Chapter {game['chapter'] + 1}."
+        f"Defeat the {game['enemy']['name']} "
+        f"(Evil Lv {game['enemy'].get('evil_level', 1)}) guarding "
+        f"{game['enemy'].get('gate', 'the gate')} to open Chapter {game['chapter'] + 1}."
     )
     loot_note = ""
     if loot_cards:
@@ -317,7 +341,8 @@ def _victory(
     level_note = " You rise a level, vitality renewed!" if effects["leveled_up"] else ""
     summary = (
         f"Victory! The {fallen_name} falls. You claim {reward} gold, "
-        f"{coin_reward} coins, and {point_reward} points as a new chapter opens."
+        f"{coin_reward} coins, and {point_reward} points as a new chapter opens. "
+        f"+{attribute_gain} attribute point{'s' if attribute_gain > 1 else ''} to train with."
         f"{loot_note}{boss_note}{level_note}"
     )
     game["last_narrative"] = summary
@@ -699,6 +724,130 @@ def upgrade_relic(player: dict[str, Any], item_id: str) -> ItemResolution:
     )
 
 
+def upgrade_attribute(player: dict[str, Any], stat_key: str) -> ItemResolution:
+    """Spend one Attribute Point to train one track by a level (cap 100).
+
+    Tracks are trained strictly one at a time — strength, health, stamina and
+    speed never level up together — and every victory drops a minimal point,
+    with bosses dropping three.
+    """
+    if stat_key not in ATTRIBUTE_IDS:
+        return ItemResolution(
+            player, stat_key, "Unknown", "No such attribute to train.", False,
+            reason="unknown_stat",
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    attributes = game.setdefault("attributes", {})
+    level = int(attributes.get(stat_key, 0))
+    spec = ATTRIBUTES[stat_key]
+    if level >= MAX_POWER_LEVEL:
+        return ItemResolution(
+            updated, stat_key, spec["name"],
+            f"{spec['name']} is already perfected at level {MAX_POWER_LEVEL}.",
+            False, reason="max_level",
+        )
+    if int(game.get("attribute_points", 0)) <= 0:
+        return ItemResolution(
+            updated, stat_key, spec["name"],
+            "No Attribute Points yet — defeat a chapter boss or clear a chapter "
+            "to earn the minimal training reward.",
+            False, reason="no_points",
+        )
+    game["attribute_points"] = int(game["attribute_points"]) - 1
+    attributes[stat_key] = level + 1
+    hp_before = int(game.get("hp", 0))
+    max_hp_before = int(game.get("max_hp", 0))
+    apply_relic_bonuses(game)
+    gained = int(game["max_hp"]) - max_hp_before
+    if hp_before > 0 and gained > 0:
+        # Training Health pays the hero back at once with the new vitality.
+        game["hp"] = min(game["max_hp"], hp_before + gained)
+    summary = f"You train {spec['name']} to level {level + 1}. {spec['desc']}"
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, stat_key, spec["name"], summary, True,
+        effects={
+            "trained": stat_key,
+            "level": level + 1,
+            "attribute_points": int(game["attribute_points"]),
+        },
+    )
+
+
+def upgrade_power(player: dict[str, Any], power_key: str) -> ItemResolution:
+    """Buy the next level of a single power with coins. Each next level costs
+    more than the last, and the track caps at level 100."""
+    if power_key not in ATTRIBUTE_IDS:
+        return ItemResolution(
+            player, power_key, "Unknown", "No such power to upgrade.", False,
+            reason="unknown_stat",
+        )
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    powers = game.setdefault("powers", {})
+    level = int(powers.get(power_key, 0))
+    spec = ATTRIBUTES[power_key]
+    if level >= MAX_POWER_LEVEL:
+        return ItemResolution(
+            updated, power_key, spec["name"],
+            f"{spec['name']} is already perfected at level {MAX_POWER_LEVEL}.",
+            False, reason="max_level",
+        )
+    price = power_cost(level)
+    if game["coins"] < price:
+        return ItemResolution(
+            updated, power_key, spec["name"],
+            f"Channeling {spec['name']} to level {level + 1} costs {price} coins, "
+            f"but you have {game['coins']}. The rift's price rises every level.",
+            False, reason="insufficient_coins",
+        )
+    game["coins"] -= price
+    powers[power_key] = level + 1
+    apply_relic_bonuses(game)
+    summary = f"You channel the rift: {spec['name']} power reaches level {level + 1}."
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, power_key, spec["name"], summary, True,
+        effects={"empowered": power_key, "level": level + 1, "coins_spent": price},
+    )
+
+
+def level_up_evils(player: dict[str, Any]) -> ItemResolution:
+    """Pay gold to corrupt the rift: the Evil tier rises, every fallen evil
+    returns at its new level, stronger and guarding its own gate again."""
+    updated = deepcopy(player)
+    ensure_game_defaults(updated)
+    game = updated["game"]
+    tier = int(game.get("evil_tier", 1))
+    price = EVIL_ASCEND_GOLD * tier
+    if game["gold"] < price:
+        return ItemResolution(
+            updated, "evils", "Evil Ascension",
+            f"Corrupting the rift costs {price} gold, but you have {game['gold']}.",
+            False, reason="insufficient_gold",
+        )
+    game["gold"] -= price
+    game["evil_tier"] = tier + 1
+    game["evil_slain"] = []
+    # The chapter at hand re-forges its guardian at the new tier immediately.
+    game["enemy"] = build_enemy(int(game["chapter"]), game)
+    sync_intent(game["enemy"])
+    summary = (
+        f"You pour {price} gold into the breach. Every evil rises to "
+        f"Evil Lv {game['evil_tier']} — the ones you slew return fiercer, "
+        f"and the {game['enemy']['name']} is already waiting at its gate."
+    )
+    game["last_narrative"] = summary
+    return ItemResolution(
+        updated, "evils", "Evil Ascension", summary, True,
+        effects={"evil_tier": game["evil_tier"], "gold_spent": price,
+                 "enemy_intent": game["enemy"]["intent"]},
+    )
+
+
 def sell_item(player: dict[str, Any], item_id: str, quantity: int = 1) -> ItemResolution:
     """Turn satchel items into coins."""
     item = ITEMS.get(item_id)
@@ -984,8 +1133,19 @@ RULES = (
     "12. Heroes are bought with coins in the Mini App; each has its own element, "
     "stats and three attacks. Monsters carry their own ability and scale in "
     "toughness with the chapter.\n"
-    "13. One account per player, verified server-side. Automation, spoofing, or "
-    "abuse costs you access. Play fair and keep the realm honourable.\n"
+    "13. Every victory drops a minimal training reward (1 Attribute Point, 3 "
+    "from bosses). Spend points in Profile to raise Strength, Health, Stamina "
+    "or Speed — one track at a time, each capped at level 100. The same four "
+    "powers can also be bought with coins; every coin upgrade costs more than "
+    "the one before it.\n"
+    "14. A monster you have slain never guards a gate again at its current "
+    "Evil level: the rotation moves on, and only when the last evil falls (or "
+    "you corrupt the rift with gold) do they all return — levelled up, "
+    "stronger, and each waiting at the gate it owns.\n"
+    "15. Potions heal mid-duel: your healing items sit right under your health "
+    "bar in the arena — one tap drinks them instantly.\n"
+    "16. One account per player, verified server-side. Automation, spoofing, "
+    "or abuse costs you access. Play fair and keep the realm honourable.\n"
 )
 
 
@@ -1013,36 +1173,72 @@ TERMS = (
 )
 
 
-def build_enemy(chapter: int) -> dict[str, Any]:
+EVIL_ASCEND_GOLD = 25  # gold per current tier to corrupt the rift on demand
+EVIL_TIER_HP_MUL = 0.25  # +25% enemy HP per Evil level above 1
+EVIL_TIER_ATK_ADD = 2  # +2 enemy attack per Evil level above 1
+
+
+def choose_chapter_monster(chapter: int, game: dict[str, Any] | None) -> tuple[str, int]:
+    """Pick which evil guards ``chapter`` and the Evil tier it serves at.
+
+    A monster that has already fallen at the current Evil tier never guards a
+    gate again — the rotation moves on to the evils still unstained. When the
+    last of them falls, the realm's Evil tier rises by one (every evil returns
+    levelled up, scaled and hungry), which is exactly the "beat her again?
+    raise her Evil level" promise made to the player.
+    """
+    tier = int((game or {}).get("evil_tier", 1)) or 1
+    if chapter % BOSS_EVERY == 0:
+        return "ebon_colossus", tier
+    if game is None:
+        return monster_for_chapter(chapter), tier
+    slain = set(game.get("evil_slain") or [])
+    candidates = [m for m in CHAPTER_MONSTERS if m not in slain]
+    if not candidates:
+        tier += 1
+        game["evil_tier"] = tier
+        game["evil_slain"] = []
+        candidates = list(CHAPTER_MONSTERS)
+    return candidates[0], tier
+
+
+def build_enemy(chapter: int, game: dict[str, Any] | None = None) -> dict[str, Any]:
     """Spawn the monster that guards ``chapter``, scaled to its toughness curve."""
-    monster_id = monster_for_chapter(chapter)
+    monster_id, evil_tier = choose_chapter_monster(chapter, game)
     spec = MONSTERS[monster_id]
     tier = max(0, chapter - 1)
     boss = bool(spec.get("boss"))
     hp = int(spec["hp"] + spec["hp_growth"] * tier)
     if boss:
         hp = int(hp * 1.25)
+    attack = int(spec["attack"] + spec["attack_growth"] * tier)
+    if evil_tier > 1:
+        hp = round(hp * (1 + EVIL_TIER_HP_MUL * (evil_tier - 1)))
+        attack += EVIL_TIER_ATK_ADD * (evil_tier - 1)
     enemy = {
         "id": monster_id,
         "name": spec["name"],
         "hp": hp,
         "max_hp": hp,
-        "attack": int(spec["attack"] + spec["attack_growth"] * tier),
+        "attack": attack,
         "art": spec["emoji"],
         "sprite": spec["art"],
         "element": spec["element"],
         "ability": spec["ability"],
         "level": chapter,
         "boss": boss,
+        "scene": spec.get("scene", "bg-ember"),
+        "gate": spec.get("gate", "The Rift Gate"),
+        "evil_level": evil_tier,
         "intent_index": 0,
     }
     sync_intent(enemy)
     return enemy
 
 
-def _next_enemy(chapter: int) -> dict[str, Any]:
-    """Backwards-compatible alias used by the victory path."""
-    return build_enemy(chapter)
+def _next_enemy(chapter: int, game: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Spawn the next chapter's guardian, honouring the evil rotation."""
+    return build_enemy(chapter, game)
 
 
 def resolve_arena(

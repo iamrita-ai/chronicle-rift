@@ -393,6 +393,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request, request.app.state.game_service.upgrade_relic(identity, payload.item_id)
         )
 
+    @app.post("/api/attribute/train", tags=["mini-app"])
+    async def train_attribute_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        """Spend one earned Attribute Point on a single training track."""
+        return await _item_endpoint(
+            request, request.app.state.game_service.train_attribute(identity, payload.item_id)
+        )
+
+    @app.post("/api/power/upgrade", tags=["mini-app"])
+    async def power_upgrade_endpoint(
+        payload: BuyRequest,
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        """Buy the next level of a single power with coins; cost rises per level."""
+        return await _item_endpoint(
+            request, request.app.state.game_service.buy_power(identity, payload.item_id)
+        )
+
+    @app.post("/api/evil/ascend", tags=["mini-app"])
+    async def evil_ascend_endpoint(
+        request: Request,
+        identity: TelegramIdentity = mini_app_identity_dependency,
+    ) -> dict[str, Any]:
+        """Raise the realm's Evil tier so fallen evils return levelled up."""
+        return await _item_endpoint(
+            request, request.app.state.game_service.ascend_evils(identity)
+        )
+
     @app.post("/api/character/buy", tags=["mini-app"])
     async def buy_character_endpoint(
         payload: BuyRequest,

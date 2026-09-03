@@ -33,11 +33,13 @@
 
 | | |
 | --- | --- |
-| 🥊 **Real-time 3D combat** | A Three.js arena — fully jointed fighters, real weapon swings, hitboxes that only land when the blade connects, knockback arcs, hit-stop, slow-motion K.O.s and impact zoom. |
+| 🥊 **Real-time combat, two engines** | A Three.js arena **or** a Shadow-Fight-style 2D canvas — both driven by the *same* articulated rig: marching legs, swinging elbows, hair and cloaks on spring chains, blade-light trails, hitboxes that only land when the weapon connects, knockback arcs, hit-stop and slow-motion finishes. |
 | 🧙 **Five hand-built heroes** | Emberblade (flaming sword), Frostward (ice spear + tower shield), Stormcaller (twin sabers on the gale), the Rift Reader (rift-tome + orbiting runes), Voidreaper (hooded scythe). |
 | 👹 **Five distinct monsters** | The quadruped Rift Stalker with a live tail, the hulking Ash Warden, shard-orbiting Obsidian Herald, floating Frost Revenant and the boss Ebon Colossus. |
-| 🌍 **Living arenas** | Painted sky domes, rune pillars, floating rift rocks, flickering braziers and drifting elemental motes — themed per element. |
-| ⚡ **Smooth by design** | Fixed 120 Hz simulation, buffered inputs, adaptive resolution that protects frame rate on weak phones — plus a **Graphics** setting (Auto / 3D / 2D) so any device can force the always-works 2D engine. |
+| 🌍 **Living arenas per gate** | Each chapter's backdrop follows the evil guarding its gate: ember rain at the Colossus Gate with lightning strobes, blizzards on the Frost Gate, rising embers at the Ember Gate, drifting runes in the Arcane hall, mist and rift-light at the Void Gate — plus fog bands, torch flicker, parallax and a landmark silhouette of the gate itself. |
+| ⚡ **Smooth by design** | Fixed 120 Hz simulation, buffered inputs, adaptive resolution on weak phones — plus a **Graphics** setting (Auto / 3D / 2D). Portrait phones are rotated silently, no nag popups. |
+| 💢 **Duels that react to you** | Combos escalate damage the faster you chain hits, heavy and ultimate blows trigger a cinematic beat — zoom, slow-mo, screen flash — every strike flies as a floating number **color-coded per side**, KOs land in VICTORY stamps, and potions can be sipped **mid-duel** right from the health-bar dock. |
+| 📈 **Training, not just grinding** | Every slain evil grants Training points for attributes (Might, Vitality, Vigor, Swiftness); powers upgrade separately with gold up to **Lv 100** at escalating cost. Slain evils stay dead — face them again only by ascending the rift's **Evil level**, which makes every monster stronger. |
 | 🛍 **Economy that matters** | Coins, loot chests, 18 items, upgradeable relics, a marketplace and a hero roster — the shop shows each ability's **damage and effects**, not just timers. |
 | 🤖 **Colored bot home** | Every button on `/start` is colored and deep-links straight into the matching Mini App screen: play, store, satchel, heroes, profile, rules, terms — plus **Share** and **GitHub**. |
 | 💬 **Feedback pipeline** | One red button collects bug reports, feature requests and ideas — every note is stored **and delivered to the owner's Telegram**. |
@@ -46,6 +48,8 @@
 | 🔐 **Hardened by default** | Telegram `initData` HMAC validation, webhook secret checks, strict CSP, optimistic concurrency in MongoDB. |
 
 ## 📸 Screenshots
+
+Captured from the live game (v0.13 rig engine, both renderers). More are one `python tools/capture_screens.py` away.
 
 | Rift Arena — elemental duels | |
 | :---: | :---: |
@@ -59,7 +63,7 @@
 
 You are a Riftwalker. One monster guards each chapter — empty its HP bar in a **real-time duel** to clear it, earn Gold, Coins, Points and a loot chest, and a stronger monster steps up. Every 5th chapter is a boss with doubled rewards. Death is safe: you wake at camp fully healed and keep everything.
 
-**Controls** — joystick to move, the big sword button to attack, three ability buttons above it. Tap during a recovery and the input is buffered into the next swing. Desktop: `A`/`D` move, `J`/`Space` attack, `U`/`I`/`O` for abilities.
+**Controls** — joystick to move, the big sword button to attack, three ability buttons above it, guard to ward, dash to slip attacks. Tap during a recovery and the input is buffered into the next swing. Potion chips beside your health bar heal **during** the fight. Win and the arena stamps **VICTORY**, not a plain K.O. Desktop: `A`/`D` move, `J`/`Space` attack, `K` guard, `L` dash, `U`/`I`/`O` for abilities.
 
 **The five hero kits** (the shop shows live damage estimates for your level):
 
@@ -106,7 +110,34 @@ The included [`render.yaml`](render.yaml) is a ready blueprint with a `/healthz`
 3. Deploy — Render supplies `RENDER_EXTERNAL_URL` and HTTPS automatically; the app registers the webhook itself.
 4. Check `https://<service>.onrender.com/healthz`, then `/start` your bot.
 
-### 3 · Docker (any host)
+### 3 · Heroku (free-friendly)
+
+```bash
+heroku create chronicle-rift
+heroku config:set BOT_TOKEN=… MONGODB_URI=… GROQ_API_KEY=… \
+  BOT_MODE=webhook OWNER_USER_ID=…
+heroku buildpacks:add heroku/python
+git push heroku main          # the included Procfile starts uvicorn on $PORT
+heroku open /healthz          # not required — but nice to see "ok"
+```
+
+The app registers its own webhook from `PUBLIC_BASE_URL`; on Heroku that is derived automatically from the app URL. Scale one web dyno, no workers needed.
+
+### 4 · Railway / Fly.io
+
+```bash
+# Railway — uses the Dockerfile automatically
+railway init && railway up            # then set the env vars in the dashboard
+
+# Fly.io
+fly launch --buildpack heroku/python  # or: flyctl deploy (uses Dockerfile)
+fly secrets set BOT_TOKEN=… MONGODB_URI=… GROQ_API_KEY=… BOT_MODE=webhook
+fly open
+```
+
+Both honor the same contract as Render: one HTTPS web process, `PORT` from the environment, `/healthz` for liveness.
+
+### 5 · Docker (any host)
 
 ```bash
 docker build -t chronicle-rift .
@@ -115,7 +146,7 @@ docker run --rm --env-file .env -p 10000:10000 chronicle-rift
 
 For a public deployment set `BOT_MODE=webhook` plus `PUBLIC_BASE_URL=https://your-domain` behind any HTTPS reverse proxy.
 
-### 4 · VPS — Ubuntu + systemd + nginx + Certbot
+### 6 · VPS — Ubuntu + systemd + nginx + Certbot
 
 ```bash
 # 1) app user + code + venv
@@ -200,6 +231,8 @@ All game routes are same-origin and authenticated with the Mini App's signed `in
 | `/api/arena/finish` | POST | `{ "outcome": "win\|lose", "hp_left": int }` |
 | `/api/buy` · `/api/use` · `/api/sell` · `/api/upgrade` | POST | `{ "item_id": … }` (+`quantity` for sell) |
 | `/api/character/buy` · `/api/character/select` | POST | Hero roster operations |
+| `/api/attribute/train` · `/api/power/upgrade` | POST | `{ "item_id": "might\|vitality\|vigor\|swiftness" }` — training points / gold powers (cap 100) |
+| `/api/evil/ascend` | POST | Corrupt the rift: every Evil levels up, slain monsters return stronger |
 | `/telegram/webhook` | POST | Telegram updates (secret-token checked) |
 
 No endpoint accepts a client-supplied user ID, profile or game state.
@@ -233,7 +266,7 @@ src/chronicle_rift/
 └── webapp/            # Mini App: index.html, app.js, arena.js (Three.js), art/
 ```
 
-Run the checks: `ruff check . && pytest` — 65 tests, zero lint findings.
+Run the checks: `ruff check . && pytest` — 74 tests, zero lint findings.
 
 ## 🤝 Contributing
 
@@ -254,7 +287,6 @@ Useful: `src/chronicle_rift/webapp/demo-harness.html` drives the arena engine st
 | | |
 | --- | --- |
 | **Owner** | [![Telegram](https://img.shields.io/badge/Telegram-@TechnicalSerena-26A5E4?logo=telegram&logoColor=white)](https://t.me/TechnicalSerena) |
-| **Co-owner** | [![Telegram](https://img.shields.io/badge/Telegram-@XioquiXan-26A5E4?logo=telegram&logoColor=white)](https://t.me/XioquiXan) |
 | **Source** | [![GitHub](https://img.shields.io/badge/GitHub-iamrita--ai%2Fchronicle--rift-181717?logo=github)](https://github.com/iamrita-ai/chronicle-rift) |
 | **Stack** | [Three.js](https://threejs.org/) · [FastAPI](https://fastapi.tiangolo.com/) · [python-telegram-bot](https://python-telegram-bot.org/) · [MongoDB](https://www.mongodb.com/) · [Groq](https://groq.com/) |
 

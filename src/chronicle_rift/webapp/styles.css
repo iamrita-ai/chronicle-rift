@@ -375,9 +375,11 @@ svg {
   text-align: center;
 }
 .quest-foe img {
-  width: 88px;
-  height: 88px;
+  width: 132px;
+  height: auto;
+  aspect-ratio: 1408 / 768;
   object-fit: contain;
+  object-position: bottom center;
   mix-blend-mode: screen;
   filter: drop-shadow(0 0 14px color-mix(in srgb, var(--foe-element) 45%, transparent));
   animation: float-idle 3.1s ease-in-out infinite;
@@ -1484,8 +1486,10 @@ svg {
 }
 .hero-card-art img {
   width: 100%;
-  height: 168px;
+  height: auto;
+  aspect-ratio: 1408 / 768;
   object-fit: contain;
+  object-position: bottom center;
   mix-blend-mode: screen;
   animation: float-idle 4s ease-in-out infinite;
 }
@@ -2290,11 +2294,17 @@ body.in-fight #app {
   gap: 2px;
 }
 .mu-side img {
+  /* the key art is a wide 1408x768 render — frame it by its own aspect so
+     the fighter is never stretched or cropped in the matchup card */
   width: 100%;
-  max-width: 150px;
-  height: 156px;
+  max-width: 176px;
+  aspect-ratio: 1408 / 768;
+  height: auto;
   object-fit: contain;
+  object-position: bottom center;
   mix-blend-mode: screen;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 82%, rgba(20, 14, 30, 0.55), transparent 70%);
   animation: float-idle 3.4s ease-in-out infinite;
 }
 .mu-side b {
@@ -2332,46 +2342,13 @@ body.in-fight #app {
   width: 100%;
   height: 100%;
 }
-.rotate-hint {
-  position: absolute;
-  left: 50%;
-  top: calc(50% + 74px);
-  transform: translateX(-50%);
-  z-index: 19;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(6, 8, 22, 0.82);
-  border: 1px solid var(--line);
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  animation: rot-pulse 2.6s ease-in-out infinite;
-  pointer-events: none;
-}
-.rotate-hint svg {
-  width: 17px;
-  height: 17px;
-  color: var(--element);
-  animation: rot-turn 2.6s ease-in-out infinite;
-}
-@keyframes rot-turn {
-  40% { transform: rotate(90deg); }
-  90% { transform: rotate(90deg); }
-}
-@keyframes rot-pulse {
-  50% { opacity: 0.55; }
-}
 /* landscape: shrink the overlay so the matchup + FIGHT button always fit */
 .force-landscape .fight-overlay {
   padding: 10px 16px;
   gap: 8px;
 }
 .force-landscape .mu-side img {
-  height: 104px;
-  max-width: 110px;
+  max-width: 132px;
 }
 .force-landscape .mu-side b { font-size: 13px; }
 .force-landscape .heal-rail { padding: 6px 10px; }
@@ -2381,6 +2358,145 @@ body.in-fight #app {
 .force-landscape .play-btn b { font-size: 15px; }
 .force-landscape .matchup { gap: 4px; }
 .force-landscape .mu-note { display: none; }
+
+/* --- mid-duel potion chips (live beside the player's health bar) -------- */
+.hud-heals {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+}
+.heal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px 3px 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 240, 170, 0.35);
+  background: rgba(10, 16, 12, 0.68);
+  color: #b8f5c8;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.heal-chip img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(120, 255, 170, 0.5));
+  pointer-events: none;
+}
+.heal-chip:hover:not(:disabled),
+.heal-chip:active:not(:disabled) {
+  transform: translateY(-1px) scale(1.05);
+  border-color: rgba(140, 240, 170, 0.75);
+  box-shadow: 0 0 12px rgba(120, 255, 170, 0.3);
+}
+.heal-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.heal-chip-empty {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--muted, #8b93b8);
+  background: rgba(10, 12, 20, 0.6);
+  font-weight: 600;
+}
+.force-landscape .heal-chip { padding: 2px 6px 2px 3px; }
+.force-landscape .heal-chip img { width: 16px; height: 16px; }
+
+/* --- profile "Trained Might" panel -------------------------------------- */
+.train-panel { margin-top: 14px; }
+.train-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .train-cols { grid-template-columns: 1fr; }
+}
+.train-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #8b93b8);
+  margin: 0 0 8px;
+}
+.train-pts {
+  background: linear-gradient(135deg, #35d07f, #1ea65c);
+  color: #04140b;
+  font-weight: 900;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 11px;
+}
+.train-cap { font-weight: 600; text-transform: none; letter-spacing: 0; }
+.train-list { display: flex; flex-direction: column; gap: 7px; }
+.train-row {
+  display: grid;
+  grid-template-columns: auto 1fr 46px auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(12, 14, 28, 0.55);
+}
+.train-row b { font-size: 12.5px; display: block; }
+.train-copy { min-width: 0; }
+.train-copy small { display: block; font-size: 10px; color: var(--muted, #8b93b8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.train-lvl { color: #cfd6ff !important; font-weight: 700; }
+.train-icon { font-size: 17px; filter: drop-shadow(0 0 8px rgba(180, 139, 255, 0.5)); }
+.train-bar-wrap {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  align-self: center;
+}
+.train-bar {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #b48bff, #7fd8ff);
+  transition: width 0.35s ease;
+}
+.train-btn {
+  border: 1px solid rgba(140, 240, 170, 0.4);
+  background: rgba(14, 26, 18, 0.75);
+  color: #b8f5c8;
+  border-radius: 9px;
+  font-weight: 900;
+  font-size: 12px;
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.train-btn-gold { border-color: rgba(255, 212, 121, 0.45); color: #ffd479; background: rgba(30, 22, 8, 0.75); }
+.train-btn:disabled { opacity: 0.35; cursor: default; }
+.ascend-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 95, 109, 0.3);
+  background: linear-gradient(120deg, rgba(40, 10, 16, 0.6), rgba(16, 8, 20, 0.4));
+}
+.ascend-copy b { font-size: 12.5px; color: #ff9aa4; }
+.ascend-copy small { display: block; font-size: 10px; }
+.ascend-btn { white-space: nowrap; }
 
 /* ================================================================== *
  * v0.10 — top player bar, profile / rules / terms, 3D fx overlay

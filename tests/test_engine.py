@@ -40,8 +40,9 @@ def test_strike_is_immutable_and_applies_both_sides() -> None:
 
     assert player == original
     assert result.player["game"]["energy"] == 4
-    assert result.player["game"]["enemy"]["hp"] == 11  # 5 roll + level 1 + power 1
-    assert result.player["game"]["hp"] == 19
+    # 5 roll + level 1 + power 2 = 8 damage; the tougher Warden starts at 26.
+    assert result.player["game"]["enemy"]["hp"] == 18
+    assert result.player["game"]["hp"] == 38  # 44 base vitality − the 6-damage Slash
     assert result.victory is False
 
 
@@ -67,8 +68,10 @@ def test_guard_reduces_incoming_damage_and_restores_energy() -> None:
     result = resolve_turn(player, "guard", FixedRandom(5))
 
     assert result.player["game"]["energy"] == 3
-    assert result.player["game"]["hp"] == 24
-    assert "swallows" in result.summary
+    # A perfect ward (5) still lets 1 point of the beefed-up Slash through.
+    assert result.player["game"]["hp"] == 43
+    assert result.effects["blocked"] == 5
+    assert "answers with Slash: 1 damage (5 blocked by your ward)" in result.summary
 
 
 def test_victory_awards_coins_and_points() -> None:
@@ -126,10 +129,10 @@ def test_perfect_strike_roll_is_a_critical_hit() -> None:
     result = resolve_turn(player, "strike", QueuedRandom([8, 2]))
     game = result.player["game"]
 
-    # Damage: round((8 + level 1 + power 1) * 1.5) = 15; enemy 18 - 15 = 3.
+    # Damage: round((8 + level 1 + power 2) * 1.5) = 16; enemy 26 - 16 = 10.
     assert result.effects["crit"] is True
-    assert result.effects["damage"] == 15
-    assert game["enemy"]["hp"] == 3
+    assert result.effects["damage"] == 16
+    assert game["enemy"]["hp"] == 10
     assert "CRITICAL" in result.summary
 
 
@@ -142,10 +145,10 @@ def test_scout_exposes_enemy_and_buffs_next_strike() -> None:
     assert scouted.player["game"]["exposed_strikes"] == 1
 
     struck = resolve_turn(scouted.player, "strike", QueuedRandom([4, 2]))
-    # Damage: 4 + level 1 + power 1 + 2 exposure + 1 Focus x2 = 10.
+    # Damage: 4 + level 1 + power 2 + 2 exposure + 1 Focus x2 = 11.
     assert struck.effects["exposed_used"] is True
     assert struck.effects["focus_spent"] == 1
-    assert struck.effects["damage"] == 10
+    assert struck.effects["damage"] == 11
     assert struck.player["game"]["exposed_strikes"] == 0
 
 
@@ -155,8 +158,8 @@ def test_perfect_ward_reflects_damage() -> None:
     result = resolve_turn(player, "guard", QueuedRandom([5, 2]))
 
     assert result.effects["reflect"] == 2
-    assert result.player["game"]["enemy"]["hp"] == 16
-    assert result.player["game"]["hp"] == 24
+    assert result.player["game"]["enemy"]["hp"] == 24  # 26 − 2 reflect
+    assert result.player["game"]["hp"] == 43  # ward 5 vs a 6-damage slash
 
 
 def test_every_fifth_chapter_spawns_a_boss_with_double_rewards() -> None:
@@ -202,13 +205,13 @@ def test_enemy_intent_is_telegraphed_and_follows_a_fixed_pattern() -> None:
     # Ash Warden rotation is slash, slash, heavy — after one turn the next
     # telegraphed move is the second Slash.
     assert intent["id"] == "slash"
-    assert intent["damage"] == 5
+    assert intent["damage"] == 6
 
     second = resolve_turn(
         resolve_turn(player, "scout", FixedRandom(2)).player, "scout", FixedRandom(2)
     )
     assert second.effects["enemy_intent"]["id"] == "heavy"
-    assert second.effects["enemy_intent"]["damage"] == 9
+    assert second.effects["enemy_intent"]["damage"] == 10
     assert "Heavy Blow" in second.summary
 
 
@@ -219,8 +222,8 @@ def test_guard_blocks_the_telegraphed_heavy_blow() -> None:
     result = resolve_turn(player, "guard", FixedRandom(4))
 
     assert result.effects["blocked"] == 4
-    assert result.effects["enemy_damage"] == 5
-    assert result.player["game"]["hp"] == 19
+    assert result.effects["enemy_damage"] == 6  # heavy 10 − ward 4
+    assert result.player["game"]["hp"] == 38
 
 
 def test_focus_builds_on_setup_moves_and_is_spent_by_strike() -> None:
@@ -231,9 +234,9 @@ def test_focus_builds_on_setup_moves_and_is_spent_by_strike() -> None:
     assert guarded.player["game"]["focus"] == 2
 
     struck = resolve_turn(guarded.player, "strike", FixedRandom(4))
-    # 4 roll + level 1 + power 1 + 2 Focus x2 = 10 damage, and the meter empties.
+    # 4 roll + level 1 + power 2 + 2 Focus x2 = 11 damage, meter empties.
     assert struck.effects["focus_spent"] == 2
-    assert struck.effects["damage"] == 10
+    assert struck.effects["damage"] == 11
     assert struck.player["game"]["focus"] == 0
 
 
@@ -311,7 +314,7 @@ def test_ember_heart_raises_maximum_vitality() -> None:
     player["game"]["coins"] = 500
     result = resolve_purchase(player, "heart")
 
-    assert result.player["game"]["max_hp"] == 24 + 5
+    assert result.player["game"]["max_hp"] == 44 + 5
 
 
 def test_items_can_be_used_and_sold() -> None:
@@ -323,7 +326,7 @@ def test_items_can_be_used_and_sold() -> None:
 
     used = use_item(player, "greater_draught")
     assert used.success is True
-    assert used.player["game"]["hp"] == 24
+    assert used.player["game"]["hp"] == 40  # 10 + 30, under the new 44 cap
     assert "greater_draught" not in used.player["game"]["inventory"]
 
     sold = sell_item(used.player, "salve", 2)
@@ -357,7 +360,7 @@ def test_veil_powder_makes_the_enemy_miss() -> None:
 
     assert result.effects["stunned"] is True
     assert result.effects["enemy_damage"] == 0
-    assert result.player["game"]["hp"] == 24
+    assert result.player["game"]["hp"] == 44
 
 
 def test_legacy_documents_migrate_to_the_new_inventory() -> None:
@@ -391,7 +394,7 @@ def test_heavy_attack_costs_two_energy_and_hits_harder() -> None:
     result = resolve_turn(player, "heavy", FixedRandom(10))
 
     assert result.player["game"]["energy"] == 3
-    assert result.effects["damage"] == 12  # 10 + level 1 + power 1
+    assert result.effects["damage"] == 13  # 10 + level 1 + power 2
     assert "Molten Cleave" in result.summary
 
 
@@ -407,7 +410,7 @@ def test_fire_special_burns_and_ice_special_freezes() -> None:
     ice["game"]["character"] = "frostward"
     ice["game"]["owned_characters"] = ["emberblade", "frostward"]
     ensure_game_defaults(ice)
-    assert ice["game"]["max_hp"] == 30
+    assert ice["game"]["max_hp"] == 56
 
     # The freeze eats the counterattack that would have landed this turn.
     frozen = resolve_turn(ice, "special", FixedRandom(5))
@@ -438,7 +441,7 @@ def test_attacks_are_refused_without_enough_energy() -> None:
 
     assert result.effects["blocked_action"] is True
     assert result.player["game"]["energy"] == 2
-    assert result.player["game"]["enemy"]["hp"] == 18
+    assert result.player["game"]["enemy"]["hp"] == 26
 
 
 def test_monsters_scale_and_carry_their_own_ability() -> None:
@@ -523,4 +526,5 @@ def test_public_view_exposes_profile_and_record() -> None:
     assert view["profile"]["username"] == "duelist"
     assert view["record"] == {
         "wins": 0, "losses": 0, "boss_kills": 0, "chapter": 1, "best_chapter": 1,
+        "evil_tier": 1,
     }

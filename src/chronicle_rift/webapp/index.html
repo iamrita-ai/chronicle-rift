@@ -142,6 +142,7 @@
             </div>
             <div class="hud-bar"><i class="ghost" id="hud-p-ghost"></i><i class="fill" id="hud-p-fill"></i></div>
             <div class="hud-stam"><i id="hud-p-stam"></i></div>
+            <div class="hud-heals" id="heal-dock" role="group" aria-label="Quick potions — tap to drink mid-duel"></div>
           </div>
           <div class="hud-mid">
             <span class="hud-chapter" id="hud-chapter">CH 1</span>
@@ -203,11 +204,6 @@
             <img src="./art/icon-attack.png" alt="Basic attack" />
             <span class="atk-ring"></span>
           </button>
-        </div>
-
-        <div class="rotate-hint" id="rotate-hint" hidden>
-          <svg viewBox="0 0 24 24"><path d="M7 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17.5 8.5 21 12l-3.5 3.5"/></svg>
-          <span>Turn your phone sideways for the full-screen arena</span>
         </div>
 
         <!-- pre-fight / post-fight overlay -->
@@ -363,6 +359,23 @@
           <div class="prow"><div><b id="pf-best">1</b><small>Best chapter reached</small></div></div>
           <div class="prow"><div><b id="pf-relics">—</b><small>Forged relics</small></div></div>
         </div>
+        <section class="panel train-panel" id="training-panel">
+          <header class="panel-head">
+            <h2>Trained Might</h2>
+            <p class="muted">Duels grant Training points · Powers cost gold · every power tops out at level 100</p>
+          </header>
+          <div class="train-cols">
+            <div class="train-col">
+              <h3 class="train-title">Attributes <span class="train-pts" id="train-points" title="Training points from victories">0</span></h3>
+              <div class="train-list" id="train-attrs"></div>
+            </div>
+            <div class="train-col">
+              <h3 class="train-title">Powers <span class="muted train-cap">Lv 100 cap</span></h3>
+              <div class="train-list" id="train-powers"></div>
+            </div>
+          </div>
+          <div class="ascend-row" id="ascend-row"></div>
+        </section>
         <button class="play-btn" id="pf-play" type="button">
           <span class="play-glow" aria-hidden="true"></span>
           <b>ENTER THE RIFT</b>
