@@ -33,7 +33,7 @@ async def main() -> int:
 
     player = new_player(user_id=11, first_name="Rita", username="riftwalkrita")
     player["game"]["coins"] = 860
-    me = {"player": public_player_view(player), "version": "0.12.0"}
+    me = {"player": public_player_view(player), "version": "0.13.0"}
     payload = json.dumps(me)
 
     out_dir = REPO / args.out
@@ -66,6 +66,18 @@ async def main() -> int:
         await page.click("[data-goto='heroes']")
         await page.wait_for_timeout(700)
         await page.screenshot(path=str(out_dir / "ui-heroes.png"))
+
+        # powers screen with trained levels (from home)
+        await page.click("#screen-store [data-goto='home']")
+        await page.wait_for_timeout(500)
+        await page.click(".home-tile[data-goto='powers']")
+        await page.wait_for_timeout(700)
+        await page.screenshot(path=str(out_dir / "ui-powers.png"))
+        powers = await page.locator("#power-list .power-card .power-level").all_text_contents()
+        print("power levels:", powers)
+        assert len(powers) == 4, "powers screen cards missing"
+        await page.click("#screen-powers [data-goto='home']")
+        await page.wait_for_timeout(500)
 
         # profile
         await page.click("#topbar-profile")

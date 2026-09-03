@@ -33,12 +33,14 @@
 
 | | |
 | --- | --- |
-| 🥊 **Real-time 3D combat** | A Three.js arena — fully jointed fighters, real weapon swings, hitboxes that only land when the blade connects, knockback arcs, hit-stop, slow-motion K.O.s and impact zoom. |
+| 🥊 **Real-time combat, two engines** | A Three.js arena — **fully articulated Shadow-Fight-style fighters** (head, hair, torso, arms, hands, legs, feet and weapon, all posed per state) with real weapon swings, hitboxes that only land when the blade connects, knockback arcs, hit-stop, slow-motion finishes, impact zoom and elemental rim glow. The 2D fallback engine draws the very same articulated bodies, so every device gets the full experience. |
+| 🌦 **Living arenas** | Rain and lightning over the boss gate, drifting snow, rising embers, wandering fireflies and rolling fog — plus painted sky domes, rune pillars, floating rift rocks, braziers and elemental motes themed per element. |
+| 💪 **Trainable powers** | Four separate powers — Strength, Stamina, Health, Speed — each with its own level (max 100) and a coin price that rises every level. **Every gate boss you defeat grants attribute points** to spend instantly. |
 | 🧙 **Five hand-built heroes** | Emberblade (flaming sword), Frostward (ice spear + tower shield), Stormcaller (twin sabers on the gale), the Rift Reader (rift-tome + orbiting runes), Voidreaper (hooded scythe). |
 | 👹 **Five distinct monsters** | The quadruped Rift Stalker with a live tail, the hulking Ash Warden, shard-orbiting Obsidian Herald, floating Frost Revenant and the boss Ebon Colossus. |
 | 🌍 **Living arenas** | Painted sky domes, rune pillars, floating rift rocks, flickering braziers and drifting elemental motes — themed per element. |
 | ⚡ **Smooth by design** | Fixed 120 Hz simulation, buffered inputs, adaptive resolution that protects frame rate on weak phones — plus a **Graphics** setting (Auto / 3D / 2D) so any device can force the always-works 2D engine. |
-| 🛍 **Economy that matters** | Coins, loot chests, 18 items, upgradeable relics, a marketplace and a hero roster — the shop shows each ability's **damage and effects**, not just timers. |
+| 🛍 **Economy that matters** | Coins, loot chests, 18 items, upgradeable relics, a marketplace and a hero roster — the shop shows each ability's **damage and effects**, not just timers. A **quick-heal chip** sits by your HP bar so potions can be drunk mid-duel. |
 | 🤖 **Colored bot home** | Every button on `/start` is colored and deep-links straight into the matching Mini App screen: play, store, satchel, heroes, profile, rules, terms — plus **Share** and **GitHub**. |
 | 💬 **Feedback pipeline** | One red button collects bug reports, feature requests and ideas — every note is stored **and delivered to the owner's Telegram**. |
 | 👑 **Owner test mode** | Set `OWNER_USER_ID` and the owner account plays with every hero, relic and a full purse — everything unlocked for testing. |
@@ -51,13 +53,16 @@
 | :---: | :---: |
 | ![Fire hero vs the Rift Stalker](docs/assets/arena-fire.png) | ![Frost hero vs the Frost Revenant](docs/assets/arena-ice.png) |
 | ![Wind hero vs the Ash Warden](docs/assets/arena-wind.png) | ![Arcane hero vs the Obsidian Herald](docs/assets/arena-arcane.png) |
-| ![Boss duel — the Ebon Colossus](docs/assets/arena-boss.png) | ![The Mini App home](docs/assets/ui-home.png) |
-| ![Hero roster with damage & effects](docs/assets/ui-heroes.png) | ![Player profile](docs/assets/ui-profile.png) |
+| ![Boss duel — the Ebon Colossus](docs/assets/arena-boss.png) | ![Storm at the Rift Gate](docs/assets/arena-gate.png) |
+| ![The Mini App home](docs/assets/ui-home.png) | ![Hero roster with damage & effects](docs/assets/ui-heroes.png) |
+| ![Powers — trainable attributes](docs/assets/ui-powers.png) | ![Player profile](docs/assets/ui-profile.png) |
 | ![Settings with the graphics picker](docs/assets/ui-settings.png) | |
 
 ## 🎮 Gameplay
 
-You are a Riftwalker. One monster guards each chapter — empty its HP bar in a **real-time duel** to clear it, earn Gold, Coins, Points and a loot chest, and a stronger monster steps up. Every 5th chapter is a boss with doubled rewards. Death is safe: you wake at camp fully healed and keep everything.
+You are a Riftwalker. One monster guards each chapter — empty its HP bar in a **real-time duel** to clear it, earn Gold, Coins, Points and a loot chest, and a stronger monster steps up. Every 5th chapter is a **gate boss** with doubled rewards **and attribute points** for your powers. A beaten monster never returns at the same level — when its chapter comes around again it comes back stronger, and the fight card warns you. Death is safe: you wake at camp fully healed and keep everything. Low on health mid-duel? The **heal chip** beside your HP bar drinks your best potion instantly.
+
+**Powers** — Strength (attack), Stamina (defense + energy), Health (max HP) and Speed (crit & haste) train separately, level 1–100 each. Boss attribute points level them for free; coins buy extra levels at a price that climbs with every level. Bonuses apply to every duel immediately.
 
 **Controls** — joystick to move, the big sword button to attack, three ability buttons above it. Tap during a recovery and the input is buffered into the next swing. Desktop: `A`/`D` move, `J`/`Space` attack, `U`/`I`/`O` for abilities.
 
@@ -106,7 +111,27 @@ The included [`render.yaml`](render.yaml) is a ready blueprint with a `/healthz`
 3. Deploy — Render supplies `RENDER_EXTERNAL_URL` and HTTPS automatically; the app registers the webhook itself.
 4. Check `https://<service>.onrender.com/healthz`, then `/start` your bot.
 
-### 3 · Docker (any host)
+### 3 · Heroku (container stack)
+
+Heroku has no free tier anymore (it closed in November 2022) — the cheapest option is an **Eco dyno (~$5/month)**. The repository ships a `Procfile`, a `runtime.txt` and the container stack works out of the box:
+
+```bash
+heroku create your-chronicle-rift
+heroku stack:set container
+heroku config:set BOT_TOKEN=… MONGODB_URI=… GROQ_API_KEY=… BOT_MODE=webhook
+git push heroku main
+heroku open /healthz        # verify, then /start your bot
+```
+
+> Heroku routes HTTPS and sets `PORT` automatically; the app registers its own webhook on release.
+
+<details>
+<summary>Other platforms (Railway, Fly.io, Koyeb…)</summary>
+
+Any host that runs a Docker image or a Python web service will do — set the same environment variables, expose `$PORT` (default `10000`), and point `BOT_MODE=webhook` + `PUBLIC_BASE_URL` at your HTTPS origin. Railway (from ~$5/month) and Koyeb both deploy straight from this repository; the included `render.yaml` is a good template for one-click blueprints.
+</details>
+
+### 4 · Docker (any host)
 
 ```bash
 docker build -t chronicle-rift .
@@ -115,7 +140,7 @@ docker run --rm --env-file .env -p 10000:10000 chronicle-rift
 
 For a public deployment set `BOT_MODE=webhook` plus `PUBLIC_BASE_URL=https://your-domain` behind any HTTPS reverse proxy.
 
-### 4 · VPS — Ubuntu + systemd + nginx + Certbot
+### 5 · VPS — Ubuntu + systemd + nginx + Certbot
 
 ```bash
 # 1) app user + code + venv
@@ -200,6 +225,7 @@ All game routes are same-origin and authenticated with the Mini App's signed `in
 | `/api/arena/finish` | POST | `{ "outcome": "win\|lose", "hp_left": int }` |
 | `/api/buy` · `/api/use` · `/api/sell` · `/api/upgrade` | POST | `{ "item_id": … }` (+`quantity` for sell) |
 | `/api/character/buy` · `/api/character/select` | POST | Hero roster operations |
+| `/api/power` | POST | `{ "attribute": "strength\|stamina\|health\|speed", "source": "points\|coins" }` — train a power |
 | `/telegram/webhook` | POST | Telegram updates (secret-token checked) |
 
 No endpoint accepts a client-supplied user ID, profile or game state.
@@ -233,7 +259,7 @@ src/chronicle_rift/
 └── webapp/            # Mini App: index.html, app.js, arena.js (Three.js), art/
 ```
 
-Run the checks: `ruff check . && pytest` — 65 tests, zero lint findings.
+Run the checks: `ruff check . && pytest` — 80 tests, zero lint findings.
 
 ## 🤝 Contributing
 
@@ -253,8 +279,7 @@ Useful: `src/chronicle_rift/webapp/demo-harness.html` drives the arena engine st
 
 | | |
 | --- | --- |
-| **Owner** | [![Telegram](https://img.shields.io/badge/Telegram-@TechnicalSerena-26A5E4?logo=telegram&logoColor=white)](https://t.me/TechnicalSerena) |
-| **Co-owner** | [![Telegram](https://img.shields.io/badge/Telegram-@XioquiXan-26A5E4?logo=telegram&logoColor=white)](https://t.me/XioquiXan) |
+| **Owner & Maintainer** | [![Telegram](https://img.shields.io/badge/Telegram-@TechnicalSerena-26A5E4?logo=telegram&logoColor=white)](https://t.me/TechnicalSerena) |
 | **Source** | [![GitHub](https://img.shields.io/badge/GitHub-iamrita--ai%2Fchronicle--rift-181717?logo=github)](https://github.com/iamrita-ai/chronicle-rift) |
 | **Stack** | [Three.js](https://threejs.org/) · [FastAPI](https://fastapi.tiangolo.com/) · [python-telegram-bot](https://python-telegram-bot.org/) · [MongoDB](https://www.mongodb.com/) · [Groq](https://groq.com/) |
 

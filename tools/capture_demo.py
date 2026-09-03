@@ -154,16 +154,17 @@ async def main() -> int:
 
         if args.still:
             matchups = [
-                ("fire", "Rift Stalker", "shadow", "beast", 1.22, "arena-fire"),
-                ("ice", "Frost Revenant", "ice", "brute", 1.3, "arena-ice"),
-                ("wind", "Ash Warden", "fire", "brute", 1.26, "arena-wind"),
-                ("arcane", "Obsidian Herald", "arcane", "brute", 1.3, "arena-arcane"),
-                ("shadow", "Ebon Colossus", "shadow", "brute", 1.5, "arena-boss"),
+                ("fire", "Rift Stalker", "shadow", "beast", 1.22, "arena-fire", False),
+                ("ice", "Frost Revenant", "ice", "brute", 1.3, "arena-ice", False),
+                ("wind", "Ash Warden", "fire", "brute", 1.26, "arena-wind", False),
+                ("arcane", "Obsidian Herald", "arcane", "brute", 1.3, "arena-arcane", False),
+                ("shadow", "Ebon Colossus", "shadow", "brute", 1.5, "arena-boss", True),
+                ("wind", "Ebon Colossus", "shadow", "brute", 1.5, "arena-gate", True),
             ]
-            for hero_el, name, el, build, scale, slug in matchups:
+            for hero_el, name, el, build, scale, slug, boss in matchups:
                 await page.evaluate(
-                    "([h, n, e, b, s]) => window.__setup(h, n, e, b, s)",
-                    [hero_el, name, el, build, scale],
+                    "([h, n, e, b, s, bo]) => window.__setup(h, n, e, b, s, bo)",
+                    [hero_el, name, el, build, scale, boss],
                 )
                 await page.evaluate("([n]) => window.__step(n, 1/60)", [round(2.2 * 60)])
                 data = await page.evaluate(

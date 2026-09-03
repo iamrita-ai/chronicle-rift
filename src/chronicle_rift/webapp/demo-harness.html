@@ -46,11 +46,13 @@
       name, element, build, scale, artFacing: -1,
       stats: { hp: 560, damage: 21, speed: 192, atkSpeed: 0.95, range: 112, crit: 0.08, defense: 20 },
     });
-    const sceneFor = (el) => ({ fire: "bg-ember", ice: "bg-frost", arcane: "bg-arcane", shadow: "bg-void", wind: "bg-arcane" }[el] || "bg-ember");
+    const sceneFor = (el, boss) => boss
+      ? "bg-gate"
+      : ({ fire: "bg-ember", ice: "bg-frost", arcane: "bg-arcane", shadow: "bg-void", wind: "bg-arcane" }[el] || "bg-ember");
     const heroName = (el) => ({ fire: "Emberblade", ice: "Frostward", wind: "Stormcaller", arcane: "Rift Reader", shadow: "Voidreaper" }[el] || "Riftwalker");
 
-    window.__setup = (heroEl, foeName, foeEl, foeBuild, foeScale) => {
-      arena.setScene(sceneFor(foeEl));
+    window.__setup = (heroEl, foeName, foeEl, foeBuild, foeScale, boss) => {
+      arena.setScene(sceneFor(foeEl, !!boss));
       arena.setFighters(hero(heroEl, heroName(heroEl)), foe(foeName, foeEl, foeBuild, foeScale));
       arena.draw();
     };
