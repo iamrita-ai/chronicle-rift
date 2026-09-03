@@ -141,6 +141,7 @@
     store: "screen-store",
     bag: "screen-bag",
     settings: "screen-settings",
+    powers: "screen-powers",
     profile: "screen-profile",
     rules: "screen-rules",
     terms: "screen-terms",
@@ -260,7 +261,7 @@
       $("mu-hero-stats").textContent = `${p.stats.hp} HP · ${Math.round(p.stats.damage)} DMG · ${view.character.element_name}`;
       $("mu-foe-art").src = ART(view.enemy.sprite, "png");
       $("mu-foe-name").textContent = e.name;
-      $("mu-foe-stats").textContent = `${e.stats.hp} HP · ${Math.round(e.stats.damage)} DMG · ${view.enemy.ability || "—"}`;
+      $("mu-foe-stats").textContent = `${e.stats.hp} HP · ${Math.round(e.stats.damage)} DMG · ${view.enemy.ability || "—"}${view.enemy.returning ? ` · RETURNED AT LV ${view.enemy.level}` : ""}`;
       $("hud-chapter").textContent = `CH ${view.quest.chapter}`;
       $("fight-start-sub").textContent = `${view.quest.title} · ${view.enemy.boss ? "BOSS FIGHT" : "Chapter duel"}`;
       $("fight-start-label").textContent = "FIGHT";
@@ -324,8 +325,8 @@
       set("hud-e-stam", e.stamina / e.maxStamina);
       $("hud-p-name").textContent = p.name;
       $("hud-e-name").textContent = e.name;
-      $("hud-p-hp").textContent = `${Math.ceil(p.hp)}`;
-      $("hud-e-hp").textContent = `${Math.ceil(e.hp)}`;
+      $("hud-p-hp").textContent = `${Math.ceil(p.hp)}/${Math.ceil(p.maxHp)}`;
+      $("hud-e-hp").textContent = `${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}`;
       // ghost bars trail the real damage for a punchy readout
       ["p", "e"].forEach((k) => {
         const fighter = k === "p" ? p : e;
@@ -523,6 +524,7 @@
     renderProfile(view);
 
     renderHealRail(view);
+    renderPowers(view);
     renderHeroStore(view);
     renderShop(view);
     renderForge(view);
@@ -597,6 +599,55 @@
     return view.inventory.filter((c) => c.kind === "consumable" && (HEAL_IDS.includes(c.id) || /heal|hp|vital/i.test(c.ability)));
   }
 
+  /* ---------------- Powers: trainable attributes ---------------- */
+  function renderPowers(view) {
+    const list = $("power-list");
+    if (!list) return;
+    const attrs = view.attributes || { points: 0, max_level: 100, list: [] };
+    $("powers-coins").textContent = view.hero.coins;
+    $("powers-points").textContent = attrs.points;
+    $("powers-note").textContent = attrs.points > 0
+      ? `${attrs.points} attribute points!`
+      : "Train your hero";
+    list.replaceChildren();
+    attrs.list.forEach((power) => {
+      const card = el("article", "power-card");
+      const head = el("div", "power-head");
+      head.appendChild(el("span", "power-icon", power.icon));
+      const title = el("div", "power-title");
+      title.appendChild(el("b", null, power.name));
+      title.appendChild(el("small", null, power.desc));
+      head.appendChild(title);
+      head.appendChild(el("b", "power-level", `Lv ${power.level}`));
+      card.appendChild(head);
+      const bar = el("div", "power-bar");
+      const fill = el("i");
+      fill.style.width = `${Math.min(100, (power.level / power.max) * 100)}%`;
+      bar.appendChild(fill);
+      card.appendChild(bar);
+      const actions = el("div", "power-actions");
+      const maxed = power.level >= power.max;
+      const pointBtn = el("button", "power-btn");
+      pointBtn.type = "button";
+      pointBtn.textContent = maxed ? "MASTERED" : "USE POINT";
+      pointBtn.disabled = maxed || attrs.points < 1;
+      pointBtn.addEventListener("click", () => upgradePower(power.id, "points"));
+      actions.appendChild(pointBtn);
+      const coinBtn = el("button", "power-btn is-coin");
+      coinBtn.type = "button";
+      coinBtn.textContent = maxed ? "MAX" : `BUY ${power.coin_cost}🪙`;
+      coinBtn.disabled = maxed || view.hero.coins < (power.coin_cost || 0);
+      coinBtn.addEventListener("click", () => upgradePower(power.id, "coins"));
+      actions.appendChild(coinBtn);
+      card.appendChild(actions);
+      list.appendChild(card);
+    });
+  }
+
+  function upgradePower(attribute, source) {
+    return itemCall("/api/power", { attribute, source });
+  }
+
   /* in-fight quick-heal chip pinned to the player's HP bar */
   function refreshHealChip() {
     const chip = $("heal-chip");
@@ -618,7 +669,7 @@
     }
     chip.hidden = false;
     chip.classList.remove("is-empty");
-    $("heal-chip-img").src = ART(best.art || "item-heal", "png");
+    $("heal-chip-img").src = ART(best.art || "item-heal");
     $("heal-chip-qty").textContent = `×${best.quantity}`;
     chip.title = `${best.name} — ${best.ability}`;
   }

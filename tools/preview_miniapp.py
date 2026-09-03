@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from chronicle_rift.game_engine import (  # noqa: E402
     buy_character,
     resolve_arena,
+    resolve_attribute_upgrade,
     resolve_purchase,
     resolve_turn,
     select_character,
@@ -136,6 +137,26 @@ class PreviewHandler(BaseHTTPRequestHandler):
                 result = select_character(PLAYER, item_id)
             else:
                 result = upgrade_relic(PLAYER, item_id)
+            if result.success:
+                PLAYER = result.player
+            self._json(
+                {
+                    "player": public_player_view(PLAYER),
+                    "turn": {
+                        "item_id": result.item_id,
+                        "item_name": result.item_name,
+                        "summary": result.summary,
+                        "success": result.success,
+                        "reason": result.reason,
+                        "effects": result.effects,
+                    },
+                }
+            )
+            return
+        if path == "/api/power":
+            result = resolve_attribute_upgrade(
+                PLAYER, payload["attribute"], payload.get("source", "coins")
+            )
             if result.success:
                 PLAYER = result.player
             self._json(

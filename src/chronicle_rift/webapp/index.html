@@ -121,6 +121,10 @@
             <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg>
             <b>Heroes</b><small><span id="hero-count">1</span> of 5 unlocked</small>
           </button>
+          <button class="home-tile" data-goto="powers" type="button">
+            <svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L9.5 22 19 9.5h-6.5z"/></svg>
+            <b>Powers</b><small><span id="powers-note">Train your hero</span></small>
+          </button>
           <button class="home-tile" data-goto="settings" type="button">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>
             <b>Settings</b><small>Sound · Guide</small>
@@ -255,6 +259,23 @@
         <div class="tab-body" id="tab-heroes"><div class="hero-grid" id="hero-store"></div></div>
         <div class="tab-body" id="tab-items" hidden><div class="item-grid" id="shop-list"></div></div>
         <div class="tab-body" id="tab-relics" hidden><div class="item-grid" id="forge-list"></div></div>
+      </section>
+
+      <!-- ==================== POWERS ==================== -->
+      <section class="screen" id="screen-powers" data-screen="powers">
+        <div class="sub-top">
+          <button class="icon-btn" data-goto="home" type="button" aria-label="Back">
+            <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <h2>Powers</h2>
+          <span class="coin-balance"><b id="powers-coins">—</b>🪙</span>
+        </div>
+        <div class="powers-banner" id="powers-banner">
+          <b id="powers-points">0</b>
+          <span>attribute points — earned from every gate boss you defeat</span>
+        </div>
+        <div class="power-list" id="power-list"></div>
+        <p class="mu-note">Each power is trained separately, caps at level 100, and the coin price rises with every level.</p>
       </section>
 
       <!-- ==================== SATCHEL ==================== -->
