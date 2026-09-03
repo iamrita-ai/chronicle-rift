@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from chronicle_rift.game_engine import resolve_arena, resolve_purchase, resolve_turn
-from chronicle_rift.models import new_player
+from chronicle_rift.game_engine import (
+    resolve_arena,
+    resolve_attribute_upgrade,
+    resolve_purchase,
+    resolve_turn,
+)
+from chronicle_rift.models import apply_relic_bonuses, new_player, public_player_view
 
 
 class FixedRandom:
@@ -524,3 +529,86 @@ def test_public_view_exposes_profile_and_record() -> None:
     assert view["record"] == {
         "wins": 0, "losses": 0, "boss_kills": 0, "chapter": 1, "best_chapter": 1,
     }
+
+# --------------------------------------------------------------------------- #
+# trainable powers + returning monsters
+# --------------------------------------------------------------------------- #
+def test_attribute_training_costs_coins_and_rises_per_level() -> None:
+    player = new_player(user_id=11, first_name="Ada", username=None)
+    player["game"]["coins"] = 500
+
+    first = resolve_attribute_upgrade(player, "strength", "coins")
+    assert first.success is True
+    assert first.player["game"]["coins"] == 500 - 20
+    assert first.player["game"]["attributes"]["strength"] == 1
+    assert first.player["game"]["attack_bonus"] == 2
+
+    second = resolve_attribute_upgrade(first.player, "strength", "coins")
+    assert second.success is True
+    assert second.player["game"]["coins"] == 480 - 28  # price rose
+    assert second.player["game"]["attributes"]["strength"] == 2
+    # immutability: the original document is untouched
+    assert player["game"]["attributes"]["strength"] == 0
+
+
+def test_attribute_points_come_from_bosses_only() -> None:
+    player = new_player(user_id=12, first_name="Bo", username=None)
+    # grind to the chapter-5 gate boss
+    current = player
+    for _ in range(4):
+        current = resolve_arena(current, "win", hp_left=10).player
+    assert public_player_view(current)["enemy"]["boss"] is True
+
+    boss_kill = resolve_arena(current, "win", hp_left=10)
+    view = public_player_view(boss_kill.player)
+    assert view["attributes"]["points"] == 3
+    assert boss_kill.effects["attr_points_gained"] == 3
+
+    trained = resolve_attribute_upgrade(boss_kill.player, "health", "points")
+    assert trained.success is True
+    game = trained.player["game"]
+    assert game["attributes"]["health"] == 1
+    assert game["attr_points"] == 2
+    assert game["max_hp"] == game["base_max_hp"] + 12
+    # points are the only free source: with zero left, training fails
+    drained = trained.player
+    for _ in range(2):
+        drained = resolve_attribute_upgrade(drained, "speed", "points").player
+    out = resolve_attribute_upgrade(drained, "speed", "points")
+    assert out.success is False
+    assert out.reason == "no_points"
+
+
+def test_attribute_levels_cap_at_100() -> None:
+    player = new_player(user_id=13, first_name="Cy", username=None)
+    player["game"]["attributes"]["speed"] = 100
+    apply_relic_bonuses(player["game"])
+    result = resolve_attribute_upgrade(player, "speed", "coins")
+    assert result.success is False
+    assert result.reason == "max_level"
+
+
+def test_defeated_monsters_return_at_a_higher_level() -> None:
+    player = new_player(user_id=14, first_name="Dee", username=None)
+    first = public_player_view(player)["enemy"]
+    assert first["returning"] is False
+
+    current = player
+    for _ in range(8):  # full rotation: the same monster guards chapter 9
+        current = resolve_arena(current, "win", hp_left=10).player
+    again = public_player_view(current)["enemy"]
+
+    assert again["name"] == first["name"]
+    assert again["returning"] is True
+    assert again["level"] > first["level"]
+    assert again["hp"] > first["hp"]
+    assert again["attack"] > first["attack"]
+
+
+def test_player_view_exposes_the_powers_block() -> None:
+    view = public_player_view(new_player(user_id=15, first_name="Eve", username=None))
+    attrs = view["attributes"]
+    assert attrs["points"] == 0
+    assert attrs["max_level"] == 100
+    assert [p["id"] for p in attrs["list"]] == ["strength", "stamina", "health", "speed"]
+    assert all(p["level"] == 0 and p["coin_cost"] == 20 for p in attrs["list"])

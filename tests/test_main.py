@@ -82,6 +82,25 @@ class StubGameService:
         assert identity.user_id == 77
         return self.player
 
+    async def upgrade_attribute(self, identity, attribute, source):
+        assert identity.user_id == 77
+        if attribute not in ("strength", "stamina", "health", "speed"):
+            return PurchaseResult(
+                player=self.player,
+                item_id=attribute,
+                item_name="Unknown power",
+                summary="That power does not exist.",
+                success=False,
+                reason="unknown_attribute",
+            )
+        return PurchaseResult(
+            player=self.player,
+            item_id=attribute,
+            item_name="Strength",
+            summary=f"Stub training via {source}.",
+            success=True,
+        )
+
     async def buy_item(self, identity, item_id):
         assert identity.user_id == 77
         if item_id != "heal":
@@ -101,6 +120,41 @@ class StubGameService:
             summary="Stub purchase.",
             success=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_signed_power_route_trains_attributes(monkeypatch) -> None:
+    bot_token = "123:test"
+    settings = Settings(
+        bot_token=bot_token,
+        mongodb_uri="mongodb://localhost:27017",
+        groq_api_key="test",
+        bot_mode="polling",
+    )
+    app = create_app(settings)
+    app.state.game_service = StubGameService()
+    monkeypatch.setattr("chronicle_rift.security.time.time", lambda: 1_800_000_000)
+    transport = httpx.ASGITransport(app=app)
+    headers = {"X-Telegram-Init-Data": _signed_header(bot_token)}
+    async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
+        train = await client.post(
+            "/api/power", headers=headers, json={"attribute": "strength", "source": "points"}
+        )
+        unknown = await client.post(
+            "/api/power", headers=headers, json={"attribute": "charisma"}
+        )
+        extra = await client.post(
+            "/api/power", headers=headers, json={"attribute": "strength", "hack": 1}
+        )
+
+    assert train.status_code == 200
+    assert train.json()["turn"]["success"] is True
+    assert train.json()["turn"]["summary"] == "Stub training via points."
+    assert unknown.status_code == 200
+    assert unknown.json()["turn"]["success"] is False
+    assert unknown.json()["turn"]["reason"] == "unknown_attribute"
+    # payloads are strictly validated: unknown fields never reach the engine
+    assert extra.status_code == 422
 
 
 @pytest.mark.asyncio
