@@ -333,6 +333,7 @@
     "bg-frost":  { sky: 0x0a1522, fog: 0x08111c, ground: 0x0d1622, accent: 0x7fd8ff, mote: 0xbfeaff, hemiSky: 0x9fd4ff },
     "bg-arcane": { sky: 0x130d24, fog: 0x0e091a, ground: 0x131020, accent: 0xb48bff, mote: 0xd0b8ff, hemiSky: 0xb9a4ff },
     "bg-void":   { sky: 0x170a1c, fog: 0x0f0714, ground: 0x130b16, accent: 0xff6ac1, mote: 0xffa8d8, hemiSky: 0xd89adf },
+    "bg-gate":  { sky: 0x120b16, fog: 0x0a0610, ground: 0x0f0a12, accent: 0xff6ac1, mote: 0xc9a0ff, hemiSky: 0xb990d8 },
   };
 
   class Renderer3D {
@@ -867,19 +868,6 @@
       }
     }
 
-    /* cached elemental-silhouette texture of a fighter's key art */
-    tintTex(entry, color) {
-      const canvas = entry.tint(color);
-      if (!canvas) return null;
-      if (!entry._tex3d) entry._tex3d = new Map();
-      let tex = entry._tex3d.get(color);
-      if (!tex) {
-        tex = new window.THREE.CanvasTexture(canvas);
-        entry._tex3d.set(color, tex);
-      }
-      return tex;
-    }
-
     makeGhost() {
       const T = window.THREE;
       const m = new T.Mesh(
@@ -894,21 +882,18 @@
       return { m, life: 0, max: 1, active: false };
     }
     fireGhost(f, gh, size) {
-      const entry = loadFighterArt(f.art);
-      if (!entry.ready) return;
-      const tex = this.tintTex(entry, f.kit.color);
-      if (!tex) return;
+      const rig = this.rigs.get(f);
+      if (!rig) return;
       for (let i = 0; i < this.ghostPool.length; i += 1) {
         const g = this.ghostPool[i];
         if (!g.active) {
           g.active = true;
           g.life = gh.life; g.max = gh.max;
-          const aspect = entry.img.width / entry.img.height;
-          const ph = size * 1.22;
-          g.m.position.set(gh.x, size * 0.5, 0);
-          g.m.scale.set(ph * aspect, ph, 1);
-          g.m.material.map = tex;
-          g.m.material.color.set(0xffffff);
+          const ph = rig.planePh;
+          g.m.position.set(gh.x - rig.feetOffX * f.facing, ph * 0.5 - rig.H * 0.04, 0);
+          g.m.scale.set(rig.planeW * f.facing, ph, 1);
+          g.m.material.map = rig.bodyTex;
+          g.m.material.color.set(f.kit.color);
           g.m.visible = true;
           return;
         }
@@ -945,6 +930,7 @@
      * --------------------------------------------------------------------- */
     buildRig(f) {
       const T = window.THREE;
+      let rig0;
       const H = FIGHTER_H * f.scale;
 
       const root = new T.Group(); // feet pivot; carries fall/lean in screen space
@@ -954,15 +940,18 @@
       mir.add(spr);
 
       const geo = new T.PlaneGeometry(1, 1);
+      // the articulated body is redrawn into this canvas every frame and
+      // streamed to the GPU as a texture — the plane carries it in the 3D stage
+      const bodyCanvas = makeCanvas(720, 360);
+      const bodyTex = new T.CanvasTexture(bodyCanvas);
+      if (T.SRGBColorSpace) bodyTex.colorSpace = T.SRGBColorSpace;
       const bodyMat = new T.MeshBasicMaterial({
-        transparent: true, depthWrite: false, alphaTest: 0.02, toneMapped: false,
+        map: bodyTex, transparent: true, depthWrite: false, alphaTest: 0.02, toneMapped: false,
       });
       const body = new T.Mesh(geo, bodyMat);
-      const flashMat = new T.MeshBasicMaterial({
-        transparent: true, opacity: 0, depthWrite: false, alphaTest: 0.02, toneMapped: false,
-      });
-      const flash = new T.Mesh(geo, flashMat);
-      flash.position.z = 3;
+      // flash/freeze is painted straight into the body canvas now
+      const flash = new T.Mesh(geo, new T.MeshBasicMaterial({ visible: false }));
+      flash.visible = false;
       // elemental rim aura behind the art sells the "living" feel
       const auraMat = new T.SpriteMaterial({
         map: this.glowTex, color: f.kit.color, transparent: true, opacity: 0,
@@ -993,16 +982,33 @@
       this.scene.add(ward);
 
       this.scene.add(root);
-      const rig = {
-        f, H, root, mir, spr, body, bodyMat, flash, flashMat, aura, auraMat,
-        blob, blobMat, ward, wardMat, geo, blobGeo, textured: false, frozen: false,
+      const aspect = bodyCanvas.width / bodyCanvas.height;
+      // the painted body fills canvasH px of the canvas; size the plane so the
+      // body lands on exactly FIGHTER_H world units, feet at the rig origin
+      const canvasH = bodyCanvas.height * 0.92;
+      const ph = H * bodyCanvas.height / canvasH;
+      const planeW = ph * aspect;
+      rig0 = {
+        f, H, root, mir, spr, body, bodyMat, flash, aura, auraMat,
+        blob, blobMat, ward, wardMat, geo, blobGeo,
+        bodyCanvas, bodyCtx: bodyCanvas.getContext("2d"), bodyTex,
+        canvasH, canvasFeetX: bodyCanvas.width * 0.35,
+        feetOffX: (bodyCanvas.width * 0.5 - bodyCanvas.width * 0.35) / bodyCanvas.width * planeW,
+        planePh: ph, planeW,
+        tick: 0, frozen: false,
       };
+      rig0.body.scale.set(planeW, ph, 1);
+      rig0.body.position.y = ph * 0.5 - H * 0.04;
+      rig0.body.position.x = -rig0.feetOffX;
+      rig0.sprH = ph;
+      const rig = rig0;
       rig.dispose = () => {
         this.scene.remove(root, blob, ward);
         geo.dispose();
         blobGeo.dispose();
         ward.geometry.dispose();
-        [bodyMat, flashMat, auraMat, blobMat, wardMat].forEach((m) => m.dispose());
+        bodyTex.dispose();
+        [bodyMat, auraMat, blobMat, wardMat, flash.material].forEach((m) => m.dispose());
       };
       return rig;
     }
@@ -1034,62 +1040,38 @@
       this.trailArc = new WeakMap();
     }
 
-    /* Attach the (already preloaded & decoded) key art once it is ready. */
-    textureRig(rig) {
-      if (rig.textured) return;
-      const T = window.THREE;
-      const entry = loadFighterArt(rig.f.art);
-      if (!entry.ready) return;
-      rig.textured = true;
-      const tex = new T.CanvasTexture(entry.img);
-      if (T.SRGBColorSpace) tex.colorSpace = T.SRGBColorSpace;
-      tex.anisotropy = 4;
-      rig.bodyMat.map = tex;
-      rig.bodyMat.needsUpdate = true;
-      rig.flashTexWhite = new T.CanvasTexture(entry.white);
-      rig.flashTexIce = new T.CanvasTexture(entry.cyan);
-      rig.flashMat.map = rig.flashTexWhite;
-      rig.flashMat.needsUpdate = true;
-      // size the plane to the art; the painted figure fills ~92% of the frame
-      const aspect = entry.img.width / entry.img.height;
-      const ph = rig.H * 1.22;
-      rig.sprH = ph;
-      rig.body.scale.set(ph * aspect, ph, 1);
-      rig.body.position.y = ph * 0.5 - rig.H * 0.05;
-      rig.flash.scale.copy(rig.body.scale);
-      rig.flash.position.copy(rig.body.position);
-    }
-
     updateRig(f, dt) {
       void dt;
       const rig = this.rigFor(f);
-      this.textureRig(rig);
-      if (!rig.textured) rig.auraMat.opacity = 0.3; // visible as a glow until art lands
-      const sp = spritePose(f);
+      const p = f.pose;
       const H = rig.H;
 
       rig.root.position.set(f.x, f.y, 0);
-      rig.root.rotation.z = f.facing * (sp.lean - sp.rot);
-      rig.root.rotation.y = sp.spin;
-      rig.mir.scale.x = (f.facing * (f.artFacing || 1)) * sp.squashX;
-      rig.mir.scale.y = sp.squashY;
-      rig.spr.position.y = sp.bob;
+      rig.root.rotation.z = f.facing * p.rot;
+      rig.mir.scale.x = f.facing;
+      rig.spr.position.y = p.bob;
 
       const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
       rig.bodyMat.opacity = alpha;
 
-      // hit flash / freeze coat: a pre-tinted copy of the exact silhouette
-      const frozen = f.freeze > 0;
-      const fo = Math.max(f.flash * 0.85, frozen ? 0.4 : 0) * alpha;
-      if (frozen !== rig.frozen) {
-        rig.frozen = frozen;
-        if (rig.flashTexWhite) {
-          rig.flashMat.map = frozen ? rig.flashTexIce : rig.flashTexWhite;
-          rig.flashMat.needsUpdate = true;
-        }
+      // redraw the articulated body into its texture canvas
+      rig.tick += 1;
+      const stride = this.frameEma > 34 ? 3 : this.frameEma > 26 ? 2 : 1;
+      if ((rig.tick % stride) === 1 || stride === 1) {
+        const g = rig.bodyCtx;
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, rig.bodyCanvas.width, rig.bodyCanvas.height);
+        g.save();
+        g.translate(rig.canvasFeetX, rig.bodyCanvas.height - (rig.bodyCanvas.height - rig.canvasH) * 0.5);
+        drawBodyFighter(g, f, {
+          H: rig.canvasH,
+          alpha,
+          flash: Math.max(f.flash * 0.85, f.freeze > 0 ? 0.45 : 0),
+          frozen: f.freeze > 0,
+        });
+        g.restore();
+        rig.bodyTex.needsUpdate = true;
       }
-      rig.flashMat.opacity = fo;
-      rig.flash.visible = fo > 0.02;
 
       // elemental aura: empower, burn, or casting
       const casting = f.state === "ability" && f.phase === "windup";
@@ -1103,7 +1085,7 @@
       // blob shadow tracks height
       const lift = clamp(1 - f.y / 400, 0.35, 1);
       rig.blob.position.set(f.x, 0.6, 0);
-      rig.blob.scale.set(H * 0.62 * lift * sp.squashX, H * 0.42 * lift, 1);
+      rig.blob.scale.set(H * 0.62 * lift, H * 0.42 * lift, 1);
       rig.blobMat.opacity = 0.42 * lift * alpha;
 
       // ward bubble
@@ -1147,7 +1129,7 @@
 
       // blade trail sweeps in front of the sprite while the swing is active
       const swing = (f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-        f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !sp.spin;
+        f.attack && f.attack.type !== "magic" && f.attack.type !== "buff";
       if (swing) {
         const a = f.attack;
         const prog = clamp((f.stateT - a.windup) / (a.active || 0.12), 0, 1);
@@ -1258,8 +1240,8 @@
         const win = !a.player.dead;
         this.banner.classList.toggle("is-win", win);
         this.banner.classList.toggle("is-lose", !win);
-        if (this.banner.firstChild.textContent !== (win ? "K.O.!" : "DEFEAT")) {
-          this.banner.firstChild.textContent = win ? "K.O.!" : "DEFEAT";
+        if (this.banner.firstChild.textContent !== (win ? "VICTORY" : "DEFEAT")) {
+          this.banner.firstChild.textContent = win ? "VICTORY" : "DEFEAT";
           this.banner.lastChild.textContent = win ? "Chapter cleared" : "You wake at camp, fully healed";
           this.banner.classList.remove("is-shown");
           void this.banner.offsetWidth;
@@ -1495,107 +1477,438 @@
     return entry;
   }
 
-  /* Whole-sprite animation parameters for the current state. Positive
-     `lean` tips the fighter toward the foe (anticipation = negative),
-     `rot` falls it backwards, `spin` is the cyclone twirl. Landing
-     impact reads the sim's `squash` value (physics feedback). */
-  function spritePose(f) {
-    const t = f.animT;
-    const a = f.attack;
-    const o = { lean: 0, squashX: 1, squashY: 1, bob: 0, rot: 0, spin: 0 };
-    const k = clamp(f.squash || 0, 0, 1);
-    if (k > 0) {
-      o.squashX *= 1 + 0.16 * k;
-      o.squashY *= 1 - 0.13 * k;
-    }
-    switch (f.state) {
-      case "idle": {
-        const br = Math.sin(t * 2.1);
-        o.bob = br * 2.6;
-        o.squashY *= 1 + br * 0.013;
-        o.lean = Math.sin(t * 0.7) * 0.02;
-        break;
-      }
-      case "walk": {
-        const dir = f.vx * f.facing > 0 ? 1 : -1;
-        const w = Math.abs(Math.sin(t * 10.5));
-        o.bob = w * 4.5;
-        o.lean = 0.09 * dir;
-        o.squashY *= 1 + w * 0.02;
-        break;
-      }
-      case "attack":
-      case "ability": {
-        const kind = a ? a.type : "slash";
-        const multi = a && (a.hits || 1) > 1;
-        if (f.phase === "windup") {
-          const kw = kind === "heavy" ? 1.7 : kind === "magic" ? 1.1 : 1;
-          o.lean = -0.13 * kw;           // coil backwards — anticipation
-          o.squashY *= 1.05;
-          o.squashX *= 0.96;
-          o.bob = -2;
-        } else if (f.phase === "active") {
-          if (multi) {
-            o.spin = -Math.PI * 2 *
-              clamp((f.stateT - (a.windup || 0)) / Math.max(0.01, a.active || 0.3), 0, 1);
-            o.bob = 5;
-          } else if (kind === "magic" || kind === "buff" || kind === "blink") {
-            o.lean = 0.1;
-          } else {
-            o.lean = kind === "heavy" ? 0.4 : 0.24;  // drive into the blow
-            o.squashX *= 1.08;
-            o.squashY *= 0.95;
-          }
-          o.bob -= 3;
-        } else {
-          o.lean = 0.1;                  // follow-through
-          o.squashY *= 0.99;
-        }
-        break;
-      }
-      case "dash":
-        o.lean = 0.42;
-        o.squashX *= 1.15;
-        o.squashY *= 0.94;
-        break;
-      case "hurt":
-        o.lean = -0.3;
-        o.squashX *= 1.05;
-        o.bob = -1;
-        break;
-      case "knock":
-        o.rot = 0.5 + Math.min(0.7, f.stateT * 1.4);
-        o.lean = -0.2;
-        break;
-      case "dead":
-        o.rot = 1.45 * clamp(f.stateT * 2.2, 0, 1);
-        break;
-      case "victory":
-        o.bob = Math.abs(Math.sin(t * 3.6)) * 9;
-        o.lean = -0.06;
-        break;
-      default:
-        break;
-    }
-    return o;
+  /* ================================================================== *\
+   *  articulated fighters — Shadow-Fight-style silhouettes               *
+   *                                                                     *
+   *  The fighters are drawn as real bodies: head + hair, torso, two-    *
+   *  segment arms with hands, two-segment legs with feet and a weapon,  *
+   *  posed every frame by the sim's skeletal pose (f.pose). No image    *
+   *  assets are involved, so the body can never fail to load and the    *
+   *  silhouette reads at any size. Each shape is painted twice: a       *
+   *  coloured glow halo pass, then the near-black body pass — leaving   *
+   *  a living rim of elemental light around every limb.                 *
+   * ================================================================== */
+
+  function weaponKindFor(f) {
+    if (f.build === "brute") return "club";
+    if (f.build === "beast") return "claws";
+    return { fire: "sword", ice: "spear", wind: "twin", arcane: "staff", shadow: "scythe" }[f.element] || "sword";
   }
 
-  /* Draw one fighter's key art with the full transform stack. `image` may
-     be the original art or a pre-tinted silhouette (flash / after-image). */
-  function drawArtFighter(ctx, f, entry, image, o, H, zoom, alpha) {
-    if (!image) return;
-    const aspect = image.width / image.height;
-    const ph = H * 1.22;
-    ctx.save();
-    ctx.globalAlpha *= alpha;
-    ctx.scale((f.facing * (f.artFacing || 1)) * o.squashX, o.squashY);
-    ctx.rotate(o.lean);
-    ctx.translate(0, -o.bob * zoom);
-    const w = ph * aspect;
-    ctx.drawImage(image, -w / 2, -ph + H * 0.05, w, ph);
-    ctx.restore();
+  /* Weapon geometry in a local frame: grip at origin, blade along +x.
+     Returns { path, glow, tip } where tip is the blade tip offset. */
+  function weaponShape(kind, len, w) {
+    const p = new Path2D();
+    let tip = { x: len, y: 0 };
+    switch (kind) {
+      case "spear": {
+        p.rect(-len * 0.28, -w * 0.45, len * 1.06, w * 0.9);
+        const head = new Path2D();
+        head.moveTo(len * 0.78, -w * 0.4);
+        head.lineTo(len * 0.95, -w * 1.5);
+        head.lineTo(len * 1.02, 0);
+        head.lineTo(len * 0.95, w * 1.5);
+        head.lineTo(len * 0.78, w * 0.4);
+        head.closePath();
+        p.addPath(head);
+        break;
+      }
+      case "staff": {
+        p.rect(-len * 0.3, -w * 0.4, len * 1.1, w * 0.8);
+        const orb = new Path2D();
+        orb.arc(len * 0.78, 0, w * 1.7, 0, Math.PI * 2);
+        p.addPath(orb);
+        tip = { x: len * 0.9, y: 0 };
+        break;
+      }
+      case "scythe": {
+        p.rect(-len * 0.3, -w * 0.4, len * 1.2, w * 0.8);
+        const blade = new Path2D();
+        blade.moveTo(len * 0.86, -w * 0.3);
+        blade.bezierCurveTo(len * 1.25, -w * 1.2, len * 0.72, -w * 2.6, len * 0.1, -w * 2.9);
+        blade.bezierCurveTo(len * 0.62, -w * 2.1, len * 0.92, -w * 1.2, len * 0.68, -w * 0.3);
+        blade.closePath();
+        p.addPath(blade);
+        tip = { x: len * 0.55, y: -w * 2.4 };
+        break;
+      }
+      case "twin": {
+        p.moveTo(0, -w * 0.5);
+        p.bezierCurveTo(len * 0.5, -w * 1.1, len * 0.85, -w * 0.5, len, -w * 0.05);
+        p.lineTo(len, w * 0.4);
+        p.bezierCurveTo(len * 0.7, w * 0.3, len * 0.3, w * 0.2, 0, w * 0.5);
+        p.closePath();
+        break;
+      }
+      case "club": {
+        p.moveTo(0, -w * 0.5);
+        p.lineTo(len * 0.55, -w * 0.9);
+        p.arc(len * 0.6, 0, w * 1.35, -Math.PI * 0.5, Math.PI * 0.5);
+        p.lineTo(0, w * 0.5);
+        p.closePath();
+        tip = { x: len * 0.75, y: 0 };
+        break;
+      }
+      case "claws": {
+        for (let i = -1; i <= 1; i += 1) {
+          p.moveTo(0, i * w * 0.9);
+          p.lineTo(len * (0.8 + 0.2 * (1 - Math.abs(i))), i * w * 1.5 - w * 0.5);
+          p.lineTo(len * 0.25, i * w * 0.7);
+          p.closePath();
+        }
+        tip = { x: len * 0.9, y: 0 };
+        break;
+      }
+      default: { // sword
+        p.rect(-len * 0.16, -w * 0.5, len * 0.16, w); // grip
+        p.rect(-len * 0.02, -w * 1.5, w * 0.55, w * 3); // guard
+        p.moveTo(0, -w * 0.6);
+        p.lineTo(len * 0.94, -w * 0.42);
+        p.lineTo(len, 0);
+        p.lineTo(len * 0.94, w * 0.42);
+        p.lineTo(0, w * 0.6);
+        p.closePath();
+        break;
+      }
+    }
+    return { path: p, tip };
   }
-  /* pre-rendered soft glow used for every 2D particle (no per-frame shadowBlur) */
+
+  /* Draw the articulated body. Works in any 2D context (the arena canvas
+     or a texture canvas for the 3D rig). Options:
+       o.H      body height in pixels (local space)
+       o.alpha  overall opacity
+       o.flash  0..1 white damage flash painted over the body
+       o.frozen freeze tint
+       o.tint   solid colour (ghost after-images)
+     Returns the weapon tip in local pixels for trail ribbons. */
+  function drawBodyFighter(ctx, f, o) {
+    const p = f.pose;
+    const H = o.H;
+    const k = H / 116; // sim world units -> local px
+    const kit = f.kit;
+    const isMonster = f.build !== "hero";
+    const bulk = f.build === "brute" ? 1.5 : f.build === "beast" ? 1.12 : 1;
+
+    const legLen = H * (isMonster ? 0.4 : 0.46);
+    const torsoLen = H * 0.3;
+    const headR = H * (isMonster ? 0.078 : 0.066);
+    const thigh = legLen * 0.53, shin = legLen * 0.47;
+    const armU = H * 0.16, armL = H * 0.15;
+    const hipY = -legLen + p.dip * k;
+    const chestY = hipY - torsoLen * (0.95 + 0.05 * (p.breath || 1));
+    const lean = p.torso;
+    const facing = 1; // caller mirrors via ctx.scale
+
+    // ---- pose-derived joint targets ----
+    const walking = f.state === "walk" || f.state === "dash";
+    const airborne = f.y > 10;
+    const a = f.attack;
+    const attacking = (f.state === "attack" || f.state === "ability") && a;
+    let phaseQ = 0; // eased progress through the active swing
+    if (attacking && f.phase === "active") {
+      phaseQ = clamp((f.stateT - (a.windup || 0)) / Math.max(0.01, a.active || 0.2), 0, 1);
+      phaseQ = phaseQ * phaseQ * (3 - 2 * phaseQ);
+    }
+    let elbow = 0.38, elbowB = 0.5;
+    if (attacking) {
+      if (f.phase === "windup") { elbow = 1.05; elbowB = 0.9; }
+      else if (f.phase === "active") { elbow = 0.08; elbowB = 0.35; }
+      else { elbow = 0.55; elbowB = 0.6; }
+    }
+    const kneeOf = (ang) => {
+      let bend = 0.14 + Math.max(0, -ang - 0.12) * 0.85;
+      if (airborne) bend += 0.55;
+      if (f.state === "dash") bend += 0.35;
+      return bend;
+    };
+
+    // limb chain: angle 0 = straight down, positive = forward (+x)
+    const chain = (x, y, a0, l0, bend, l1) => {
+      const kx = x + Math.sin(a0) * l0;
+      const ky = y + Math.cos(a0) * l0;
+      const a1 = a0 - bend;
+      const ex = kx + Math.sin(a1) * l1;
+      const ey = ky + Math.cos(a1) * l1;
+      return { kx, ky, ex, ey };
+    };
+
+    // torso frame (pivot at hip, lean rotation)
+    const cs = Math.cos(lean), sn = Math.sin(lean);
+    const local = (x, y) => ({ x: x * cs - y * sn, y: x * sn + y * cs }); // points above hip in torso frame
+    const shoulderPt = local(0, chestY);
+    const neckPt = local(0, chestY - H * 0.02);
+    const headC = local(p.head * 2, chestY - headR * 1.15);
+
+    // legs root at the hip; front/back
+    const legF = chain(0, hipY, p.legF, thigh, kneeOf(p.legF), shin);
+    const legB = chain(0, hipY, p.legB, thigh, kneeOf(p.legB), shin);
+    // arms root at the shoulder (inside torso frame)
+    const sh = shoulderPt;
+    const armFAng = p.armF + lean;
+    const armBAng = p.armB + lean;
+    const armF = chain(sh.x, sh.y, armFAng, armU, elbow, armL);
+    const armB = chain(sh.x, sh.y, armBAng, armU, elbowB, armL);
+
+    // ---- weapon in the lead hand ----
+    const kind = weaponKindFor(f);
+    const wLen = H * (kind === "spear" || kind === "staff" ? 0.95 : kind === "scythe" ? 0.9 : kind === "claws" ? 0.3 : 0.72);
+    const wW = H * (kind === "club" ? 0.05 : 0.032);
+    const shape = weaponShape(kind, wLen, wW);
+    let wOff; // weapon angle relative to the forearm
+    const resting = { sword: -2.05, twin: -1.7, club: -1.85, scythe: -0.55, spear: -0.28, staff: -0.35, claws: -0.15 }[kind];
+    if (attacking && (kind === "sword" || kind === "twin" || kind === "club" || kind === "scythe")) {
+      if (f.phase === "windup") wOff = resting - 0.55;
+      else if (f.phase === "active") wOff = -2.6 + phaseQ * 3.1; // the sweep
+      else wOff = resting + 0.75;
+    } else if (attacking && f.phase === "active") {
+      wOff = resting + 0.12; // thrust
+    } else {
+      wOff = resting + Math.sin(f.animT * 1.7) * 0.06; // idle sway
+    }
+    const forearmAng = armFAng - elbow;
+    const wAng = forearmAng + wOff + Math.PI / 2; // blade frame: +x out from grip
+    const hand = { x: armF.ex, y: armF.ey };
+
+    // ---- collect body shapes ----
+    const lines = [];
+    const paths = [];
+    const lw = {
+      thigh: H * 0.075 * bulk, shin: H * 0.058 * bulk,
+      armU: H * 0.052 * bulk, armL: H * 0.042 * bulk,
+    };
+    const seg = (x1, y1, x2, y2, w) => lines.push({ x1, y1, x2, y2, w });
+
+    // rear limbs first (drawn darker via a dim pass flag)
+    const rear = [];
+    rear.push({ x1: sh.x, y1: sh.y, x2: armB.kx, y2: armB.ky, w: lw.armU });
+    rear.push({ x1: armB.kx, y1: armB.ky, x2: armB.ex, y2: armB.ey, w: lw.armL });
+    rear.push({ x1: 0, y1: hipY, x2: legB.kx, y2: legB.ky, w: lw.thigh });
+    rear.push({ x1: legB.kx, y1: legB.ky, x2: legB.ex, y2: legB.ey, w: lw.shin });
+
+    // front limbs
+    seg(0, hipY, legF.kx, legF.ky, lw.thigh);
+    seg(legF.kx, legF.ky, legF.ex, legF.ey, lw.shin);
+    seg(sh.x, sh.y, armF.kx, armF.ky, lw.armU);
+    seg(armF.kx, armF.ky, armF.ex, armF.ey, lw.armL);
+
+    // feet: small wedges pointing forward
+    const foot = (leg) => {
+      const path = new Path2D();
+      const ang = Math.atan2(leg.ey - leg.ky, leg.ex - leg.kx);
+      const fx = Math.sin(ang + Math.PI / 2), fy = Math.cos(ang + Math.PI / 5);
+      path.moveTo(leg.ex, leg.ey);
+      path.lineTo(leg.ex + H * 0.075 * (0.4 + fy), leg.ey + H * 0.012);
+      path.lineTo(leg.ex + H * 0.02 * fx, leg.ey + H * 0.028);
+      path.closePath();
+      return path;
+    };
+    paths.push(foot(legB), foot(legF));
+
+    // torso silhouette (hip -> chest, narrowed waist, breathing chest)
+    const torso = new Path2D();
+    const hipW = H * 0.085 * bulk, chestW = H * 0.1 * bulk * (0.96 + 0.06 * (p.breath || 1));
+    const waist = local(0, hipY + (chestY - hipY) * 0.45);
+    const torsoPts = [
+      local(-hipW * 0.8, hipY), local(-hipW * 0.62, waist.y),
+      local(-chestW, chestY + H * 0.02), local(-chestW * 0.72, chestY),
+      local(chestW * 0.72, chestY), local(chestW, chestY + H * 0.02),
+      local(hipW * 0.62, waist.y), local(hipW * 0.8, hipY),
+    ];
+    torso.moveTo(torsoPts[0].x, torsoPts[0].y);
+    for (let i = 1; i < torsoPts.length; i += 1) torso.lineTo(torsoPts[i].x, torsoPts[i].y);
+    torso.closePath();
+    paths.push(torso);
+
+    // pelvis wedge connecting legs to torso
+    const pelvis = new Path2D();
+    pelvis.moveTo(-hipW * 0.8, hipY + H * 0.01);
+    pelvis.lineTo(hipW * 0.8, hipY + H * 0.01);
+    pelvis.lineTo(hipW * 0.45, hipY - H * 0.05);
+    pelvis.lineTo(-hipW * 0.45, hipY - H * 0.05);
+    pelvis.closePath();
+    paths.push(pelvis);
+
+    // head + neck
+    const neck = new Path2D();
+    neck.moveTo(neckPt.x - H * 0.026, neckPt.y);
+    neck.lineTo(neckPt.x + H * 0.026, neckPt.y);
+    neck.lineTo(headC.x + H * 0.02, headC.y + headR * 0.7);
+    neck.lineTo(headC.x - H * 0.02, headC.y + headR * 0.7);
+    neck.closePath();
+    paths.push(neck);
+    const head = new Path2D();
+    head.arc(headC.x, headC.y, headR, 0, Math.PI * 2);
+    paths.push(head);
+
+    // hair / crest / horns by element or monster build
+    const crest = new Path2D();
+    if (isMonster) {
+      // horns sweeping back
+      crest.moveTo(headC.x - headR * 0.2, headC.y - headR * 0.75);
+      crest.lineTo(headC.x - headR * 2.0, headC.y - headR * 1.9);
+      crest.lineTo(headC.x - headR * 0.75, headC.y - headR * 0.35);
+      crest.closePath();
+      crest.moveTo(headC.x + headR * 0.25, headC.y - headR * 0.8);
+      crest.lineTo(headC.x - headR * 1.1, headC.y - headR * 2.2);
+      crest.lineTo(headC.x - headR * 0.3, headC.y - headR * 0.3);
+      crest.closePath();
+    } else if (f.element === "fire") {
+      for (let i = 0; i < 4; i += 1) {
+        const bx = headC.x - headR * (0.55 - i * 0.42);
+        crest.moveTo(bx, headC.y - headR * 0.6);
+        crest.lineTo(bx - headR * 0.28, headC.y - headR * (2.1 - i * 0.32));
+        crest.lineTo(bx + headR * 0.22, headC.y - headR * 0.5);
+        crest.closePath();
+      }
+    } else if (f.element === "ice") {
+      crest.moveTo(headC.x - headR * 0.9, headC.y - headR * 0.5);
+      crest.bezierCurveTo(
+        headC.x - headR * 2.2, headC.y + headR * 0.4,
+        headC.x - headR * 1.9, headC.y + headR * 2.2,
+        headC.x - headR * 2.6, headC.y + headR * 3.1
+      );
+      crest.lineTo(headC.x - headR * 0.7, headC.y + headR * 0.6);
+      crest.closePath();
+    } else if (f.element === "wind") {
+      crest.moveTo(headC.x - headR * 0.6, headC.y - headR * 0.55);
+      crest.bezierCurveTo(
+        headC.x - headR * 2.6, headC.y - headR * 0.4,
+        headC.x - headR * 3.4, headC.y + headR * 1.4,
+        headC.x - headR * 4.1, headC.y + headR * 1.1
+      );
+      crest.lineTo(headC.x - headR * 0.6, headC.y + headR * 0.2);
+      crest.closePath();
+    } else if (f.element === "shadow") {
+      // hood
+      crest.moveTo(headC.x + headR * 0.9, headC.y - headR * 0.2);
+      crest.bezierCurveTo(
+        headC.x + headR * 0.4, headC.y - headR * 1.6,
+        headC.x - headR * 1.4, headC.y - headR * 1.5,
+        headC.x - headR * 1.8, headC.y + headR * 0.2
+      );
+      crest.lineTo(headC.x - headR * 2.5, headC.y + headR * 2.6);
+      crest.lineTo(headC.x - headR * 0.5, headC.y + headR * 0.8);
+      crest.lineTo(headC.x + headR * 0.6, headC.y + headR * 0.9);
+      crest.closePath();
+    } else {
+      // arcane: floating bob-cut + shard
+      crest.moveTo(headC.x - headR * 0.85, headC.y - headR * 0.55);
+      crest.lineTo(headC.x - headR * 1.15, headC.y + headR * 1.3);
+      crest.lineTo(headC.x - headR * 0.45, headC.y + headR * 0.7);
+      crest.closePath();
+    }
+    paths.push(crest);
+
+    // beast tail
+    if (f.build === "beast") {
+      const tail = new Path2D();
+      tail.moveTo(-hipW * 0.7, hipY - H * 0.02);
+      tail.bezierCurveTo(
+        -H * 0.24, hipY - H * 0.06,
+        -H * 0.34, hipY - H * 0.28,
+        -H * 0.22 + Math.sin(f.animT * 3) * H * 0.05, hipY - H * 0.42
+      );
+      ctx.save();
+      ctx.strokeStyle = "#0b0d16";
+      ctx.lineWidth = H * 0.045;
+      ctx.lineCap = "round";
+      ctx.stroke(tail);
+      ctx.restore();
+    }
+
+    // ---- paint: glow halo pass, then solid body pass ----
+    const alpha = o.alpha == null ? 1 : o.alpha;
+    const rimColor = o.frozen ? "#9fd8ff" : f.burn > 0 ? "#ff8a3c" : kit.color;
+    const bodyFill = o.tint || (o.frozen ? "#12202e" : "#0b0d16");
+    const paintSet = (stroke, fill, glow) => {
+      ctx.save();
+      ctx.globalAlpha = alpha * (glow ? 0.5 : 1);
+      if (glow) {
+        ctx.shadowColor = rimColor;
+        ctx.shadowBlur = H * 0.12;
+      }
+      ctx.lineCap = "round";
+      ctx.strokeStyle = stroke;
+      ctx.fillStyle = fill;
+      for (const s of rear) {
+        ctx.lineWidth = s.w;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+      for (const s of lines) {
+        ctx.lineWidth = s.w;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+      for (const path of paths) ctx.fill(path);
+      ctx.restore();
+    };
+    paintSet(rimColor, rimColor, true);   // elemental rim glow
+    paintSet(bodyFill, bodyFill, false);  // the silhouette itself
+    if (o.flash > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = alpha * Math.min(1, o.flash);
+      ctx.lineCap = "round";
+      ctx.strokeStyle = ctx.fillStyle = o.frozen ? "#bfeaff" : "#f4f6ff";
+      for (const s of rear.concat(lines)) {
+        ctx.lineWidth = s.w;
+        ctx.beginPath();
+        ctx.moveTo(s.x1, s.y1);
+        ctx.lineTo(s.x2, s.y2);
+        ctx.stroke();
+      }
+      for (const path of paths) ctx.fill(path);
+      ctx.restore();
+    }
+
+    // ---- weapon (drawn last, brightest) ----
+    let tipLocal = null;
+    if (kind !== "none") {
+      ctx.save();
+      ctx.translate(hand.x, hand.y);
+      ctx.rotate(-wAng); // blade frame along +x
+      ctx.globalAlpha = alpha;
+      // glow edge
+      ctx.save();
+      ctx.shadowColor = kit.glow;
+      ctx.shadowBlur = H * 0.09;
+      ctx.strokeStyle = kit.glow;
+      ctx.lineWidth = Math.max(1.4, wW * 0.5);
+      ctx.stroke(shape.path);
+      ctx.restore();
+      // dark body of the weapon
+      ctx.fillStyle = o.tint || "#101321";
+      ctx.fill(shape.path);
+      ctx.restore();
+      // tip in body-local px (undo the hand rotation)
+      const ca = Math.cos(-wAng), sa = Math.sin(-wAng);
+      tipLocal = {
+        x: hand.x + shape.tip.x * ca - shape.tip.y * sa,
+        y: hand.y + shape.tip.x * sa + shape.tip.y * ca,
+      };
+    }
+
+    // ---- glowing eyes (skip for tinted ghosts) ----
+    if (!o.tint) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = kit.glow;
+      ctx.shadowBlur = H * 0.06;
+      ctx.fillStyle = o.frozen ? "#dff4ff" : kit.glow;
+      ctx.beginPath();
+      ctx.arc(headC.x + headR * 0.45, headC.y - headR * 0.08, Math.max(1.3, headR * 0.2), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    return { tip: tipLocal, hand };
+  }
+
   let GLOW = null;
   function glowSprite2D() {
     if (GLOW) return GLOW;
@@ -1652,6 +1965,7 @@
       if (a.sceneName === name && a.bgCanvas) return;
       a.sceneName = name;
       a.bgCanvas = this.paintBackdrop(name);
+      a.initWeather(name);
     }
     render() {
       this.a.draw2D();
@@ -1703,6 +2017,32 @@
       g.fillStyle = glow;
       g.fillRect(0, H * 0.4, W, H * 0.5);
       g.globalAlpha = 1;
+      // the Rift Gate: obsidian pillars + arch loom behind the boss duel
+      if (name === "bg-gate") {
+        const px = W * 0.18, pw = W * 0.075;
+        g.fillStyle = "#0a0710";
+        g.fillRect(px, H * 0.3, pw, H * 0.46);
+        g.fillRect(W - px - pw, H * 0.3, pw, H * 0.46);
+        g.strokeStyle = "#0a0710";
+        g.lineWidth = pw;
+        g.beginPath();
+        g.arc(W / 2, H * 0.42, W / 2 - px - pw / 2, Math.PI, 0);
+        g.stroke();
+        // glowing runes etched into the gate
+        g.strokeStyle = css(env.accent);
+        g.globalAlpha = 0.5;
+        g.lineWidth = 1.6;
+        for (let i = 0; i < 5; i += 1) {
+          const ry = H * 0.36 + i * H * 0.08;
+          g.beginPath();
+          g.moveTo(px + pw * 0.3, ry);
+          g.lineTo(px + pw * 0.7, ry + H * 0.02);
+          g.moveTo(W - px - pw * 0.7, ry);
+          g.lineTo(W - px - pw * 0.3, ry + H * 0.02);
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+      }
       // arena floor band + battle ring
       g.fillStyle = css(env.ground);
       g.fillRect(0, H * 0.74, W, H * 0.26);
@@ -1964,7 +2304,12 @@
       def.stateT = 0;
       def.attack = null;
 
-      this.number(def, `${dmg}`, crit ? "#ffd479" : "#ff7a86", crit);
+      this.number(def, `${dmg}`, att.isPlayer
+        ? (crit ? "#ffd479" : "#ffe9b0")
+        : (crit ? "#ff8a5c" : "#ff5b6e"), crit);
+      if (att.isPlayer && att.combo >= 2) {
+        this.number(att, `x${att.combo}`, att.kit.glow, true);
+      }
       this.impact(def, box.kind, crit, att);
       this.addShake(clamp((box.knock + dmg * 5) / 420, 0.25, 1.5) * (crit ? 14 : 9));
       this.hitStop = Math.max(this.hitStop, crit ? 0.05 : 0.032);
@@ -2027,6 +2372,8 @@
     }
     addShake(v) {
       this.shake = Math.min(24, this.shake + v);
+      // heavy and ultimate blows briefly punch the lens in (cinematic zoom)
+      this.zoomPunch = Math.max(this.zoomPunch || 0, Math.min(0.13, v / 130));
     }
 
     /* ---------------- actions ---------------- */
@@ -2237,6 +2584,7 @@
     stepFighter(f, dt) {
       f.stateT += dt;
       f.animT += dt;
+      this.stepWeather(dt);
       f.flash = Math.max(0, f.flash - dt * 4.5);
       f.iframes = Math.max(0, f.iframes - dt);
       f.comboT = Math.max(0, f.comboT - dt);
@@ -2459,7 +2807,8 @@
       const mid = (this.player.x + this.enemy.x) / 2;
       const dist = Math.abs(this.player.x - this.enemy.x);
       const fit = (this.w - 120) / Math.max(300, dist + 300);
-      const zoom = clamp(fit, 0.7, 1.4);
+      const zoom = clamp(fit, 0.7, 1.4) * (1 + (this.zoomPunch || 0));
+      this.zoomPunch = Math.max(0, (this.zoomPunch || 0) - dt * 0.55);
       this.cam.zoom = approach(this.cam.zoom, zoom, 3.5, dt);
       const halfView = this.w / 2 / this.cam.zoom;
       const limit = Math.max(0, ARENA_HALF + 70 - halfView);
@@ -2616,16 +2965,137 @@
       this.r.render();
     }
 
+    /* ---- living atmosphere: rain, snow, embers, fireflies, fog ------- */
+    initWeather(scene) {
+      this.weatherScene = scene;
+      this.weather = [];
+      this.flash = 0;
+      this.nextBolt = rand(3, 7);
+      const kinds = {
+        "bg-ember": { ember: 26 },
+        "bg-frost": { snow: 42, wind: 6 },
+        "bg-arcane": { firefly: 18 },
+        "bg-void": { fog: 7, mote: 14 },
+        "bg-gate": { rain: 58, ember: 10 },
+      };
+      const plan = kinds[scene] || { mote: 12 };
+      Object.entries(plan).forEach(([kind, n]) => {
+        for (let i = 0; i < n; i += 1) this.weather.push(this.makeWeatherBit(kind));
+      });
+    }
+    makeWeatherBit(kind) {
+      const w = this.w || 640, h = this.h || 360;
+      const b = { kind, x: Math.random() * w, y: Math.random() * h, seed: rand(0, 9) };
+      if (kind === "rain") { b.len = rand(9, 17); b.sp = rand(520, 760); b.drift = rand(60, 120); }
+      else if (kind === "snow") { b.r = rand(1, 2.6); b.sp = rand(24, 58); b.sway = rand(0.4, 1.4); }
+      else if (kind === "ember") { b.r = rand(1, 2.4); b.sp = rand(18, 52); b.sway = rand(0.6, 2); }
+      else if (kind === "firefly") { b.r = rand(1.2, 2.2); b.ph = rand(0, 9); b.sp = rand(6, 16); }
+      else if (kind === "fog") { b.rw = rand(90, 190); b.rh = rand(26, 54); b.sp = rand(4, 12); b.a = rand(0.04, 0.09); }
+      else { b.r = rand(1, 2.2); b.sp = rand(8, 26); } // mote
+      return b;
+    }
+    stepWeather(dt) {
+      if (!this.weather) return;
+      const w = this.w, h = this.h, t = this.time;
+      for (const b of this.weather) {
+        if (b.kind === "rain") { b.y += b.sp * dt; b.x += b.drift * dt; if (b.y > h) { b.y = -20; b.x = Math.random() * w; } }
+        else if (b.kind === "snow") { b.y += b.sp * dt; b.x += Math.sin(t * b.sway + b.seed) * 12 * dt; if (b.y > h) { b.y = -6; b.x = Math.random() * w; } }
+        else if (b.kind === "ember") { b.y -= b.sp * dt; b.x += Math.sin(t * b.sway + b.seed) * 16 * dt; if (b.y < -8) { b.y = h + 8; b.x = Math.random() * w; } }
+        else if (b.kind === "firefly") { b.x += Math.sin(t * 0.7 + b.ph) * b.sp * dt; b.y += Math.cos(t * 0.9 + b.ph * 1.3) * b.sp * dt; b.x = (b.x + w) % w; b.y = (b.y + h) % h; }
+        else if (b.kind === "fog") { b.x += b.sp * dt; if (b.x - b.rw > w) b.x = -b.rw; }
+        else { b.y -= b.sp * dt; if (b.y < -6) { b.y = h + 6; b.x = Math.random() * w; } }
+      }
+      // storm over the gate
+      if (this.weatherScene === "bg-gate") {
+        this.nextBolt -= dt;
+        if (this.nextBolt <= 0) { this.flash = 0.85; this.nextBolt = rand(3.5, 8); }
+      }
+      this.flash = Math.max(0, this.flash - dt * 2.6);
+    }
+    drawWeather(ctx, layer) {
+      if (!this.weather) return;
+      const t = this.time;
+      ctx.save();
+      for (const b of this.weather) {
+        if (layer === "back") {
+          if (b.kind === "fog") {
+            ctx.globalAlpha = b.a;
+            const grad = ctx.createRadialGradient(b.x, b.y, 4, b.x, b.y, b.rw);
+            grad.addColorStop(0, "rgba(150,140,190,0.5)");
+            grad.addColorStop(1, "rgba(150,140,190,0)");
+            ctx.fillStyle = grad;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.scale(1, b.rh / b.rw);
+            ctx.beginPath();
+            ctx.arc(0, 0, b.rw, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } else if (b.kind === "rain") {
+            ctx.globalAlpha = 0.3;
+            ctx.strokeStyle = "#9fb4d8";
+            ctx.lineWidth = 1.1;
+            ctx.beginPath();
+            ctx.moveTo(b.x, b.y);
+            ctx.lineTo(b.x - b.len * 0.25, b.y + b.len);
+            ctx.stroke();
+          } else if (b.kind === "snow") {
+            ctx.globalAlpha = 0.55;
+            ctx.fillStyle = "#dff4ff";
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (b.kind === "mote") {
+            ctx.globalAlpha = 0.35 + Math.sin(t * 2 + b.seed) * 0.2;
+            ctx.fillStyle = "#c9a0ff";
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else if (layer === "front") {
+          if (b.kind === "ember") {
+            ctx.globalCompositeOperation = "lighter";
+            ctx.globalAlpha = 0.5 + Math.sin(t * 5 + b.seed) * 0.3;
+            ctx.fillStyle = b.seed > 4.5 ? "#ffd479" : "#ff8a3c";
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (b.kind === "firefly") {
+            ctx.globalCompositeOperation = "lighter";
+            const pulse = 0.25 + 0.55 * (0.5 + 0.5 * Math.sin(t * 2.4 + b.ph));
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = "#b9ff8e";
+            ctx.shadowColor = "#8ef0a8";
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+      }
+      ctx.restore();
+    }
+
     draw2D() {
       const ctx = this.ctx;
       this.drawScene(ctx);
+      this.drawWeather(ctx, "back");
       const order = [this.player, this.enemy];
       order.forEach((f) => this.drawShadow(ctx, f));
       this.drawGroundFx(ctx);
       order.forEach((f) => this.drawFighter(ctx, f));
       this.drawShots(ctx);
       this.drawAirFx(ctx);
+      this.drawWeather(ctx, "front");
       this.drawNumbers(ctx);
+      if (this.flash > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.2, this.flash * 0.2);
+        ctx.fillStyle = "#cfd8ff";
+        ctx.fillRect(0, 0, this.w, this.h);
+        ctx.restore();
+      }
       if (this.over) this.drawEndBanner(ctx);
     }
 
@@ -2673,55 +3143,76 @@
     drawFighter(ctx, f) {
       const zoom = this.cam.zoom;
       const [sx, sy] = this.project(f.x, f.y);
-      const o = spritePose(f);
+      const p = f.pose;
       const H = FIGHTER_H * f.scale * zoom;
-      const entry = loadFighterArt(f.art);
       const alpha = f.dead ? clamp(1 - f.stateT * 0.32, 0, 1) : 1;
 
-      // dash after-images: the real art flattened to the element colour
-      if (f.ghosts.length && entry.ready) {
-        const tint = entry.tint(f.kit.color);
-        if (tint) {
+      // dash after-images: the articulated body flattened to the element colour
+      if (f.ghosts.length) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        f.ghosts.forEach((gh) => {
+          const [gx, gy] = this.project(gh.x, f.y);
           ctx.save();
-          ctx.globalCompositeOperation = "lighter";
-          f.ghosts.forEach((gh) => {
-            const [gx, gy] = this.project(gh.x, f.y);
-            ctx.save();
-            ctx.translate(gx, gy);
-            ctx.globalAlpha = (gh.life / gh.max) * 0.3 * alpha;
-            drawArtFighter(ctx, f, entry, tint, o, H, zoom, 1);
-            ctx.restore();
-          });
+          ctx.translate(gx, gy);
+          ctx.scale(f.facing, 1);
+          drawBodyFighter(ctx, f, { H, alpha: (gh.life / gh.max) * 0.26 * alpha, tint: f.kit.color });
           ctx.restore();
-        }
+        });
+        ctx.restore();
       }
 
+      // the articulated body — posed by the sim skeleton every frame
+      let res = null;
       ctx.save();
-      ctx.translate(sx, sy);
-      if (o.rot) {
+      ctx.translate(sx, sy - p.bob * zoom);
+      ctx.scale(f.facing, 1);
+      if (p.rot) {
         // topple backwards around the hips
         ctx.translate(0, -H * 0.45);
-        ctx.rotate(-f.facing * o.rot);
+        ctx.rotate(-p.rot);
         ctx.translate(0, H * 0.45);
       }
-      if (entry.ready) {
-        drawArtFighter(ctx, f, entry, entry.img, o, H, zoom, alpha);
-        // white damage flash / freeze coat over the exact same silhouette
-        if (f.flash > 0.02 || f.freeze > 0) {
+      res = drawBodyFighter(ctx, f, {
+        H,
+        alpha,
+        flash: Math.max(f.flash * 0.85, f.freeze > 0 ? 0.45 : 0),
+        frozen: f.freeze > 0,
+      });
+      ctx.restore();
+
+      // ---- weapon trail: world-space tip history drawn as a hot ribbon ----
+      const swinging = (f.state === "attack" || f.state === "ability" || f.state === "dash") &&
+        (!f.attack || (f.attack.type !== "magic" && f.attack.type !== "buff"));
+      if (res && res.tip && swinging) {
+        (f._trail || (f._trail = [])).push({
+          x: f.x + (f.facing * res.tip.x) / zoom,
+          y: f.y - res.tip.y / zoom,
+          t: this.time,
+        });
+      }
+      if (f._trail && f._trail.length) {
+        const now = this.time;
+        while (f._trail.length && now - f._trail[0].t > 0.16) f._trail.shift();
+        if (f._trail.length > 1) {
           ctx.save();
-          ctx.globalAlpha = alpha * Math.max(f.flash * 0.8, f.freeze > 0 ? 0.4 : 0);
-          drawArtFighter(ctx, f, entry, f.freeze > 0 ? entry.cyan : entry.white, o, H, zoom, 1);
+          ctx.globalCompositeOperation = "lighter";
+          ctx.lineCap = "round";
+          for (let i = 1; i < f._trail.length; i += 1) {
+            const a = i / f._trail.length;
+            const [ax, ay] = this.project(f._trail[i - 1].x, f._trail[i - 1].y);
+            const [bx, by] = this.project(f._trail[i].x, f._trail[i].y);
+            ctx.globalAlpha = a * 0.5 * alpha;
+            ctx.strokeStyle = f.kit.glow;
+            ctx.lineWidth = (2 + a * 7) * zoom;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+          }
           ctx.restore();
         }
-      } else {
-        // art not ready yet (offline?) — elemental silhouette keeps play going
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = f.kit.color;
-        ctx.beginPath();
-        ctx.ellipse(0, -H * 0.5, H * 0.22, H * 0.5, 0, 0, Math.PI * 2);
-        ctx.fill();
       }
-      ctx.restore();
 
       // ward bubble
       if (f.shield > 0) {
@@ -2736,13 +3227,14 @@
         ctx.restore();
       }
       if (f.empower > 0 && Math.random() < 0.5) this.particles(f, 1, f.kit.color, 0.4);
+      if (f.burn > 0 && Math.random() < 0.3) this.particles(f, 1, "#ff8a3c", 0.5);
 
-      // charge gathering at the casting hand
+      // charge gathering at the actual weapon hand
       if (f.state === "ability" && f.phase === "windup" &&
           (f.attack?.type === "magic" || f.attack?.type === "buff")) {
         const charge = clamp(f.stateT / Math.max(0.01, f.attack.windup), 0, 1);
-        const hx = sx + f.facing * H * 0.36;
-        const hy = sy - H * 0.62;
+        const hx = res ? sx + f.facing * ((res.hand.x / zoom) * zoom) : sx + f.facing * H * 0.3;
+        const hy = res ? sy - res.hand.y : sy - H * 0.55;
         const size = (14 + charge * 42) * zoom * f.scale;
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
@@ -2759,27 +3251,8 @@
           });
         }
       }
-
-      // the swing leaves a glowing arc sweeping in front of the sprite
-      if ((f.state === "attack" || f.state === "ability") && f.phase === "active" &&
-          f.attack && f.attack.type !== "magic" && f.attack.type !== "buff" && !o.spin) {
-        const prog = clamp((f.stateT - f.attack.windup) / (f.attack.active || 0.12), 0, 1);
-        ctx.save();
-        ctx.translate(sx + f.facing * H * 0.12, sy - H * 0.58);
-        ctx.scale(f.facing, 1);
-        ctx.globalCompositeOperation = "lighter";
-        ctx.globalAlpha = 0.55 * (1 - prog);
-        ctx.strokeStyle = f.kit.glow;
-        ctx.lineWidth = 7 * zoom * f.scale;
-        ctx.lineCap = "round";
-        ctx.beginPath();
-        ctx.arc(0, 0, H * 0.72, -1.2 + prog * 1.7, -0.25 + prog * 1.7);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      if (f.burn > 0 && Math.random() < 0.3) this.particles(f, 1, "#ff8a3c", 0.5);
     }
+
     drawGroundFx(ctx) {
       for (let i = 0; i < this.fx.length; i += 1) {
         const p = this.fx[i];
@@ -2873,9 +3346,14 @@
       ctx.fillRect(0, 0, this.w, this.h);
       ctx.globalAlpha = a;
       ctx.textAlign = "center";
-      ctx.font = `900 ${Math.min(76, this.w * 0.12)}px system-ui, sans-serif`;
+      const pop = 0.82 + 0.18 * Math.min(1, this.endT * 2.4) + (this.over ? Math.sin(this.time * 3.2) * 0.012 : 0);
+      ctx.translate(this.w / 2, this.h / 2);
+      ctx.scale(pop, pop);
+      ctx.font = `900 ${Math.min(72, this.w * 0.115)}px system-ui, sans-serif`;
+      ctx.shadowColor = win ? "#ffb92e" : "#7fa0ff";
+      ctx.shadowBlur = 26;
       ctx.fillStyle = win ? "#ffd479" : "#ff5f6d";
-      ctx.fillText(win ? "K.O.!" : "DEFEAT", this.w / 2, this.h / 2);
+      ctx.fillText(win ? "VICTORY" : "DEFEAT", 0, 0);
       ctx.font = "600 14px system-ui";
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.fillText(win ? "Chapter cleared" : "You wake at camp, fully healed", this.w / 2, this.h / 2 + 30);

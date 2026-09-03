@@ -26,8 +26,10 @@
      *    always runs at true game speed even on slow software renderers.
      */
     const canvas = document.getElementById("arena-canvas");
+    const wantRenderer = new URLSearchParams(window.location.search).get("renderer");
     const arena = new window.ChronicleArena.Arena({
       canvas,
+      rendererPref: wantRenderer || "auto",
       onEnd: (outcome) => { window.__ended = outcome; },
       onHud: () => {},
     });
